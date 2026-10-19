@@ -1,0 +1,20 @@
+0 verbose cli C:\Program Files\nodejs\node.exe C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js
+1 info using npm@11.19.0
+2 info using node@v24.21.0
+3 silly config load:file:C:\Program Files\nodejs\node_modules\npm\npmrc
+4 silly config load:file:D:\projects\brainy\api\.npmrc
+5 silly config load:file:C:\Users\carefull\.npmrc
+6 silly config load:file:C:\Users\carefull\AppData\Roaming\npm\etc\npmrc
+7 verbose title npm install
+8 verbose argv "install" "--offline" "false" "--cache" ".npm-cache" "--no-audit" "--no-fund"
+9 verbose logfile logs-max:10 dir:D:\projects\brainy\api\.npm-cache\_logs\2026-10-15T11_30_58_891Z-
+10 verbose logfile D:\projects\brainy\api\.npm-cache\_logs\2026-10-15T11_30_58_891Z-debug-0.log
+11 silly logfile done cleaning log files
+12 http fetch GET https://registry.npmjs.org/npm attempt 1 failed with ECONNREFUSED
+13 silly packumentCache heap:4496293888 maxSize:1124073472 maxEntrySize:562036736
+14 silly idealTree buildDeps
+15 silly fetch manifest @apollo/server@^5.0.0
+16 silly packumentCache full:https://registry.npmjs.org/@apollo%2fserver cache-miss
+17 http fetch GET https://registry.npmjs.org/@apollo%2fserver attempt 1 failed with ECONNREFUSED
+18 http fetch GET https://registry.npmjs.org/npm attempt 2 failed with ECONNREFUSED
+19 http fetch GET https://registry.npmjs.org/@apollo%2fserver attempt 2 failed with ECONNREFUSED
