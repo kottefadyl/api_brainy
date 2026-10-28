@@ -843,9 +843,14 @@ export class CollectionsService {
     return true;
   }
 
-  async createEntry(collectionId: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string): Promise<Entry> {
+  async createEntry(collectionId: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string, clientMutationId?: string): Promise<Entry> {
     const collection = await this.one(collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
+    if (clientMutationId && !/^[\w.-]{1,100}$/.test(clientMutationId)) throw new BadRequestException('Invalid mutation ID');
+    if (clientMutationId) {
+      const existing = await this.entries.findOne({ collectionId, ownerId: collection.ownerId, clientMutationId }).exec();
+      if (existing) return existing;
+    }
     const format = formatId
       ? collection.formats.find((item) => item.id === formatId)
       : collection.formats[0];
@@ -853,7 +858,15 @@ export class CollectionsService {
     const validated = this.validateValues(values, format.fields, [], collection.units);
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
-    const entry = await this.entries.create({ collectionId, ownerId: collection.ownerId, formatId: format.id, formatVersion: format.version ?? 1, values: validated });
+    let entry: Entry;
+    try { entry = await this.entries.create({ collectionId, ownerId: collection.ownerId, formatId: format.id, formatVersion: format.version ?? 1, values: validated, clientMutationId }); }
+    catch (error) {
+      if (clientMutationId && (error as { code?: number }).code === 11000) {
+        const existing = await this.entries.findOne({ collectionId, ownerId: collection.ownerId, clientMutationId }).exec();
+        if (existing) return existing;
+      }
+      throw error;
+    }
     await this.collaboration.logAction(collectionId, ownerId, 'CREATE_ENTRY', `Created entry in format ${format.name}`);
     return entry;
   }
@@ -1025,12 +1038,15 @@ export class CollectionsService {
     return created;
   }
 
-  async updateEntry(id: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string): Promise<Entry> {
+  async updateEntry(id: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string, clientMutationId?: string, expectedUpdatedAt?: string): Promise<Entry> {
     this.validId(id);
     const entry = await this.entries.findOne({ _id: id }).exec();
     if (!entry) throw new NotFoundException('Entry not found');
     const collection = await this.one(entry.collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
+    if (clientMutationId && !/^[\w.-]{1,100}$/.test(clientMutationId)) throw new BadRequestException('Invalid mutation ID');
+    if (clientMutationId && entry.lastMutationId === clientMutationId) return entry;
+    if (expectedUpdatedAt && (!Number.isFinite(Date.parse(expectedUpdatedAt)) || entry.updatedAt.getTime() !== Date.parse(expectedUpdatedAt))) throw new BadRequestException('This entry changed elsewhere. Review the conflict before syncing');
     if (entry.movingOperationId) throw new BadRequestException('This object is being moved. Try again after the transfer finishes');
     if (await this.stockMovements.exists({ collectionId: collection.id, sourceEntryId: id })) throw new BadRequestException('This entry has a validated stock effect. Add a correction or return instead of editing it');
     const savedFormatId = entry.formatId ?? collection.formats[0].id;
@@ -1041,10 +1057,10 @@ export class CollectionsService {
     await this.validateReferences(collection, format, validated, collection.ownerId, entry.id, entry.values);
     this.assertObjectTitle(format, validated);
     const saved = await this.entries.findOneAndUpdate(
-      { _id: id, movingOperationId: null }, { $set: { formatId: savedFormatId, formatVersion: format.version ?? 1, values: validated }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } },
+      { _id: id, movingOperationId: null, ...(expectedUpdatedAt ? { updatedAt: entry.updatedAt } : {}) }, { $set: { formatId: savedFormatId, formatVersion: format.version ?? 1, values: validated, ...(clientMutationId ? { lastMutationId: clientMutationId } : {}) }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } },
       { new: true, runValidators: true },
     ).exec();
-    if (!saved) throw new NotFoundException('Entry not found');
+    if (!saved) throw new BadRequestException('This entry changed elsewhere. Review the conflict before syncing');
     await this.collaboration.logAction(collection.id, ownerId, 'UPDATE_ENTRY', `Updated entry in format ${format.name}`);
     return saved;
   }

@@ -185,6 +185,8 @@ export class EntryValueInput {
 
 @InputType()
 export class SaveEntryInput {
+  @Field({ nullable: true }) clientMutationId?: string;
+  @Field({ nullable: true }) expectedUpdatedAt?: string;
   @Field({ nullable: true })
   formatId?: string;
 

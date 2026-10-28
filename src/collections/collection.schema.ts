@@ -141,6 +141,7 @@ export class TransferPreview {
   @Field(() => [String]) formulas!: string[];
   @Field() objects!: number;
   @Field() entries!: number;
+  @Field() relations!: number;
   @Field(() => [String]) conflicts!: string[];
   @Field() allowed!: boolean;
   @Field({ nullable: true }) inboundReferences?: number;
@@ -155,6 +156,7 @@ export class TransferResult {
   @Field({ nullable: true }) dataFormatId?: string;
   @Field() copiedObjects!: number;
   @Field() copiedEntries!: number;
+  @Field() copiedRelations!: number;
   @Field({ nullable: true }) operationId?: string;
 }
 
@@ -240,6 +242,9 @@ export const CollectionFormulaSchema = SchemaFactory.createForClass(CollectionFo
 @ObjectType()
 @Schema({ timestamps: true })
 export class Collection {
+  @Prop({ default: 0 }) relationVersion?: number;
+  @Prop() relationLockOwner?: string;
+  @Prop() relationLockAt?: Date;
   @Field(() => ID)
   id!: string;
 

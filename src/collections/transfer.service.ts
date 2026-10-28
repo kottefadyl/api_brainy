@@ -8,9 +8,10 @@ import { CollectionUnit, UnitSnapshot } from './unit.schema';
 import { MoveOperation } from './move-operation.schema';
 import { EntryReminder } from './reminder.schema';
 import { StockMovement } from './stock.schema';
+import { EntryRelation } from './relation.schema';
 
 const colors = ['#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF', '#FFF0F4', '#EAF8FA', '#FBF7E9', '#F1F8ED', '#F8F0FA', '#F1F5FA', '#FFF7F1', '#EFF8FF', '#FDEFF7', '#EDF7FF', '#F7FBEA', '#FFF0E8', '#EFEFFD', '#E9F8F4', '#FBF1E8', '#F0F8F9', '#FFF2EF', '#F4F8E8', '#F1F2FF', '#EFFAF0'];
-type CopyPlan = { source: Collection; target: Collection; formats: CollectionFormat[]; units: CollectionUnit[]; formulas: CollectionFormula[]; entries: Entry[]; conflicts: string[]; colors: Map<string, string> };
+type CopyPlan = { source: Collection; target: Collection; formats: CollectionFormat[]; units: CollectionUnit[]; formulas: CollectionFormula[]; entries: Entry[]; relations: EntryRelation[]; conflicts: string[]; colors: Map<string, string> };
 
 @Injectable()
 export class TransferService implements OnApplicationBootstrap {
@@ -20,6 +21,7 @@ export class TransferService implements OnApplicationBootstrap {
     @InjectModel(MoveOperation.name) private readonly moves: Model<MoveOperation>,
     @InjectModel(EntryReminder.name) private readonly reminders: Model<EntryReminder>,
     @InjectModel(StockMovement.name) private readonly stockMovements: Model<StockMovement>,
+    @InjectModel(EntryRelation.name) private readonly relations: Model<EntryRelation>,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -92,9 +94,19 @@ export class TransferService implements OnApplicationBootstrap {
     const entryMap = new Map(initialEntries.map((entry) => [entry.id, entry]));
     const unitIds = new Set<string>();
     const conflicts: string[] = [];
+    const sourceRelations = initialEntries.length ? await this.relations.find({ collectionId: source.id, deletedAt: null }).exec() : [];
     let changed = true;
     while (changed) {
       changed = false;
+      for (const relation of sourceRelations) {
+        const from = entryMap.has(relation.fromEntryId), to = entryMap.has(relation.toEntryId);
+        if ((from || to) && relation.unit?.startsWith('local:') && !unitIds.has(relation.unit.slice(6))) { unitIds.add(relation.unit.slice(6)); changed = true; }
+        if (from === to) continue;
+        const id = from ? relation.toEntryId : relation.fromEntryId;
+        const dependency = await this.entries.findOne({ _id: id, ownerId, collectionId: source.id }).exec();
+        if (!dependency) { conflicts.push('A related entry is missing'); continue; }
+        entryMap.set(id, dependency); formatIds.add(dependency.formatId!); changed = true;
+      }
       for (const entry of [...entryMap.values()]) {
         const dependencies = [...entry.values.flatMap((value) => value.objectIds ?? []), ...(entry.sourceObjectId ? [entry.sourceObjectId] : [])];
         for (const id of dependencies) {
@@ -154,11 +166,11 @@ export class TransferService implements OnApplicationBootstrap {
       usedColors.add(color);
       chosenColors.set(format.id, color);
     }
-    return { source, target, formats, units, formulas, entries: [...entryMap.values()], conflicts: [...new Set(conflicts)], colors: chosenColors };
+    return { source, target, formats, units, formulas, entries: [...entryMap.values()], relations: sourceRelations.filter((edge) => entryMap.has(edge.fromEntryId) && entryMap.has(edge.toEntryId)), conflicts: [...new Set(conflicts)], colors: chosenColors };
   }
 
   private summary(plan: CopyPlan): TransferPreview {
-    return { sourceName: plan.source.name, targetName: plan.target.name, dataFormats: plan.formats.map((item) => item.name), units: plan.units.map((item) => item.name), formulas: plan.formulas.map((item) => item.name), objects: plan.entries.filter((entry) => plan.source.formats.some((format) => format.id === entry.formatId && format.objectModel)).length, entries: plan.entries.length, conflicts: plan.conflicts, allowed: plan.conflicts.length === 0, stockMovementCount: 0 };
+    return { sourceName: plan.source.name, targetName: plan.target.name, dataFormats: plan.formats.map((item) => item.name), units: plan.units.map((item) => item.name), formulas: plan.formulas.map((item) => item.name), objects: plan.entries.filter((entry) => plan.source.formats.some((format) => format.id === entry.formatId && format.objectModel)).length, entries: plan.entries.length, relations: plan.relations.length, conflicts: plan.conflicts, allowed: plan.conflicts.length === 0, stockMovementCount: 0 };
   }
 
   async objectPreview(objectId: string, targetCollectionId: string, ownerId: string): Promise<TransferPreview> {
@@ -184,6 +196,7 @@ export class TransferService implements OnApplicationBootstrap {
     if (inbound.references) plan.conflicts.push(`${inbound.references} entries reference this object. Remove or replace these links first`);
     if (inbound.shares) plan.conflicts.push(`${inbound.shares} active object links must be revoked first`);
     if (inbound.reminders) plan.conflicts.push(`${inbound.reminders} active reminders must be cancelled before moving this object`);
+    if (await this.relations.exists({ collectionId: source.id, deletedAt: null, $or: [{ fromEntryId: objectId }, { toEntryId: objectId }] })) plan.conflicts.push('Detach or replace this object’s relations before moving it');
     const stockMovementCount = await this.stockMovements.countDocuments({ ownerId, collectionId: source.id, productId: objectId }).exec();
     if (stockMovementCount) plan.conflicts.push('This object has stock history. Copy it to the target; stock movements remain in the source collection');
     return { ...this.summary(plan), allowed: plan.conflicts.length === 0, inboundReferences: inbound.references, activeShares: inbound.shares, stockMovementCount };
@@ -241,9 +254,11 @@ export class TransferService implements OnApplicationBootstrap {
     try {
       const documents = plan.entries.map((entry) => ({ _id: new Types.ObjectId(entryIds.get(entry.id)!), ownerId: entry.ownerId, collectionId: targetId, formatId: formatIds.get(entry.formatId!), formatVersion: 1, values: entry.values.map((value) => this.remapValue(value, fieldIds, entryIds, unitIds, formatIds)), recurrence: entry.recurrence ? { startFieldId: fieldIds.get(entry.recurrence.startFieldId), endFieldId: fieldIds.get(entry.recurrence.endFieldId), timeZone: entry.recurrence.timeZone, frequency: entry.recurrence.frequency, interval: entry.recurrence.interval, untilDate: entry.recurrence.untilDate, excludedDates: entry.recurrence.excludedDates } : undefined, revisions: entry.revisions.map((revision) => ({ at: revision.at, formatVersion: revision.formatVersion, values: revision.values.map((value) => this.remapValue(value, fieldIds, entryIds, unitIds, formatIds)) })), sourceObjectId: entry.sourceObjectId ? entryIds.get(entry.sourceObjectId) : undefined, copiedFromCollectionId: plan.source.id, copiedFromEntryId: entry.id, transferKey, createdAt: entry.createdAt, updatedAt: entry.updatedAt }));
       if (documents.length) await this.entries.insertMany(documents, { ordered: true });
-      return { targetCollectionId: targetId, objectId: rootObjectId ? entryIds.get(rootObjectId) : undefined, dataFormatId: rootFormatId ? formatIds.get(rootFormatId) : undefined, copiedObjects: plan.entries.filter((entry) => plan.source.formats.some((format) => format.id === entry.formatId && format.objectModel)).length, copiedEntries: plan.entries.length };
+      if (plan.relations.length) await this.relations.insertMany(plan.relations.map((edge) => ({ ownerId: edge.ownerId, collectionId: targetId, fromEntryId: entryIds.get(edge.fromEntryId)!, toEntryId: entryIds.get(edge.toEntryId)!, kind: edge.kind, label: edge.label, quantity: edge.quantity, unit: edge.unit?.startsWith('local:') ? `local:${unitIds.get(edge.unit.slice(6)) ?? edge.unit.slice(6)}` : edge.unit, snapshotValue: edge.snapshotValue, snapshotUnit: edge.snapshotUnit?.startsWith('local:') ? `local:${unitIds.get(edge.snapshotUnit.slice(6)) ?? edge.snapshotUnit.slice(6)}` : edge.snapshotUnit, snapshotFieldId: edge.snapshotFieldId ? fieldIds.get(edge.snapshotFieldId) : undefined, createdBy: edge.createdBy, transferKey })), { ordered: true });
+      return { targetCollectionId: targetId, objectId: rootObjectId ? entryIds.get(rootObjectId) : undefined, dataFormatId: rootFormatId ? formatIds.get(rootFormatId) : undefined, copiedObjects: plan.entries.filter((entry) => plan.source.formats.some((format) => format.id === entry.formatId && format.objectModel)).length, copiedEntries: plan.entries.length, copiedRelations: plan.relations.length };
     } catch (error) {
       await this.entries.deleteMany({ transferKey, collectionId: targetId }).exec();
+      await this.relations.deleteMany({ transferKey, collectionId: targetId }).exec();
       await this.collections.updateOne({ _id: targetId }, { $pull: { formats: { id: { $in: copiedFormats.map((item) => item.id) } }, units: { id: { $in: copiedUnits.map((item) => item.id) } }, formulas: { transferKey } } }).exec();
       throw error;
     }
@@ -346,6 +361,7 @@ export class TransferService implements OnApplicationBootstrap {
     }
     await this.moves.updateOne({ transferKey: operation.transferKey }, { $set: { state: 'RECOVERING' } }).exec();
     await this.entries.deleteMany({ ownerId: operation.ownerId, collectionId: operation.targetCollectionId, transferKey: operation.transferKey }).exec();
+    await this.relations.deleteMany({ collectionId: operation.targetCollectionId, transferKey: operation.transferKey }).exec();
     await this.collections.updateOne({ _id: operation.targetCollectionId, ownerId: operation.ownerId }, { $pull: { formats: { id: { $in: operation.targetFormatIds ?? [] } }, units: { id: { $in: operation.targetUnitIds ?? [] } }, formulas: { transferKey: operation.transferKey } } }).exec();
     await this.entries.updateOne({ _id: operation.sourceObjectId, ownerId: operation.ownerId, movingOperationId: operation.transferKey }, { $unset: { movingOperationId: '' } }).exec();
     await this.moves.updateOne({ transferKey: operation.transferKey }, { $set: { state: 'ROLLED_BACK' } }).exec();
@@ -384,6 +400,7 @@ export class TransferService implements OnApplicationBootstrap {
       const fresh = await this.objectSource(objectId, ownerId);
       const inbound = await this.inbound(objectId, ownerId);
       if (inbound.references || inbound.shares || inbound.reminders) throw new BadRequestException('New references, object links or reminders appeared. Review the move again');
+      if (await this.relations.exists({ collectionId: source.id, deletedAt: null, $or: [{ fromEntryId: objectId }, { toEntryId: objectId }] })) throw new BadRequestException('New relations appeared. Review the move again');
       const plan = await this.plan(fresh.source, await this.collection(targetCollectionId, ownerId), [fresh.entry.formatId!], [fresh.entry], ownerId);
       result = await this.execute(plan, objectId, undefined, { transferKey, prepared: async (targetObjectId, formatIds, unitIds) => {
         await this.moves.updateOne({ transferKey, state: 'PLANNED' }, { $set: { state: 'PREPARED', targetObjectId, targetFormatIds: formatIds, targetUnitIds: unitIds } }).exec();

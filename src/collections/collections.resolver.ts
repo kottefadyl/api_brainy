@@ -10,6 +10,7 @@ import { ReminderService } from './reminder.service';
 import { EntryLinkService } from './entry-link.service';
 import { AuditLog, CollectionRole } from './collaboration.schema';
 import { CollaborationService } from './collaboration.service';
+import { RelationService } from './relation.service';
 
 type Request = { headers: { authorization?: string } };
 
@@ -22,6 +23,7 @@ export class CollectionsResolver {
     private readonly reminders: ReminderService,
     private readonly links: EntryLinkService,
     private readonly collaboration: CollaborationService,
+    private readonly relations: RelationService,
   ) {}
 
   private async ownerId(request: Request): Promise<string> {
@@ -162,6 +164,7 @@ export class CollectionsResolver {
     const ownerId = await this.ownerId(request);
     const removed = await this.service.remove(id, ownerId);
     if (removed) await this.reminders.cancelCollection(id, ownerId);
+    if (removed) await this.relations.purgeCollection(id);
     return removed;
   }
 
@@ -332,13 +335,13 @@ export class CollectionsResolver {
     @Args('collectionId') collectionId: string, @Args('input') input: SaveEntryInput,
     @Context('req') request: Request,
   ): Promise<Entry> {
-    return this.service.createEntry(collectionId, input.values, input.formatId, await this.ownerId(request));
+    return this.service.createEntry(collectionId, input.values, input.formatId, await this.ownerId(request), input.clientMutationId);
   }
 
   @Mutation(() => Entry)
   async updateEntry(@Args('id') id: string, @Args('input') input: SaveEntryInput, @Context('req') request: Request): Promise<Entry> {
     const ownerId = await this.ownerId(request);
-    const entry = await this.service.updateEntry(id, input.values, input.formatId, ownerId);
+    const entry = await this.service.updateEntry(id, input.values, input.formatId, ownerId, input.clientMutationId, input.expectedUpdatedAt);
     await this.reminders.refreshEntry(id, ownerId);
     return entry;
   }
@@ -346,7 +349,7 @@ export class CollectionsResolver {
   @Mutation(() => Boolean)
   async deleteEntry(@Args('id') id: string, @Context('req') request: Request): Promise<boolean> {
     const ownerId = await this.ownerId(request);
-    const removed = await this.service.removeEntry(id, ownerId);
+    const removed = await this.relations.deleteEntry(id, ownerId, () => this.service.removeEntry(id, ownerId));
     if (removed) await this.reminders.cancelEntry(id, ownerId);
     if (removed) await this.links.detachDeletedEntry(id, ownerId);
     return removed;

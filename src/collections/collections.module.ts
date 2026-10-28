@@ -25,6 +25,11 @@ import { ForecastService } from './forecast.service';
 import { MeasurementService } from './measurement.service';
 import { AuditLog, AuditLogSchema } from './collaboration.schema';
 import { CollaborationService } from './collaboration.service';
+import { EntryRelation, EntryRelationSchema } from './relation.schema';
+import { RelationResolver } from './relation.resolver';
+import { RelationService } from './relation.service';
+import { WorkspaceBackupResolver } from './workspace-backup.resolver';
+import { WorkspaceBackupService } from './workspace-backup.service';
 
 @Module({
   imports: [
@@ -35,6 +40,7 @@ import { CollaborationService } from './collaboration.service';
       { name: StockMovement.name, schema: StockMovementSchema },
       { name: StockLock.name, schema: StockLockSchema },
       { name: EntryLink.name, schema: EntryLinkSchema },
+      { name: EntryRelation.name, schema: EntryRelationSchema },
       { name: MoveOperation.name, schema: MoveOperationSchema },
       { name: User.name, schema: UserSchema },
       { name: EntryReminder.name, schema: EntryReminderSchema },
@@ -43,7 +49,7 @@ import { CollaborationService } from './collaboration.service';
       { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, AnalysisResolver, AnalysisService, EntryLinkResolver, EntryLinkService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, AnalysisResolver, AnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}
