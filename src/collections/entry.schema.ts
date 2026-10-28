@@ -1,0 +1,315 @@
+import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { UnitSnapshot, UnitSnapshotSchema } from './unit.schema';
+
+@ObjectType()
+@Schema({ _id: false })
+export class ObjectPropertySnapshot {
+  @Field() @Prop({ required: true }) fieldId!: string;
+  @Field() @Prop({ required: true }) name!: string;
+  @Field() @Prop({ required: true }) kind!: string;
+  @Field() @Prop({ required: true }) value!: string;
+  @Field(() => UnitSnapshot, { nullable: true })
+  @Prop({ type: UnitSnapshotSchema }) unitSnapshot?: UnitSnapshot;
+}
+export const ObjectPropertySnapshotSchema = SchemaFactory.createForClass(ObjectPropertySnapshot);
+
+@ObjectType()
+@Schema({ _id: false })
+export class ObjectReferenceSnapshot {
+  @Field() @Prop({ required: true }) objectId!: string;
+  @Field() @Prop({ required: true }) formatId!: string;
+  @Field() @Prop({ required: true }) formatVersion!: number;
+  @Field() @Prop({ required: true }) capturedAt!: Date;
+  @Field(() => [ObjectPropertySnapshot])
+  @Prop({ type: [ObjectPropertySnapshotSchema], required: true })
+  properties!: ObjectPropertySnapshot[];
+}
+export const ObjectReferenceSnapshotSchema = SchemaFactory.createForClass(ObjectReferenceSnapshot);
+
+@ObjectType()
+export class ResolvedObjectReference {
+  @Field() objectId!: string;
+  @Field() fieldId!: string;
+  @Field() mode!: string;
+  @Field() missing!: boolean;
+  @Field({ nullable: true }) name?: string;
+  @Field({ nullable: true }) capturedAt?: Date;
+  @Field(() => [ObjectPropertySnapshot]) properties!: ObjectPropertySnapshot[];
+}
+
+@ObjectType()
+export class ResolvedObjectVariable {
+  @Field() variableName!: string;
+  @Field() objectId!: string;
+  @Field() mode!: string;
+  @Field({ nullable: true }) capturedAt?: Date;
+  @Field(() => ObjectPropertySnapshot) property!: ObjectPropertySnapshot;
+}
+
+@ObjectType()
+@Schema({ _id: false })
+export class EntryMeasureValue {
+  @Field({ nullable: true })
+  @Prop({ default: 'MEASURED' })
+  status?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  uncertainty?: string;
+
+  @Field({ nullable: true })
+  @Prop({ default: 'ABSOLUTE' })
+  uncertaintyType?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  quality?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  instrument?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  observedAt?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  recordedAt?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  revisedAt?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  revisionNote?: string;
+}
+export const EntryMeasureValueSchema = SchemaFactory.createForClass(EntryMeasureValue);
+
+@ObjectType()
+@Schema({ _id: false })
+export class EntryValue {
+  @Field()
+  @Prop({ required: true })
+  fieldId!: string;
+
+  @Field()
+  @Prop({ default: '' })
+  value!: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  numberValue?: string;
+
+  @Field(() => UnitSnapshot, { nullable: true })
+  @Prop({ type: UnitSnapshotSchema })
+  unitSnapshot?: UnitSnapshot;
+
+  @Field({ nullable: true })
+  @Prop()
+  booleanValue?: boolean;
+
+  @Field(() => [String], { nullable: true })
+  @Prop({ type: [String], default: undefined })
+  selectedValues?: string[];
+
+  @Field({ nullable: true })
+  @Prop()
+  durationSeconds?: number;
+
+  @Field({ nullable: true })
+  @Prop()
+  dateTimeValue?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  dateValue?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  attachmentSize?: number;
+
+  @Field({ nullable: true })
+  @Prop()
+  attachmentMimeType?: string;
+
+  @Prop({ type: Buffer })
+  attachmentData?: Buffer;
+
+  @Field(() => [String], { nullable: true })
+  @Prop({ type: [String], default: undefined })
+  objectIds?: string[];
+
+  @Field(() => [ObjectReferenceSnapshot], { nullable: true })
+  @Prop({ type: [ObjectReferenceSnapshotSchema], default: undefined })
+  objectSnapshots?: ObjectReferenceSnapshot[];
+
+  @Field(() => EntryMeasureValue, { nullable: true })
+  @Prop({ type: EntryMeasureValueSchema })
+  measureValue?: EntryMeasureValue;
+}
+
+export const EntryValueSchema = SchemaFactory.createForClass(EntryValue);
+
+@ObjectType()
+@Schema({ _id: false })
+export class EntryRevision {
+  @Field()
+  @Prop({ required: true })
+  at!: Date;
+  @Field()
+  @Prop({ required: true })
+  formatVersion!: number;
+  @Field(() => [EntryValue])
+  @Prop({ type: [EntryValueSchema], required: true })
+  values!: EntryValue[];
+}
+export const EntryRevisionSchema = SchemaFactory.createForClass(EntryRevision);
+
+@ObjectType()
+@Schema({ _id: false })
+export class EntryRecurrence {
+  @Field() @Prop({ required: true }) startFieldId!: string;
+  @Field() @Prop({ required: true }) endFieldId!: string;
+  @Field() @Prop({ required: true }) timeZone!: string;
+  @Field() @Prop({ required: true, enum: ['DAILY', 'WEEKLY', 'MONTHLY'] }) frequency!: string;
+  @Field() @Prop({ required: true }) interval!: number;
+  @Field({ nullable: true }) @Prop() untilDate?: string;
+  @Field(() => [String]) @Prop({ type: [String], default: [] }) excludedDates!: string[];
+}
+export const EntryRecurrenceSchema = SchemaFactory.createForClass(EntryRecurrence);
+
+@ObjectType()
+@Schema({ timestamps: true })
+export class Entry {
+  @Field(() => ID)
+  id!: string;
+
+  @Field()
+  @Prop({ required: true, index: true })
+  collectionId!: string;
+
+  @Field({ nullable: true })
+  @Prop({ index: true })
+  formatId?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  formatVersion?: number;
+
+  @Field(() => [EntryValue])
+  @Prop({ type: [EntryValueSchema], required: true })
+  values!: EntryValue[];
+
+  @Field(() => EntryRecurrence, { nullable: true })
+  @Prop({ type: EntryRecurrenceSchema })
+  recurrence?: EntryRecurrence;
+
+  @Field(() => [EntryRevision])
+  @Prop({ type: [EntryRevisionSchema], default: [] })
+  revisions!: EntryRevision[];
+
+  @Field({ nullable: true })
+  @Prop({ index: true })
+  sourceObjectId?: string;
+
+  @Field()
+  createdAt!: Date;
+
+  @Field()
+  updatedAt!: Date;
+
+  @Prop({ required: true, index: true })
+  ownerId!: string;
+
+  @Prop({ index: true })
+  movingOperationId?: string;
+
+  @Prop()
+  importKey?: string;
+
+  @Prop()
+  sourceId?: string;
+
+  @Prop({ index: true })
+  transferKey?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  copiedFromCollectionId?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  copiedFromEntryId?: string;
+}
+
+@ObjectType()
+export class CalendarOccurrence {
+  @Field(() => Entry) entry!: Entry;
+  @Field() startAt!: string;
+  @Field() endAt!: string;
+  @Field() timeZone!: string;
+  @Field() recurring!: boolean;
+  @Field() localDate!: string;
+  @Field() localStartClock!: string;
+  @Field() localEndClock!: string;
+}
+
+export const EntrySchema = SchemaFactory.createForClass(Entry);
+EntrySchema.index({ ownerId: 1, collectionId: 1, createdAt: -1, _id: -1 });
+EntrySchema.index({ ownerId: 1, collectionId: 1, 'values.value': 'text' }, { default_language: 'none' });
+EntrySchema.index({ ownerId: 1, collectionId: 1, importKey: 1, sourceId: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' }, sourceId: { $type: 'string' } } });
+EntrySchema.index({ ownerId: 1, 'values.objectIds': 1 });
+
+@ObjectType()
+export class EntryPage {
+  @Field(() => [Entry])
+  entries!: Entry[];
+
+  @Field({ nullable: true })
+  nextCursor?: string;
+
+  @Field()
+  hasMore!: boolean;
+}
+
+@ObjectType()
+export class ImportRowError {
+  @Field()
+  sourceId!: string;
+
+  @Field()
+  message!: string;
+}
+
+@ObjectType()
+export class ImportEntriesResult {
+  @Field()
+  validCount!: number;
+
+  @Field()
+  createdCount!: number;
+
+  @Field()
+  skippedCount!: number;
+
+  @Field(() => [ImportRowError])
+  errors!: ImportRowError[];
+}
+
+@ObjectType()
+export class EntryAttachment {
+  @Field()
+  fileName!: string;
+
+  @Field()
+  mimeType!: string;
+
+  @Field()
+  size!: number;
+
+  @Field()
+  base64!: string;
+}

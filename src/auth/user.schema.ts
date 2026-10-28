@@ -20,6 +20,30 @@ export class User {
 
   @Prop({ unique: true, sparse: true })
   firebaseUid?: string;
+
+  @Field({ nullable: true })
+  @Prop({ trim: true })
+  profession?: string;
+
+  @Field({ nullable: true })
+  @Prop({ trim: true })
+  job?: string;
+
+  @Field({ nullable: true })
+  @Prop({ trim: true })
+  fieldOfStudy?: string;
+
+  @Field(() => [String])
+  @Prop({ type: [String], default: [] })
+  interests!: string[];
+
+  @Field(() => [String])
+  @Prop({ type: [String], default: [] })
+  hobbies!: string[];
+
+  @Field()
+  @Prop({ default: false })
+  profileCompleted!: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

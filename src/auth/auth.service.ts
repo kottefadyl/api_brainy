@@ -8,7 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Model } from 'mongoose';
-import { AuthPayload, LoginInput, RegisterInput } from './auth.types';
+import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types';
 import { FirebaseIdentityService } from './firebase-identity.service';
 import { User } from './user.schema';
 
@@ -122,6 +122,47 @@ export class AuthService {
     } catch {
       throw new UnauthorizedException('Invalid or expired session');
     }
+  }
+
+  async updateProfile(userId: string, input: ProfileInput): Promise<User> {
+    const name = input.name.trim();
+    if (name.length < 2 || name.length > 80) {
+      throw new BadRequestException('Name must be between 2 and 80 characters');
+    }
+    const optional = (value: string, label: string): string => {
+      const cleaned = value.trim();
+      if (cleaned.length > 100) throw new BadRequestException(`${label} must be at most 100 characters`);
+      return cleaned;
+    };
+    const list = (values: string[], label: string): string[] => {
+      if (values.length > 12) throw new BadRequestException(`${label} can have at most 12 items`);
+      const cleaned = values.map((value) => value.trim()).filter(Boolean);
+      if (cleaned.some((value) => value.length > 60)) {
+        throw new BadRequestException(`${label} items must be at most 60 characters`);
+      }
+      if (new Set(cleaned.map((value) => value.toLocaleLowerCase())).size !== cleaned.length) {
+        throw new BadRequestException(`${label} items must be unique`);
+      }
+      return cleaned;
+    };
+    const interests = list(input.interests, 'Interests');
+    const hobbies = list(input.hobbies, 'Hobbies');
+    if (!interests.length && !hobbies.length) {
+      throw new BadRequestException('Add at least one interest or hobby');
+    }
+    const user = await this.users.findByIdAndUpdate(userId, {
+      $set: {
+        name,
+        profession: optional(input.profession, 'Profession'),
+        job: optional(input.job, 'Job'),
+        fieldOfStudy: optional(input.fieldOfStudy, 'Field of study'),
+        interests,
+        hobbies,
+        profileCompleted: true,
+      },
+    }, { new: true, runValidators: true }).exec();
+    if (!user) throw new UnauthorizedException('Invalid session');
+    return user;
   }
 
   private validateCredentials(email: string, password: string): void {

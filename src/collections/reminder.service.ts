@@ -1,0 +1,241 @@
+import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, ServiceUnavailableException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { getApps, initializeApp, cert, type App } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
+import { Model, Types } from 'mongoose';
+import nodemailer from 'nodemailer';
+import { User } from '../auth/user.schema';
+import { EntryReminderInput } from './collection.input';
+import { Collection, FieldKind } from './collection.schema';
+import { Entry } from './entry.schema';
+import { EntryReminder, PushDevice, ReminderCapabilities, ReminderDelivery } from './reminder.schema';
+import { localToInstant, nextRecurrenceStart, validTimeZone } from './time_math';
+
+@Injectable()
+export class ReminderService implements OnApplicationBootstrap, OnApplicationShutdown {
+  private readonly logger = new Logger(ReminderService.name);
+  private timer?: NodeJS.Timeout;
+  private busy = false;
+  private firebase?: App;
+
+  constructor(
+    @InjectModel(EntryReminder.name) private readonly reminders: Model<EntryReminder>,
+    @InjectModel(ReminderDelivery.name) private readonly deliveries: Model<ReminderDelivery>,
+    @InjectModel(PushDevice.name) private readonly devices: Model<PushDevice>,
+    @InjectModel(Collection.name) private readonly collections: Model<Collection>,
+    @InjectModel(Entry.name) private readonly entries: Model<Entry>,
+    @InjectModel(User.name) private readonly users: Model<User>,
+  ) {}
+
+  capabilities(): ReminderCapabilities {
+    const smtpPort = Number(process.env.SMTP_PORT ?? '587');
+    let firebaseAccount = false;
+    try {
+      const value = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+      if (value) {
+        const account = JSON.parse(value) as { project_id?: string; client_email?: string; private_key?: string };
+        firebaseAccount = !!(account.client_email && account.private_key && account.project_id === process.env.FIREBASE_PROJECT_ID);
+      } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()) {
+        firebaseAccount = existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS.trim());
+      }
+    } catch { firebaseAccount = false; }
+    return {
+      email: !!(process.env.SMTP_HOST?.trim() && process.env.SMTP_FROM?.trim() && Number.isInteger(smtpPort) && smtpPort >= 1 && smtpPort <= 65535 && (!process.env.SMTP_USER?.trim() || process.env.SMTP_PASSWORD)),
+      push: !!(process.env.FIREBASE_PROJECT_ID?.trim() && firebaseAccount),
+    };
+  }
+
+  onApplicationBootstrap(): void {
+    this.timer = setInterval(() => { void this.processDue(); }, 15_000);
+    this.timer.unref();
+    void this.processDue();
+  }
+  onApplicationShutdown(): void { if (this.timer) clearInterval(this.timer); }
+
+  private async ownedEntry(entryId: string, ownerId: string): Promise<{ entry: Entry; collection: Collection }> {
+    if (!Types.ObjectId.isValid(entryId)) throw new BadRequestException('Invalid entry ID');
+    const entry = await this.entries.findOne({ _id: entryId, ownerId }).exec();
+    if (!entry) throw new NotFoundException('Entry not found');
+    const collection = await this.collections.findOne({ _id: entry.collectionId, ownerId }).exec();
+    if (!collection) throw new NotFoundException('Collection not found');
+    return { entry, collection };
+  }
+
+  async list(entryId: string, ownerId: string): Promise<EntryReminder[]> {
+    await this.ownedEntry(entryId, ownerId);
+    return this.reminders.find({ entryId, ownerId, state: { $ne: 'CANCELLED' } }).sort({ createdAt: -1 }).exec();
+  }
+
+  async devicesFor(ownerId: string): Promise<PushDevice[]> { return this.devices.find({ ownerId }).sort({ lastSeenAt: -1 }).exec(); }
+
+  async registerDevice(ownerId: string, token: string, platform: string, label: string, targetKind = 'TOKEN'): Promise<PushDevice> {
+    if (!this.capabilities().push) throw new ServiceUnavailableException('Push notifications are not configured');
+    if (!['TOKEN', 'FID'].includes(targetKind) || token.length < (targetKind === 'FID' ? 15 : 50) || token.length > 4096 || /\s/.test(token) || !['WEB', 'ANDROID', 'IOS'].includes(platform) || !label.trim() || label.length > 80) throw new BadRequestException('Invalid push device');
+    const existing = await this.devices.findOne({ token }).exec();
+    if (!existing && await this.devices.countDocuments({ ownerId }) >= 10) throw new BadRequestException('Remove an old push device before adding another');
+    if (existing && existing.ownerId !== ownerId && await this.devices.countDocuments({ ownerId }) >= 10) throw new BadRequestException('Remove an old push device before adding another');
+    const updated = await this.devices.findOneAndUpdate({ token }, { $set: { ownerId, platform, targetKind, label: label.trim(), lastSeenAt: new Date() }, $setOnInsert: { token } }, { new: true, upsert: true, runValidators: true }).exec();
+    return updated!;
+  }
+
+  async unregisterDevice(ownerId: string, id: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid device ID');
+    return (await this.devices.deleteOne({ _id: id, ownerId }).exec()).deletedCount > 0;
+  }
+
+  private occurrence(entry: Entry, fieldId: string, timeZone: string, timeOfDay: string | undefined, minutesBefore: number, after: Date): Date | undefined {
+    const value = entry.values.find((item) => item.fieldId === fieldId)?.value;
+    if (!value) return;
+    let base: Date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split('-').map(Number);
+      const [hour, minute] = (timeOfDay ?? '09:00').split(':').map(Number);
+      base = localToInstant({ year, month, day, hour, minute, second: 0 }, timeZone);
+    } else base = new Date(value);
+    if (Number.isNaN(base.getTime())) return;
+    const threshold = after;
+    if (entry.recurrence?.startFieldId === fieldId) return nextRecurrenceStart(base, entry.recurrence, threshold);
+    return base > threshold ? base : undefined;
+  }
+
+  async save(entryId: string, ownerId: string, input: EntryReminderInput, reminderId?: string): Promise<EntryReminder> {
+    const { entry, collection } = await this.ownedEntry(entryId, ownerId);
+    if (entry.movingOperationId) throw new BadRequestException('This object is being moved');
+    const format = collection.formats.find((item) => item.id === entry.formatId);
+    const field = format?.fields.find((item) => item.id === input.fieldId && [FieldKind.DATE, FieldKind.DATETIME].includes(item.kind));
+    if (!field) throw new BadRequestException('Choose a date or date and time field in this entry');
+    if (!entry.values.some((item) => item.fieldId === input.fieldId)) throw new BadRequestException('Fill in the reminder date first');
+    if (!Number.isInteger(input.minutesBefore) || input.minutesBefore < 0 || input.minutesBefore > 43200) throw new BadRequestException('Choose an advance of 0 to 43200 minutes');
+    if (!validTimeZone(input.timeZone) || input.timeZone.length > 100) throw new BadRequestException('Choose a valid IANA time zone');
+    if (field.kind === FieldKind.DATE && input.timeOfDay && !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.timeOfDay)) throw new BadRequestException('Choose a valid reminder time');
+    const channels = [...new Set(input.channels)];
+    if (!channels.length || channels.some((item) => !['EMAIL', 'PUSH'].includes(item))) throw new BadRequestException('Choose email or push');
+    const capabilities = this.capabilities();
+    if (channels.includes('EMAIL') && !capabilities.email) throw new ServiceUnavailableException('Email reminders are not configured');
+    if (channels.includes('PUSH') && (!capabilities.push || await this.devices.countDocuments({ ownerId }) === 0)) throw new ServiceUnavailableException('Register a push device before enabling push reminders');
+    if (input.viewId && !collection.savedViews.some((item) => item.id === input.viewId && item.layout === 'CALENDAR' && item.calendarStartFieldId === input.fieldId)) throw new BadRequestException('Choose a calendar view for recurring reminders');
+    const occurrenceAt = this.occurrence(entry, input.fieldId, input.timeZone, input.timeOfDay, input.minutesBefore, new Date());
+    if (!occurrenceAt) throw new BadRequestException('Choose a future reminder date or recurrence');
+    const nextAt = new Date(Math.max(Date.now(), occurrenceAt.getTime() - input.minutesBefore * 60_000));
+    if (reminderId && !Types.ObjectId.isValid(reminderId)) throw new BadRequestException('Invalid reminder ID');
+    const existing = reminderId ? await this.reminders.findOne({ _id: reminderId, ownerId, entryId, state: { $ne: 'CANCELLED' } }).exec() : undefined;
+    if (reminderId && !existing) throw new NotFoundException('Reminder not found');
+    const updated = await this.reminders.findOneAndUpdate(existing ? { _id: reminderId, ownerId, entryId } : { ownerId, entryId, fieldId: input.fieldId, state: 'ACTIVE' }, { $set: { ownerId, collectionId: collection.id, entryId, fieldId: input.fieldId, viewId: input.viewId, timeZone: input.timeZone, timeOfDay: field.kind === FieldKind.DATE ? input.timeOfDay ?? '09:00' : undefined, minutesBefore: input.minutesBefore, channels, state: 'ACTIVE', nextAt, occurrenceAt, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } }, { new: true, upsert: !existing, runValidators: true }).exec();
+    return updated!;
+  }
+
+  async cancel(reminderId: string, ownerId: string): Promise<boolean> {
+    if (!Types.ObjectId.isValid(reminderId)) throw new BadRequestException('Invalid reminder ID');
+    const updated = await this.reminders.findOneAndUpdate({ _id: reminderId, ownerId, state: { $ne: 'CANCELLED' } }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '', lockedUntil: '', lockToken: '' } }).exec();
+    return !!updated;
+  }
+
+  async refreshEntry(entryId: string, ownerId: string): Promise<void> {
+    const { entry } = await this.ownedEntry(entryId, ownerId);
+    const reminders = await this.reminders.find({ entryId, ownerId, state: 'ACTIVE' }).exec();
+    for (const reminder of reminders) {
+      const occurrenceAt = this.occurrence(entry, reminder.fieldId, reminder.timeZone, reminder.timeOfDay, reminder.minutesBefore, new Date());
+      if (!occurrenceAt) await this.reminders.updateOne({ _id: reminder.id, ownerId }, { $set: { state: 'DONE', failure: 'The reminder date is no longer in the future' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec();
+      else await this.reminders.updateOne({ _id: reminder.id, ownerId }, { $set: { occurrenceAt, nextAt: new Date(Math.max(Date.now(), occurrenceAt.getTime() - reminder.minutesBefore * 60_000)), attempts: 0, failure: undefined } }).exec();
+    }
+  }
+
+  async cancelEntry(entryId: string, ownerId: string): Promise<void> { await this.reminders.updateMany({ entryId, ownerId, state: 'ACTIVE' }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec(); }
+  async cancelCollection(collectionId: string, ownerId: string): Promise<void> { await this.reminders.updateMany({ collectionId, ownerId, state: 'ACTIVE' }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec(); }
+
+  private async pushApp(): Promise<App> {
+    if (this.firebase) return this.firebase;
+    const projectId = process.env.FIREBASE_PROJECT_ID!;
+    const account = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const name = 'brainy-reminders';
+    this.firebase = getApps().find((app) => app.name === name) ?? initializeApp(account ? { projectId, credential: cert(JSON.parse(account) as Parameters<typeof cert>[0]) } : { projectId }, name);
+    return this.firebase;
+  }
+
+  private async send(channel: string, reminder: EntryReminder, key: string, device?: PushDevice): Promise<void> {
+    const entry = await this.entries.findOne({ _id: reminder.entryId, ownerId: reminder.ownerId }).exec();
+    const user = await this.users.findById(reminder.ownerId).exec();
+    if (!entry || !user) throw new Error('Reminder owner or entry is unavailable');
+    const collection = await this.collections.findOne({ _id: reminder.collectionId, ownerId: reminder.ownerId }).exec();
+    const format = collection?.formats.find((item) => item.id === entry.formatId);
+    const titleField = format?.fields.find((item) => item.kind === FieldKind.TITLE);
+    const title = entry.values.find((item) => item.fieldId === titleField?.id)?.value ?? format?.name ?? collection?.name ?? 'Entry';
+    const body = `${collection?.name ?? 'Brainy'}: ${title}`;
+    if (channel === 'EMAIL') {
+      const host = process.env.SMTP_HOST!, port = Number(process.env.SMTP_PORT ?? '587');
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid SMTP port');
+      const secure = process.env.SMTP_SECURE === 'true';
+      const transport = nodemailer.createTransport({ host, port, secure, requireTLS: !secure && process.env.SMTP_REQUIRE_TLS !== 'false', auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD ?? '' } : undefined });
+      await transport.sendMail({ from: process.env.SMTP_FROM, to: user.email, subject: 'Brainy reminder', text: `${body}\n${reminder.occurrenceAt?.toISOString() ?? ''} (${reminder.timeZone})`, messageId: `<${key}@brainy-reminder.local>` });
+      return;
+    }
+    if (!device) throw new Error('No push device is registered');
+    const messaging = getMessaging(await this.pushApp());
+    const payload = { notification: { title: 'Brainy reminder', body }, data: { reminderId: reminder.id, occurrenceAt: reminder.occurrenceAt?.toISOString() ?? '', key }, android: { collapseKey: key.slice(0, 64) }, webpush: { notification: { tag: key, renotify: false } } };
+    try {
+      if (device.targetKind === 'FID') await messaging.send({ ...payload, fid: device.token });
+      else await messaging.send({ ...payload, token: device.token });
+    } catch (error) {
+      const code = (error as { code?: string }).code;
+      if (['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(code ?? '')) await this.devices.deleteOne({ _id: device.id, ownerId: reminder.ownerId }).exec();
+      throw error;
+    }
+  }
+
+  private async sendOnce(channel: string, reminder: EntryReminder, device?: PushDevice): Promise<boolean> {
+    const key = `${reminder.id}:${reminder.occurrenceAt?.toISOString()}:${channel}${device ? `:${device.id}` : ''}`;
+    const now = new Date();
+    const current = await this.deliveries.findOne({ key }).exec();
+    if (current?.state === 'SENT') return true;
+    if (current?.state === 'SENDING' && current.claimUntil && current.claimUntil > now) return false;
+    const claimUntil = new Date(now.getTime() + 120_000);
+    const claimed = await this.deliveries.findOneAndUpdate({ key, $or: [{ state: { $in: ['PENDING', 'FAILED'] } }, { state: 'SENDING', claimUntil: { $lte: now } }, { state: { $exists: false } }] }, { $set: { key, reminderId: reminder.id, ownerId: reminder.ownerId, channel, state: 'SENDING', claimUntil }, $unset: { failure: '' } }, { upsert: !current, new: true }).exec();
+    if (!claimed) return false;
+    try {
+      await this.send(channel, reminder, key.replace(/[^a-zA-Z0-9.-]/g, '-'), device);
+      await this.deliveries.updateOne({ key, state: 'SENDING' }, { $set: { state: 'SENT', sentAt: new Date() }, $unset: { claimUntil: '' } }).exec();
+      return true;
+    } catch (error) {
+      await this.deliveries.updateOne({ key, state: 'SENDING' }, { $set: { state: 'FAILED', failure: error instanceof Error ? error.message.slice(0, 300) : 'Unknown delivery error' }, $unset: { claimUntil: '' } }).exec();
+      throw error;
+    }
+  }
+
+  async processDue(): Promise<void> {
+    if (this.busy) return;
+    this.busy = true;
+    try {
+      for (let index = 0; index < 50; index++) {
+        const now = new Date(), token = randomUUID();
+        const reminder = await this.reminders.findOneAndUpdate({ state: 'ACTIVE', nextAt: { $lte: now }, $or: [{ lockedUntil: null }, { lockedUntil: { $lt: now } }] }, { $set: { lockedUntil: new Date(now.getTime() + 120_000), lockToken: token } }, { sort: { nextAt: 1 }, new: true }).exec();
+        if (!reminder) break;
+        try {
+          const pushDevices = reminder.channels.includes('PUSH') ? await this.devices.find({ ownerId: reminder.ownerId }).exec() : [];
+          const deliveries = [
+            ...(reminder.channels.includes('EMAIL') ? [this.sendOnce('EMAIL', reminder)] : []),
+            ...(reminder.channels.includes('PUSH') && !pushDevices.length ? [Promise.reject(new Error('No push device is registered'))] : []),
+            ...pushDevices.map((device) => this.sendOnce('PUSH', reminder, device)),
+          ];
+          const results = await Promise.allSettled(deliveries);
+          const failure = results.find((result) => result.status === 'rejected') as PromiseRejectedResult | undefined;
+          if (failure || results.some((result) => result.status === 'fulfilled' && !result.value)) {
+            const attempts = (reminder.attempts ?? 0) + 1;
+            await this.reminders.updateOne({ _id: reminder.id, lockToken: token }, { $set: { state: attempts >= 10 ? 'FAILED' : 'ACTIVE', attempts, failure: failure?.reason instanceof Error ? failure.reason.message.slice(0, 300) : 'Delivery is already in progress', nextAt: new Date(Date.now() + Math.min(60, 2 ** attempts) * 60_000) }, $unset: { lockedUntil: '', lockToken: '' } }).exec();
+            continue;
+          }
+          const entry = await this.entries.findOne({ _id: reminder.entryId, ownerId: reminder.ownerId }).exec();
+          const next = entry?.recurrence?.startFieldId === reminder.fieldId && reminder.occurrenceAt
+            ? this.occurrence(entry, reminder.fieldId, reminder.timeZone, reminder.timeOfDay, reminder.minutesBefore, reminder.occurrenceAt)
+            : undefined;
+          await this.reminders.updateOne({ _id: reminder.id, lockToken: token }, next ? { $set: { state: 'ACTIVE', nextAt: new Date(next.getTime() - reminder.minutesBefore * 60_000), occurrenceAt: next, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } } : { $set: { state: 'DONE', attempts: 0, failure: undefined }, $unset: { nextAt: '', occurrenceAt: '', lockedUntil: '', lockToken: '' } }).exec();
+        } catch (error) {
+          this.logger.error(`Reminder ${reminder.id} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          await this.reminders.updateOne({ _id: reminder.id, lockToken: token }, { $set: { nextAt: new Date(Date.now() + 60_000), failure: error instanceof Error ? error.message.slice(0, 300) : 'Unknown error' }, $unset: { lockedUntil: '', lockToken: '' } }).exec();
+        }
+      }
+    } catch (error) { this.logger.error(`Reminder worker failed: ${error instanceof Error ? error.message : 'Unknown error'}`); }
+    finally { this.busy = false; }
+  }
+}

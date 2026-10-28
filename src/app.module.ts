@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from './auth/auth.module';
+import { CollectionsModule } from './collections/collections.module';
 import { HealthResolver } from './health.resolver';
 import { NotesModule } from './notes/notes.module';
 
@@ -18,6 +19,7 @@ import { NotesModule } from './notes/notes.module';
       process.env.MONGODB_URI ?? 'mongodb://localhost:27017/brainy',
     ),
     AuthModule,
+    CollectionsModule,
     NotesModule,
   ],
   providers: [HealthResolver],

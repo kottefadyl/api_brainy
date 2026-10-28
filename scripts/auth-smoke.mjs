@@ -27,7 +27,7 @@ function data(result) {
 
 try {
   const register = `mutation($input: RegisterInput!) {
-    register(input: $input) { token user { id name email } }
+    register(input: $input) { token user { id name email profileCompleted } }
   }`;
   const firstInput = { name: 'Test Ada', email: `brainy-${suffix}-a@example.test`, password };
   const secondInput = { name: 'Test Bisi', email: `brainy-${suffix}-b@example.test`, password };
@@ -36,6 +36,18 @@ try {
   const second = data(await graphql(register, { input: secondInput })).register;
   createdUsers.push(second.user.id);
   assert.equal(first.user.email, firstInput.email);
+  assert.equal(first.user.profileCompleted, false);
+  assert.ok((await graphql('mutation($input: ProfileInput!) { updateProfile(input: $input) { id } }', {
+    input: { name: 'Ada', profession: '', job: '', fieldOfStudy: '', interests: [], hobbies: [] },
+  }, first.token)).errors?.length, 'a profile needs an interest or hobby');
+  const updated = data(await graphql('mutation($input: ProfileInput!) { updateProfile(input: $input) { id profession job fieldOfStudy interests hobbies profileCompleted } }', {
+    input: { name: 'Test Ada', profession: 'Engineer', job: 'Developer', fieldOfStudy: 'Computer science', interests: ['Music', 'Technology'], hobbies: ['Cycling'] },
+  }, first.token)).updateProfile;
+  assert.equal(updated.profileCompleted, true);
+  assert.deepEqual(updated.interests, ['Music', 'Technology']);
+  assert.ok((await graphql('mutation($input: ProfileInput!) { updateProfile(input: $input) { id } }', {
+    input: { name: 'Other', profession: '', job: '', fieldOfStudy: '', interests: ['Music'], hobbies: [] },
+  })).errors?.length, 'anonymous profile updates must fail');
   assert.ok((await graphql(register, { input: firstInput })).errors?.length, 'duplicate email should fail');
 
   const login = `mutation($input: LoginInput!) {

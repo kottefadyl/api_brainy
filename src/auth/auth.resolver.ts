@@ -1,6 +1,6 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AuthService } from './auth.service';
-import { AuthPayload, LoginInput, RegisterInput } from './auth.types';
+import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types';
 import { User } from './user.schema';
 
 type GraphqlRequest = { headers: { authorization?: string } };
@@ -27,5 +27,14 @@ export class AuthResolver {
   @Query(() => User)
   me(@Context('req') request: GraphqlRequest): Promise<User> {
     return this.auth.currentUser(request.headers.authorization);
+  }
+
+  @Mutation(() => User)
+  async updateProfile(
+    @Args('input') input: ProfileInput,
+    @Context('req') request: GraphqlRequest,
+  ): Promise<User> {
+    const user = await this.auth.currentUser(request.headers.authorization);
+    return this.auth.updateProfile(user.id, input);
   }
 }
