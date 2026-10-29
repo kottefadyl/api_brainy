@@ -14,8 +14,9 @@ import { MeasurementService } from './measurement.service';
 import { CollaborationService } from './collaboration.service';
 import { CollectionRole } from './collaboration.schema';
 import { parsePosition, parseZone } from './geo.logic';
+import { assertWorkflowEdit, importedWorkflowHistory, prepareWorkflowCreate, prepareWorkflowImport } from './workflow.rules';
 
-const formatColors = [
+export const formatColors = [
   '#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF',
   '#FFF0F4', '#EAF8FA', '#FBF7E9', '#F1F8ED',
   '#F8F0FA', '#F1F5FA', '#FFF7F1', '#EFF8FF',
@@ -403,6 +404,13 @@ export class CollectionsService {
       throw new BadRequestException('Data format names must be unique within a collection');
     }
     const fields = this.validateFields(input.fields, new Set(current.fields.map((field) => field.id)));
+    if (current.workflow) {
+      const before = current.fields.find((field) => field.id === current.workflow!.stateFieldId);
+      const after = fields.find((field) => field.id === current.workflow!.stateFieldId);
+      if (!after || after.kind !== FieldKind.SELECT || JSON.stringify(after.options ?? []) !== JSON.stringify(before?.options ?? []) || current.workflow.requirements.some((item) => item.fieldIds.some((id) => !fields.some((field) => field.id === id)))) {
+        throw new BadRequestException('Keep the workflow state field and its choices while the workflow is enabled');
+      }
+    }
     if (current.objectModel && !fields.some((field) => field.kind === FieldKind.TITLE)) throw new BadRequestException('An object data format needs a title field');
     this.assertFieldUnits([{ ...current, fields }], collection.units);
     this.assertReferenceFields(collection.formats.map((item) => item.id === formatId ? { ...item, fields } : item), collection.sharedObjects);
@@ -806,7 +814,7 @@ export class CollectionsService {
     if (!input.rows.length || input.rows.length > 50) throw new BadRequestException('Import 1 to 50 rows at a time');
     const seen = new Set<string>();
     const errors: { sourceId: string; message: string }[] = [];
-    const rows: { sourceId: string; values: EntryValue[]; createdAt: Date; updatedAt: Date }[] = [];
+    const rows: { sourceId: string; values: EntryValue[]; createdAt: Date; updatedAt: Date; workflow?: { history: ReturnType<typeof importedWorkflowHistory> } }[] = [];
     for (const row of input.rows) {
       try {
         if (!row.sourceId || row.sourceId.length > 100 || /[\x00-\x1f\x7f]/.test(row.sourceId) || seen.has(row.sourceId)) throw new BadRequestException('Invalid or repeated source ID');
@@ -814,10 +822,11 @@ export class CollectionsService {
         const createdAt = new Date(row.createdAt);
         const updatedAt = new Date(row.updatedAt);
         if (Number.isNaN(createdAt.getTime()) || Number.isNaN(updatedAt.getTime()) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.createdAt) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.updatedAt) || updatedAt < createdAt) throw new BadRequestException('Invalid entry dates');
-        const values = this.validateValues(row.values, format.fields, [], collection.units, true, collection.codeLists ?? []);
+        const values = prepareWorkflowImport(format, this.validateValues(row.values, format.fields, [], collection.units, true, collection.codeLists ?? []));
+        const history = importedWorkflowHistory(format, values, row.workflowHistory, ownerId, new Date());
         await this.validateReferences(collection, format, values, ownerId);
         this.assertObjectTitle(format, values);
-        rows.push({ sourceId: row.sourceId, values, createdAt, updatedAt });
+        rows.push({ sourceId: row.sourceId, values, createdAt, updatedAt, workflow: history ? { history } : undefined });
       } catch (error) {
         errors.push({ sourceId: row.sourceId || '(missing)', message: error instanceof Error ? error.message : 'Invalid row' });
       }
@@ -828,7 +837,7 @@ export class CollectionsService {
     if (input.dryRun) return { validCount: rows.length, createdCount: 0, skippedCount, errors: [] };
     const result = await this.entries.bulkWrite(rows.map((row) => ({ updateOne: {
       filter: { ownerId, collectionId, importKey: input.importKey, sourceId: row.sourceId },
-      update: { $setOnInsert: { ownerId, collectionId, importKey: input.importKey, sourceId: row.sourceId, formatId: format.id, formatVersion: format.version ?? 1, values: row.values, createdAt: row.createdAt, updatedAt: row.updatedAt } },
+      update: { $setOnInsert: { ownerId, collectionId, importKey: input.importKey, sourceId: row.sourceId, formatId: format.id, formatVersion: format.version ?? 1, values: row.values, workflow: row.workflow, createdAt: row.createdAt, updatedAt: row.updatedAt } },
       upsert: true,
       timestamps: false,
     } })), { ordered: false, timestamps: false });
@@ -873,7 +882,7 @@ export class CollectionsService {
       ? collection.formats.find((item) => item.id === formatId)
       : collection.formats[0];
     if (!format) throw new BadRequestException('Data format not found in this collection');
-    const validated = this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []);
+    const validated = prepareWorkflowCreate(format, this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []));
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
     let entry: Entry;
@@ -1072,10 +1081,11 @@ export class CollectionsService {
     const format = collection.formats.find((item) => item.id === savedFormatId);
     if (!format) throw new BadRequestException('Data format not found in this collection');
     const validated = this.validateValues(values, format.fields, entry.values, collection.units, false, collection.codeLists ?? []);
+    assertWorkflowEdit(format, entry.values, validated);
     await this.validateReferences(collection, format, validated, collection.ownerId, entry.id, entry.values);
     this.assertObjectTitle(format, validated);
     const saved = await this.entries.findOneAndUpdate(
-      { _id: id, movingOperationId: null, ...(expectedUpdatedAt ? { updatedAt: entry.updatedAt } : {}) }, { $set: { formatId: savedFormatId, formatVersion: format.version ?? 1, values: validated, ...(clientMutationId ? { lastMutationId: clientMutationId } : {}) }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } },
+      { _id: id, movingOperationId: null, ...(expectedUpdatedAt || format.workflow ? { updatedAt: entry.updatedAt } : {}) }, { $set: { formatId: savedFormatId, formatVersion: format.version ?? 1, values: validated, ...(clientMutationId ? { lastMutationId: clientMutationId } : {}) }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } },
       { new: true, runValidators: true },
     ).exec();
     if (!saved) throw new BadRequestException('This entry changed elsewhere. Review the conflict before syncing');

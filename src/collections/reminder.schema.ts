@@ -6,9 +6,11 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 export class EntryReminder {
   @Field(() => ID) id!: string;
   @Field() @Prop({ required: true, index: true }) ownerId!: string;
+  @Prop({ index: true }) recipientUserId?: string;
   @Field() @Prop({ required: true, index: true }) collectionId!: string;
   @Field() @Prop({ required: true, index: true }) entryId!: string;
   @Field() @Prop({ required: true }) fieldId!: string;
+  @Prop() workflowKind?: string;
   @Field({ nullable: true }) @Prop() viewId?: string;
   @Field() @Prop({ required: true }) timeZone!: string;
   @Field({ nullable: true }) @Prop() timeOfDay?: string;

@@ -65,7 +65,31 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
 
   async list(entryId: string, ownerId: string): Promise<EntryReminder[]> {
     await this.ownedEntry(entryId, ownerId);
-    return this.reminders.find({ entryId, ownerId, state: { $ne: 'CANCELLED' } }).sort({ createdAt: -1 }).exec();
+    return this.reminders.find({ entryId, ownerId, fieldId: { $not: /^workflow:/ }, state: { $ne: 'CANCELLED' } }).sort({ createdAt: -1 }).exec();
+  }
+
+  async scheduleWorkflow(entry: Entry, recipientUserId: string | undefined, dueAt?: Date, minutesBefore = 60, kind: 'ASSIGNMENT' | 'DUE' = 'DUE'): Promise<void> {
+    const fieldId = kind === 'DUE' ? 'workflow:due' : 'workflow:assignment';
+    if (!recipientUserId || (kind === 'DUE' && !dueAt)) {
+      await this.reminders.updateMany({ ownerId: entry.ownerId, entryId: entry.id, fieldId, state: 'ACTIVE' }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec();
+      return;
+    }
+    const capabilities = this.capabilities();
+    const channels = [
+      ...(capabilities.email ? ['EMAIL'] : []),
+      ...(capabilities.push && await this.devices.exists({ ownerId: recipientUserId }) ? ['PUSH'] : []),
+    ];
+    if (!channels.length) {
+      await this.reminders.updateMany({ ownerId: entry.ownerId, entryId: entry.id, fieldId, state: 'ACTIVE' }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec();
+      return;
+    }
+    const occurrenceAt = dueAt ?? new Date();
+    const nextAt = kind === 'ASSIGNMENT' ? new Date() : new Date(Math.max(Date.now(), occurrenceAt.getTime() - minutesBefore * 60_000));
+    await this.reminders.findOneAndUpdate(
+      { ownerId: entry.ownerId, entryId: entry.id, fieldId, state: 'ACTIVE' },
+      { $set: { ownerId: entry.ownerId, recipientUserId, collectionId: entry.collectionId, entryId: entry.id, fieldId, workflowKind: kind, timeZone: 'UTC', minutesBefore, channels, state: 'ACTIVE', occurrenceAt, nextAt, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } },
+      { upsert: true, new: true, runValidators: true },
+    ).exec();
   }
 
   async devicesFor(ownerId: string): Promise<PushDevice[]> { return this.devices.find({ ownerId }).sort({ lastSeenAt: -1 }).exec(); }
@@ -156,7 +180,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
 
   private async send(channel: string, reminder: EntryReminder, key: string, device?: PushDevice): Promise<void> {
     const entry = await this.entries.findOne({ _id: reminder.entryId, ownerId: reminder.ownerId }).exec();
-    const user = await this.users.findById(reminder.ownerId).exec();
+    const user = await this.users.findById(reminder.recipientUserId ?? reminder.ownerId).exec();
     if (!entry || !user) throw new Error('Reminder owner or entry is unavailable');
     const collection = await this.collections.findOne({ _id: reminder.collectionId, ownerId: reminder.ownerId }).exec();
     const format = collection?.formats.find((item) => item.id === entry.formatId);
@@ -168,18 +192,18 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
       if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid SMTP port');
       const secure = process.env.SMTP_SECURE === 'true';
       const transport = nodemailer.createTransport({ host, port, secure, requireTLS: !secure && process.env.SMTP_REQUIRE_TLS !== 'false', auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD ?? '' } : undefined });
-      await transport.sendMail({ from: process.env.SMTP_FROM, to: user.email, subject: 'Brainy reminder', text: `${body}\n${reminder.occurrenceAt?.toISOString() ?? ''} (${reminder.timeZone})`, messageId: `<${key}@brainy-reminder.local>` });
+      await transport.sendMail({ from: process.env.SMTP_FROM, to: user.email, subject: reminder.workflowKind === 'ASSIGNMENT' ? 'Brainy assignment' : 'Brainy reminder', text: `${body}\n${reminder.occurrenceAt?.toISOString() ?? ''} (${reminder.timeZone})`, messageId: `<${key}@brainy-reminder.local>` });
       return;
     }
     if (!device) throw new Error('No push device is registered');
     const messaging = getMessaging(await this.pushApp());
-    const payload = { notification: { title: 'Brainy reminder', body }, data: { reminderId: reminder.id, occurrenceAt: reminder.occurrenceAt?.toISOString() ?? '', key }, android: { collapseKey: key.slice(0, 64) }, webpush: { notification: { tag: key, renotify: false } } };
+    const payload = { notification: { title: reminder.workflowKind === 'ASSIGNMENT' ? 'Brainy assignment' : 'Brainy reminder', body }, data: { reminderId: reminder.id, occurrenceAt: reminder.occurrenceAt?.toISOString() ?? '', key }, android: { collapseKey: key.slice(0, 64) }, webpush: { notification: { tag: key, renotify: false } } };
     try {
       if (device.targetKind === 'FID') await messaging.send({ ...payload, fid: device.token });
       else await messaging.send({ ...payload, token: device.token });
     } catch (error) {
       const code = (error as { code?: string }).code;
-      if (['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(code ?? '')) await this.devices.deleteOne({ _id: device.id, ownerId: reminder.ownerId }).exec();
+      if (['messaging/registration-token-not-registered', 'messaging/invalid-registration-token'].includes(code ?? '')) await this.devices.deleteOne({ _id: device.id, ownerId: reminder.recipientUserId ?? reminder.ownerId }).exec();
       throw error;
     }
   }
@@ -212,7 +236,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
         const reminder = await this.reminders.findOneAndUpdate({ state: 'ACTIVE', nextAt: { $lte: now }, $or: [{ lockedUntil: null }, { lockedUntil: { $lt: now } }] }, { $set: { lockedUntil: new Date(now.getTime() + 120_000), lockToken: token } }, { sort: { nextAt: 1 }, new: true }).exec();
         if (!reminder) break;
         try {
-          const pushDevices = reminder.channels.includes('PUSH') ? await this.devices.find({ ownerId: reminder.ownerId }).exec() : [];
+          const pushDevices = reminder.channels.includes('PUSH') ? await this.devices.find({ ownerId: reminder.recipientUserId ?? reminder.ownerId }).exec() : [];
           const deliveries = [
             ...(reminder.channels.includes('EMAIL') ? [this.sendOnce('EMAIL', reminder)] : []),
             ...(reminder.channels.includes('PUSH') && !pushDevices.length ? [Promise.reject(new Error('No push device is registered'))] : []),

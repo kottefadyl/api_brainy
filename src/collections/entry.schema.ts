@@ -1,6 +1,7 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { UnitSnapshot, UnitSnapshotSchema } from './unit.schema';
+import { EntryWorkflow, EntryWorkflowSchema } from './workflow.schema';
 
 @ObjectType()
 @Schema({ _id: false })
@@ -208,6 +209,10 @@ export class Entry {
   @Field(() => EntryRecurrence, { nullable: true })
   @Prop({ type: EntryRecurrenceSchema })
   recurrence?: EntryRecurrence;
+
+  @Field(() => EntryWorkflow, { nullable: true })
+  @Prop({ type: EntryWorkflowSchema })
+  workflow?: EntryWorkflow;
 
   @Field(() => [EntryRevision])
   @Prop({ type: [EntryRevisionSchema], default: [] })

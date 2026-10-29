@@ -4,6 +4,7 @@ import { CollectionExchangeRate, CollectionExchangeRateSchema, CollectionUnit, C
 import { ObjectPropertySnapshot, ObjectPropertySnapshotSchema } from './entry.schema';
 import { StockRule, StockRuleSchema } from './stock.schema';
 import { CollectionMember, CollectionMemberSchema } from './collaboration.schema';
+import { WorkflowDefinition, WorkflowDefinitionSchema } from './workflow.schema';
 
 export enum FieldKind {
   TITLE = 'TITLE',
@@ -118,6 +119,7 @@ export class CollectionFormat {
 
   @Field({ nullable: true }) @Prop() copiedFromFormatId?: string;
   @Field(() => LinkedFormatSource, { nullable: true }) @Prop({ type: LinkedFormatSourceSchema }) linkedSource?: LinkedFormatSource;
+  @Field(() => WorkflowDefinition, { nullable: true }) @Prop({ type: WorkflowDefinitionSchema }) workflow?: WorkflowDefinition;
 }
 
 export const CollectionFormatSchema = SchemaFactory.createForClass(CollectionFormat);
@@ -328,6 +330,7 @@ export class Collection {
   @Prop({ type: [CollectionMemberSchema], default: [] })
   members?: CollectionMember[];
 
+  @Field()
   @Prop({ required: true, index: true })
   ownerId!: string;
 }

@@ -38,6 +38,9 @@ import { ZoneAnalysisService } from './zone-analysis.service';
 import { BackgroundJob, BackgroundJobSchema } from './background-job.schema';
 import { BackgroundJobService } from './background-job.service';
 import { BackgroundJobResolver } from './background-job.resolver';
+import { WorkflowNotification, WorkflowNotificationSchema } from './workflow.schema';
+import { WorkflowResolver } from './workflow.resolver';
+import { WorkflowService } from './workflow.service';
 
 @Module({
   imports: [
@@ -56,9 +59,10 @@ import { BackgroundJobResolver } from './background-job.resolver';
       { name: PushDevice.name, schema: PushDeviceSchema },
       { name: AuditLog.name, schema: AuditLogSchema },
       { name: BackgroundJob.name, schema: BackgroundJobSchema },
+      { name: WorkflowNotification.name, schema: WorkflowNotificationSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}

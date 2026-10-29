@@ -1,5 +1,6 @@
 import { Field, InputType, registerEnumType } from '@nestjs/graphql';
 import { FieldKind } from './collection.schema';
+import { WorkflowEventImportInput } from './workflow.schema';
 
 @InputType()
 export class SavedCollectionViewInput {
@@ -253,6 +254,9 @@ export class ImportEntryRowInput {
 
   @Field(() => [EntryValueInput])
   values!: EntryValueInput[];
+
+  @Field(() => [WorkflowEventImportInput], { nullable: true })
+  workflowHistory?: WorkflowEventImportInput[];
 }
 
 @InputType()
