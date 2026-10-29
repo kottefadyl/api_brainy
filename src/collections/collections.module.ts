@@ -35,6 +35,9 @@ import { ClassificationService } from './classification.service';
 import { GeoResolver } from './geo.resolver';
 import { GeoService } from './geo.service';
 import { ZoneAnalysisService } from './zone-analysis.service';
+import { BackgroundJob, BackgroundJobSchema } from './background-job.schema';
+import { BackgroundJobService } from './background-job.service';
+import { BackgroundJobResolver } from './background-job.resolver';
 
 @Module({
   imports: [
@@ -52,9 +55,10 @@ import { ZoneAnalysisService } from './zone-analysis.service';
       { name: ReminderDelivery.name, schema: ReminderDeliverySchema },
       { name: PushDevice.name, schema: PushDeviceSchema },
       { name: AuditLog.name, schema: AuditLogSchema },
+      { name: BackgroundJob.name, schema: BackgroundJobSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}
