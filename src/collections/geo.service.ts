@@ -6,8 +6,9 @@ import { CollectionRole } from './collaboration.schema';
 import { Collection, FieldKind } from './collection.schema';
 import { EntryFieldFilterInput } from './collection.input';
 import { CollectionsService } from './collections.service';
+import { AnalysisService } from './analysis.service';
 import { Entry } from './entry.schema';
-import { distanceMeters, insideZone, parsePosition, parseZone, Position } from './geo.logic';
+import { distanceMeters, parsePosition, Position } from './geo.logic';
 
 type ImportRow = { sourceId: string; name: string; position: Position };
 
@@ -36,6 +37,7 @@ export class GeoService {
     @InjectModel(Entry.name) private readonly entries: Model<Entry>,
     private readonly collaboration: CollaborationService,
     private readonly collectionService: CollectionsService,
+    private readonly analysisService: AnalysisService,
   ) {}
 
   private async context(id: string, userId: string, role = CollectionRole.READER): Promise<Collection> {
@@ -84,22 +86,10 @@ export class GeoService {
     return { value: String(unit === 'km' ? metres / 1000 : metres), unit };
   }
 
-  async zoneSummary(collectionId: string, userId: string, positionFormatId: string, positionFieldId: string, zoneFormatId: string, zoneFieldId: string) {
-    const collection = await this.context(collectionId, userId);
-    this.positionField(collection, positionFormatId, positionFieldId);
-    const zoneFormat = collection.formats.find((item) => item.id === zoneFormatId);
-    if (!zoneFormat?.fields.some((item) => item.id === zoneFieldId && item.kind === FieldKind.ZONE)) throw new BadRequestException('Choose a zone field');
-    const [positions, zoneEntries] = await Promise.all([
-      this.entries.find({ collectionId, ownerId: collection.ownerId, formatId: positionFormatId, values: { $elemMatch: { fieldId: positionFieldId } } }).limit(10001).exec(),
-      this.entries.find({ collectionId, ownerId: collection.ownerId, formatId: zoneFormatId, values: { $elemMatch: { fieldId: zoneFieldId } } }).limit(101).exec(),
-    ]);
-    if (positions.length > 10000 || zoneEntries.length > 100) throw new BadRequestException('Narrow the map to 10000 points and 100 zones');
-    const points = positions.flatMap((entry) => { try { return [parsePosition(entry.values.find((item) => item.fieldId === positionFieldId)!.value)]; } catch { return []; } });
-    const titleId = zoneFormat.fields.find((item) => item.kind === FieldKind.TITLE)?.id;
-    return zoneEntries.map((entry) => {
-      const zone = parseZone(entry.values.find((item) => item.fieldId === zoneFieldId)!.value);
-      return { zoneEntryId: entry.id, label: entry.values.find((item) => item.fieldId === titleId)?.value || entry.id, count: points.filter((point) => insideZone(point, zone)).length };
-    });
+  async zoneSummary(collectionId: string, userId: string, positionFormatId: string, positionFieldId: string, zoneFormatId: string, zoneFieldId: string, search?: string, filters?: EntryFieldFilterInput[], viewId?: string) {
+    await this.context(collectionId, userId);
+    const result = await this.analysisService.analyse(collectionId, userId, { formatId: positionFormatId, groupFieldId: positionFieldId, zoneFormatId, zoneFieldId, operation: 'COUNT', groupBy: 'ZONE', measureKind: 'EVENT', search, filters, viewId });
+    return result.rows.map((row) => ({ zoneEntryId: row.group, label: row.label, count: row.count }));
   }
 
   private records(text: string, kind: string): { rows: ImportRow[]; errors: { row: number; message: string }[] } {

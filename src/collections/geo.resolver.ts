@@ -47,7 +47,7 @@ export class GeoResolver {
   private async user(request: Request) { return (await this.auth.currentUser(request.headers.authorization)).id; }
 
   @Query(() => GeoPage)
-  async collectionGeoPage(@Args('collectionId') collectionId: string, @Args('formatId') formatId: string, @Args('fieldId') fieldId: string, @Args('first', { type: () => Int }) first: number, @Args('after', { nullable: true }) after: string | undefined, @Args('search', { nullable: true }) search: string | undefined, @Args('filters', { type: () => [EntryFieldFilterInput], nullable: true }) filters: EntryFieldFilterInput[] | undefined, @Args('viewId', { nullable: true }) viewId: string | undefined, @Context('req') request: Request) {
+  async collectionGeoPage(@Args('collectionId') collectionId: string, @Args('formatId') formatId: string, @Args('fieldId') fieldId: string, @Args('first', { type: () => Int }) first: number, @Args('after', { type: () => String, nullable: true }) after: string | undefined, @Args('search', { type: () => String, nullable: true }) search: string | undefined, @Args('filters', { type: () => [EntryFieldFilterInput], nullable: true }) filters: EntryFieldFilterInput[] | undefined, @Args('viewId', { type: () => String, nullable: true }) viewId: string | undefined, @Context('req') request: Request) {
     return this.service.page(collectionId, await this.user(request), formatId, fieldId, first, after, search, filters, viewId);
   }
 
@@ -57,8 +57,8 @@ export class GeoResolver {
   }
 
   @Query(() => [GeoZoneCount])
-  async collectionGeoZoneSummary(@Args('collectionId') collectionId: string, @Args('positionFormatId') positionFormatId: string, @Args('positionFieldId') positionFieldId: string, @Args('zoneFormatId') zoneFormatId: string, @Args('zoneFieldId') zoneFieldId: string, @Context('req') request: Request) {
-    return this.service.zoneSummary(collectionId, await this.user(request), positionFormatId, positionFieldId, zoneFormatId, zoneFieldId);
+  async collectionGeoZoneSummary(@Args('collectionId') collectionId: string, @Args('positionFormatId') positionFormatId: string, @Args('positionFieldId') positionFieldId: string, @Args('zoneFormatId') zoneFormatId: string, @Args('zoneFieldId') zoneFieldId: string, @Args('search', { type: () => String, nullable: true }) search: string | undefined, @Args('filters', { type: () => [EntryFieldFilterInput], nullable: true }) filters: EntryFieldFilterInput[] | undefined, @Args('viewId', { type: () => String, nullable: true }) viewId: string | undefined, @Context('req') request: Request) {
+    return this.service.zoneSummary(collectionId, await this.user(request), positionFormatId, positionFieldId, zoneFormatId, zoneFieldId, search, filters, viewId);
   }
 
   @Query(() => GeoImportResult)

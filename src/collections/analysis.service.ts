@@ -7,6 +7,7 @@ import { executeRegisteredOperation, getOperationSpec, ObservationRecord } from 
 import { EntryFieldFilterInput, EntryFilterOperator } from './collection.input';
 import { Collection, CollectionField, CollectionFormula, FieldKind } from './collection.schema';
 import { codeAtDepth } from './classification.logic';
+import { ZoneAnalysisService } from './zone-analysis.service';
 import { Entry } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
 
@@ -17,7 +18,7 @@ const negate = (a: Rational): Rational => ({ n: -a.n, d: a.d });
 
 @Injectable()
 export class AnalysisService {
-  constructor(@InjectModel(Collection.name) private readonly collections: Model<Collection>, @InjectModel(Entry.name) private readonly entries: Model<Entry>) {}
+  constructor(@InjectModel(Collection.name) private readonly collections: Model<Collection>, @InjectModel(Entry.name) private readonly entries: Model<Entry>, private readonly zoneAnalysis: ZoneAnalysisService) {}
 
   private async collection(collectionId: string, ownerId: string): Promise<Collection> {
     if (!Types.ObjectId.isValid(collectionId)) throw new NotFoundException('Collection not found');
@@ -210,6 +211,7 @@ export class AnalysisService {
     const collection = await this.collection(collectionId, ownerId);
     const format = collection.formats.find((item) => item.id === input.formatId);
     if (!format) throw new BadRequestException('Data format not found');
+    if (input.groupBy === 'ZONE') return this.zoneAnalysis.analyse(collection, ownerId, input);
     const spec = getOperationSpec(input.operation);
     if (!['NONE', 'DAY', 'MONTH', 'CATEGORY', 'OBJECT'].includes(input.groupBy) || !['EVENT', 'SNAPSHOT', 'RATE'].includes(input.measureKind)) {
       throw new BadRequestException('Choose a valid analysis');

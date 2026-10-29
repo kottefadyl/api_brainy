@@ -37,6 +37,10 @@ export class AnalysisInput {
   @Field({ nullable: true }) formulaId?: string;
   @Field({ nullable: true }) dateFieldId?: string;
   @Field({ nullable: true }) groupFieldId?: string;
+  @Field({ nullable: true }) zoneFormatId?: string;
+  @Field({ nullable: true }) zoneFieldId?: string;
+  @Field({ nullable: true }) search?: string;
+  @Field({ nullable: true }) viewId?: string;
   @Field() groupBy!: string;
   @Field({ nullable: true }) secondaryGroupBy?: string;
   @Field({ nullable: true }) secondaryGroupFieldId?: string;
