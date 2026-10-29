@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Collection } from './collection.schema';
+import { Collection, FieldKind } from './collection.schema';
 import { AuditLog, CollectionMember, CollectionRole } from './collaboration.schema';
 import { User } from '../auth/user.schema';
 import { Entry } from './entry.schema';
@@ -39,17 +39,19 @@ export class CollaborationService {
     return { role: member.role, member };
   }
 
-  filterEntryFields(entry: Entry, member?: CollectionMember): Entry {
-    if (!member || !member.sharedFieldIds || member.sharedFieldIds.length === 0) {
+  filterEntryFields(entry: Entry, member?: CollectionMember, collection?: Collection): Entry {
+    if (!member) {
       return entry;
     }
 
-    const allowed = new Set(member.sharedFieldIds);
+    const explicit = (member.sharedFieldIds?.length ?? 0) > 0;
+    const allowed = new Set(member.sharedFieldIds ?? []);
+    const sensitive = new Set(collection?.formats.flatMap((format) => format.fields.filter((field) => field.kind === FieldKind.POSITION || field.kind === FieldKind.ZONE).map((field) => field.id)) ?? []);
     const doc = typeof (entry as any).toObject === 'function' ? (entry as any).toObject() : entry;
     return {
       ...doc,
       id: entry.id ?? doc._id?.toString(),
-      values: (entry.values ?? []).filter((v) => allowed.has(v.fieldId)),
+      values: (entry.values ?? []).filter((v) => explicit ? allowed.has(v.fieldId) : !sensitive.has(v.fieldId)),
     } as Entry;
   }
 
@@ -154,3 +156,4 @@ export class CollaborationService {
     return this.auditLogsModel.find({ collectionId }).sort({ occurredAt: -1 }).limit(100).exec();
   }
 }
+

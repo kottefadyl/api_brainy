@@ -67,6 +67,9 @@ export class CollectionFieldInput {
 
   @Field({ nullable: true })
   referenceMode?: string;
+
+  @Field({ nullable: true })
+  codeListId?: string;
 }
 
 @InputType()
@@ -103,6 +106,23 @@ export class CollectionFormatInput {
 }
 
 @InputType()
+export class InitialCodeInput {
+  @Field() code!: string;
+  @Field() labelEn!: string;
+  @Field() labelFr!: string;
+  @Field({ nullable: true }) parentCode?: string;
+  @Field({ nullable: true }) active?: boolean;
+  @Field({ nullable: true }) mergedInto?: string;
+}
+
+@InputType()
+export class InitialCodeListInput {
+  @Field({ nullable: true }) id?: string;
+  @Field() name!: string;
+  @Field(() => [InitialCodeInput]) codes!: InitialCodeInput[];
+}
+
+@InputType()
 export class CreateCollectionInput {
   @Field()
   name!: string;
@@ -113,6 +133,9 @@ export class CreateCollectionInput {
 
   @Field(() => [CollectionFormatInput], { nullable: true })
   formats?: CollectionFormatInput[];
+
+  @Field(() => [InitialCodeListInput], { nullable: true })
+  codeLists?: InitialCodeListInput[];
 
   @Field(() => [CollectionUnitInput], { nullable: true })
   units?: CollectionUnitInput[];

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, OnApplicationBootst
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { Collection, CollectionField, CollectionFormat, CollectionFormula, LinkedFormatUpdatePreview, MoveOperationStatus, SharedObjectGrant, TransferPreview, TransferResult } from './collection.schema';
+import { ClassificationList, Collection, CollectionField, CollectionFormat, CollectionFormula, LinkedFormatUpdatePreview, MoveOperationStatus, SharedObjectGrant, TransferPreview, TransferResult } from './collection.schema';
 import { Entry, EntryValue, ObjectPropertySnapshot, ObjectReferenceSnapshot } from './entry.schema';
 import { CollectionUnit, UnitSnapshot } from './unit.schema';
 import { MoveOperation } from './move-operation.schema';
@@ -11,7 +11,7 @@ import { StockMovement } from './stock.schema';
 import { EntryRelation } from './relation.schema';
 
 const colors = ['#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF', '#FFF0F4', '#EAF8FA', '#FBF7E9', '#F1F8ED', '#F8F0FA', '#F1F5FA', '#FFF7F1', '#EFF8FF', '#FDEFF7', '#EDF7FF', '#F7FBEA', '#FFF0E8', '#EFEFFD', '#E9F8F4', '#FBF1E8', '#F0F8F9', '#FFF2EF', '#F4F8E8', '#F1F2FF', '#EFFAF0'];
-type CopyPlan = { source: Collection; target: Collection; formats: CollectionFormat[]; units: CollectionUnit[]; formulas: CollectionFormula[]; entries: Entry[]; relations: EntryRelation[]; conflicts: string[]; colors: Map<string, string> };
+type CopyPlan = { source: Collection; target: Collection; formats: CollectionFormat[]; units: CollectionUnit[]; codeLists: ClassificationList[]; formulas: CollectionFormula[]; entries: Entry[]; relations: EntryRelation[]; conflicts: string[]; colors: Map<string, string> };
 
 @Injectable()
 export class TransferService implements OnApplicationBootstrap {
@@ -149,14 +149,19 @@ export class TransferService implements OnApplicationBootstrap {
       }
     }
     const formats = source.formats.filter((item) => formatIds.has(item.id));
+    const requiredListIds = new Set(formats.flatMap((format) => format.fields.map((field) => field.codeListId).filter((id): id is string => !!id)));
+    const codeLists = (source.codeLists ?? []).filter((item) => requiredListIds.has(item.id));
+    if (codeLists.length !== requiredListIds.size) conflicts.push('A required code list is missing');
     const units = source.units.filter((item) => unitIds.has(item.id));
     const formulas = (source.formulas ?? []).filter((item) => formatIds.has(item.formatId));
     for (const formula of formulas) if (formula.dependencies.some((id) => !formulas.some((candidate) => candidate.id === id))) conflicts.push(`Formula dependency is missing: ${formula.name}`);
     if (target.formats.length + formats.length > 24) conflicts.push('The target collection has no room for these data formats');
     if (target.units.length + units.length > 100) conflicts.push('The target collection has no room for these units');
+    if ((target.codeLists?.length ?? 0) + codeLists.length > 100) conflicts.push('The target collection has no room for these code lists');
     if ((target.formulas?.length ?? 0) + formulas.length > 100) conflicts.push('The target collection has no room for these formulas');
     for (const format of formats) if (target.formats.some((item) => item.name.toLocaleLowerCase() === format.name.toLocaleLowerCase())) conflicts.push(`Data format name already exists: ${format.name}`);
     for (const unit of units) if (target.units.some((item) => item.name.toLocaleLowerCase() === unit.name.toLocaleLowerCase() || item.symbol.toLocaleLowerCase() === unit.symbol.toLocaleLowerCase())) conflicts.push(`Unit already exists: ${unit.name}`);
+    for (const list of codeLists) if ((target.codeLists ?? []).some((item) => item.name.toLocaleLowerCase() === list.name.toLocaleLowerCase())) conflicts.push(`Code list already exists: ${list.name}`);
     if (entryMap.size > 500) conflicts.push('Copy at most 500 entries at a time');
     const usedColors = new Set(target.formats.map((item) => item.color));
     const chosenColors = new Map<string, string>();
@@ -166,11 +171,11 @@ export class TransferService implements OnApplicationBootstrap {
       usedColors.add(color);
       chosenColors.set(format.id, color);
     }
-    return { source, target, formats, units, formulas, entries: [...entryMap.values()], relations: sourceRelations.filter((edge) => entryMap.has(edge.fromEntryId) && entryMap.has(edge.toEntryId)), conflicts: [...new Set(conflicts)], colors: chosenColors };
+    return { source, target, formats, units, codeLists, formulas, entries: [...entryMap.values()], relations: sourceRelations.filter((edge) => entryMap.has(edge.fromEntryId) && entryMap.has(edge.toEntryId)), conflicts: [...new Set(conflicts)], colors: chosenColors };
   }
 
   private summary(plan: CopyPlan): TransferPreview {
-    return { sourceName: plan.source.name, targetName: plan.target.name, dataFormats: plan.formats.map((item) => item.name), units: plan.units.map((item) => item.name), formulas: plan.formulas.map((item) => item.name), objects: plan.entries.filter((entry) => plan.source.formats.some((format) => format.id === entry.formatId && format.objectModel)).length, entries: plan.entries.length, relations: plan.relations.length, conflicts: plan.conflicts, allowed: plan.conflicts.length === 0, stockMovementCount: 0 };
+    return { sourceName: plan.source.name, targetName: plan.target.name, dataFormats: plan.formats.map((item) => item.name), units: plan.units.map((item) => item.name), codeLists: plan.codeLists.map((item) => item.name), formulas: plan.formulas.map((item) => item.name), objects: plan.entries.filter((entry) => plan.source.formats.some((format) => format.id === entry.formatId && format.objectModel)).length, entries: plan.entries.length, relations: plan.relations.length, conflicts: plan.conflicts, allowed: plan.conflicts.length === 0, stockMovementCount: 0 };
   }
 
   async objectPreview(objectId: string, targetCollectionId: string, ownerId: string): Promise<TransferPreview> {
@@ -231,10 +236,12 @@ export class TransferService implements OnApplicationBootstrap {
     const formatIds = new Map(plan.formats.map((format) => [format.id, randomUUID()]));
     const fieldIds = new Map(plan.formats.flatMap((format) => format.fields.map((field) => [field.id, randomUUID()] as const)));
     const unitIds = new Map(plan.units.map((unit) => [unit.id, randomUUID()]));
+    const codeListIds = new Map(plan.codeLists.map((list) => [list.id, randomUUID()]));
     const formulaIds = new Map(plan.formulas.map((formula) => [formula.id, randomUUID()]));
     const entryIds = new Map(plan.entries.map((entry) => [entry.id, new Types.ObjectId().toString()]));
-    const copiedFormats = plan.formats.map((format): CollectionFormat => ({ id: formatIds.get(format.id)!, name: format.name, color: plan.colors.get(format.id)!, version: 1, objectModel: format.objectModel, copiedFromFormatId: format.id, ...(format.id === linkedRootFormatId ? { linkedSource: { sourceCollectionId: plan.source.id, sourceFormatId: format.id, acceptedVersion: format.version ?? 1, targetVersion: 1 } } : {}), fields: format.fields.map((field): CollectionField => ({ id: fieldIds.get(field.id)!, name: field.name, kind: field.kind, unit: field.unit?.startsWith('local:') ? `local:${unitIds.get(field.unit.slice(6))}` : field.unit, options: field.options, targetObjectFormatId: field.targetObjectFormatId ? formatIds.get(field.targetObjectFormatId) : undefined, multiple: field.multiple, variableName: field.variableName, referenceMode: field.referenceMode, ...(format.id === linkedRootFormatId ? { sourceFieldId: field.id } : {}) })) }));
+    const copiedFormats = plan.formats.map((format): CollectionFormat => ({ id: formatIds.get(format.id)!, name: format.name, color: plan.colors.get(format.id)!, version: 1, objectModel: format.objectModel, copiedFromFormatId: format.id, ...(format.id === linkedRootFormatId ? { linkedSource: { sourceCollectionId: plan.source.id, sourceFormatId: format.id, acceptedVersion: format.version ?? 1, targetVersion: 1 } } : {}), fields: format.fields.map((field): CollectionField => ({ id: fieldIds.get(field.id)!, name: field.name, kind: field.kind, unit: field.unit?.startsWith('local:') ? `local:${unitIds.get(field.unit.slice(6))}` : field.unit, options: field.options, codeListId: field.codeListId ? codeListIds.get(field.codeListId) : undefined, targetObjectFormatId: field.targetObjectFormatId ? formatIds.get(field.targetObjectFormatId) : undefined, multiple: field.multiple, variableName: field.variableName, referenceMode: field.referenceMode, ...(format.id === linkedRootFormatId ? { sourceFieldId: field.id } : {}) })) }));
     const copiedUnits = plan.units.map((unit): CollectionUnit => ({ id: unitIds.get(unit.id)!, name: unit.name, symbol: unit.symbol, dimension: unit.dimension, factor: unit.factor, version: 1, copiedFromUnitId: unit.id, baseUnitId: unit.baseUnitId ? unitIds.get(unit.baseUnitId) ?? unit.baseUnitId : undefined, objectFormatId: unit.objectFormatId ? formatIds.get(unit.objectFormatId) : undefined }));
+    const copiedCodeLists: ClassificationList[] = plan.codeLists.map((list) => ({ id: codeListIds.get(list.id)!, name: list.name, version: 1, codes: list.codes.map((item) => ({ ...item })), copiedFromListId: list.id }));
     const transferKey = move?.transferKey ?? randomUUID();
     const remapExpression = (node: Record<string, unknown>): Record<string, unknown> => {
       const mapped = { ...node };
@@ -249,7 +256,7 @@ export class TransferService implements OnApplicationBootstrap {
     if (move) await move.prepared(rootObjectId ? entryIds.get(rootObjectId)! : '', [...formatIds.values()], [...unitIds.values()]);
     const targetId = plan.target.id;
     const targetUpdatedAt = (plan.target as Collection & { updatedAt?: Date }).updatedAt;
-    const target = await this.collections.findOneAndUpdate({ _id: targetId, ownerId: (plan.target as Collection & { ownerId: string }).ownerId, ...(targetUpdatedAt ? { updatedAt: targetUpdatedAt } : {}) }, { $push: { formats: { $each: copiedFormats }, units: { $each: copiedUnits }, formulas: { $each: copiedFormulas } } }, { new: true, runValidators: true }).exec();
+    const target = await this.collections.findOneAndUpdate({ _id: targetId, ownerId: (plan.target as Collection & { ownerId: string }).ownerId, ...(targetUpdatedAt ? { updatedAt: targetUpdatedAt } : {}) }, { $push: { formats: { $each: copiedFormats }, units: { $each: copiedUnits }, codeLists: { $each: copiedCodeLists }, formulas: { $each: copiedFormulas } } }, { new: true, runValidators: true }).exec();
     if (!target) throw new BadRequestException('Target collection changed. Review the copy again');
     try {
       const documents = plan.entries.map((entry) => ({ _id: new Types.ObjectId(entryIds.get(entry.id)!), ownerId: entry.ownerId, collectionId: targetId, formatId: formatIds.get(entry.formatId!), formatVersion: 1, values: entry.values.map((value) => this.remapValue(value, fieldIds, entryIds, unitIds, formatIds)), recurrence: entry.recurrence ? { startFieldId: fieldIds.get(entry.recurrence.startFieldId), endFieldId: fieldIds.get(entry.recurrence.endFieldId), timeZone: entry.recurrence.timeZone, frequency: entry.recurrence.frequency, interval: entry.recurrence.interval, untilDate: entry.recurrence.untilDate, excludedDates: entry.recurrence.excludedDates } : undefined, revisions: entry.revisions.map((revision) => ({ at: revision.at, formatVersion: revision.formatVersion, values: revision.values.map((value) => this.remapValue(value, fieldIds, entryIds, unitIds, formatIds)) })), sourceObjectId: entry.sourceObjectId ? entryIds.get(entry.sourceObjectId) : undefined, copiedFromCollectionId: plan.source.id, copiedFromEntryId: entry.id, transferKey, createdAt: entry.createdAt, updatedAt: entry.updatedAt }));
@@ -259,7 +266,7 @@ export class TransferService implements OnApplicationBootstrap {
     } catch (error) {
       await this.entries.deleteMany({ transferKey, collectionId: targetId }).exec();
       await this.relations.deleteMany({ transferKey, collectionId: targetId }).exec();
-      await this.collections.updateOne({ _id: targetId }, { $pull: { formats: { id: { $in: copiedFormats.map((item) => item.id) } }, units: { id: { $in: copiedUnits.map((item) => item.id) } }, formulas: { transferKey } } }).exec();
+      await this.collections.updateOne({ _id: targetId }, { $pull: { formats: { id: { $in: copiedFormats.map((item) => item.id) } }, units: { id: { $in: copiedUnits.map((item) => item.id) } }, codeLists: { id: { $in: copiedCodeLists.map((item) => item.id) } }, formulas: { transferKey } } }).exec();
       throw error;
     }
   }
@@ -308,13 +315,15 @@ export class TransferService implements OnApplicationBootstrap {
       if (unit && sourceUnit && (unit.dimension !== sourceUnit.dimension || unit.factor !== sourceUnit.factor || unit.symbol !== sourceUnit.symbol)) conflicts.push(`Review the changed unit for ${field.name} before accepting`);
       const objectFormat = field.targetObjectFormatId ? target.formats.find((item) => item.copiedFromFormatId === field.targetObjectFormatId) : undefined;
       if (field.targetObjectFormatId && !objectFormat) conflicts.push(`Copy the referenced object model before accepting ${field.name}`);
-      const mapped: CollectionField = { id: prior?.id ?? randomUUID(), sourceFieldId: field.id, name: field.name, kind: field.kind, unit: unit ? `local:${unit.id}` : field.unit, options: field.options, targetObjectFormatId: objectFormat?.id, multiple: field.multiple, variableName: field.variableName, referenceMode: field.referenceMode };
+      const codeList = field.codeListId ? target.codeLists?.find((item) => item.copiedFromListId === field.codeListId) : undefined;
+      if (field.codeListId && !codeList) conflicts.push(`Copy the required code list before accepting ${field.name}`);
+      const mapped: CollectionField = { id: prior?.id ?? randomUUID(), sourceFieldId: field.id, name: field.name, kind: field.kind, unit: unit ? `local:${unit.id}` : field.unit, options: field.options, codeListId: codeList?.id, targetObjectFormatId: objectFormat?.id, multiple: field.multiple, variableName: field.variableName, referenceMode: field.referenceMode };
       if (!prior) addedFields.push(field.name);
-      else if (prior.name !== mapped.name || prior.kind !== mapped.kind || prior.unit !== mapped.unit || JSON.stringify(prior.options ?? []) !== JSON.stringify(mapped.options ?? []) || prior.targetObjectFormatId !== mapped.targetObjectFormatId || prior.multiple !== mapped.multiple || prior.referenceMode !== mapped.referenceMode || prior.variableName !== mapped.variableName) {
+      else if (prior.name !== mapped.name || prior.kind !== mapped.kind || prior.unit !== mapped.unit || prior.codeListId !== mapped.codeListId || JSON.stringify(prior.options ?? []) !== JSON.stringify(mapped.options ?? []) || prior.targetObjectFormatId !== mapped.targetObjectFormatId || prior.multiple !== mapped.multiple || prior.referenceMode !== mapped.referenceMode || prior.variableName !== mapped.variableName) {
         changedFields.push(field.name);
         if ((prior.kind !== mapped.kind || prior.unit !== mapped.unit || prior.targetObjectFormatId !== mapped.targetObjectFormatId || prior.referenceMode !== mapped.referenceMode) && (target.formulas ?? []).some((formula) => formula.formatId === current.id && formula.expression.includes(`"${prior.id}"`))) conflicts.push(`Formula uses ${field.name}; review it before accepting this change`);
         const populated = await this.entries.exists({ ownerId, collectionId: target.id, formatId: current.id, 'values.fieldId': prior.id });
-        if (populated && (prior.kind !== mapped.kind || prior.unit !== mapped.unit || prior.targetObjectFormatId !== mapped.targetObjectFormatId || prior.multiple !== mapped.multiple || prior.referenceMode !== mapped.referenceMode || (prior.options ?? []).some((option) => !mapped.options?.includes(option)))) conflicts.push(`Field ${field.name} has saved values and cannot change incompatibly`);
+        if (populated && (prior.kind !== mapped.kind || prior.unit !== mapped.unit || prior.codeListId !== mapped.codeListId || prior.targetObjectFormatId !== mapped.targetObjectFormatId || prior.multiple !== mapped.multiple || prior.referenceMode !== mapped.referenceMode || (prior.options ?? []).some((option) => !mapped.options?.includes(option)))) conflicts.push(`Field ${field.name} has saved values and cannot change incompatibly`);
       }
       fields.push(mapped);
     }

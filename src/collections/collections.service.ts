@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { CollectionExchangeRateInput, CollectionFieldInput, CollectionFormatInput, CollectionUnitInput, CreateCollectionInput, EntryFieldFilterInput, EntryFilterOperator, EntryRecurrenceInput, EntryValueInput, ImportEntriesInput, ImportObjectLinkInput, SavedCollectionViewInput, UpdateCollectionFieldInput, UpdateCollectionFormatInput } from './collection.input';
+import { validateClassificationCodes } from './classification.logic';
 import { Collection, CollectionField, CollectionFormat, CollectionFormatImpact, FieldKind, ObjectModelTemplate, SavedCollectionView } from './collection.schema';
 import { CalendarOccurrence, Entry, EntryAttachment, EntryPage, EntryValue, ImportEntriesResult, ObjectPropertySnapshot, ObjectReferenceSnapshot, ResolvedObjectReference, ResolvedObjectVariable } from './entry.schema';
 import { addLocalDays, addLocalMonths, localDate, localTime, localToInstant, validTimeZone } from './time_math';
@@ -12,6 +13,7 @@ import { StockMovement } from './stock.schema';
 import { MeasurementService } from './measurement.service';
 import { CollaborationService } from './collaboration.service';
 import { CollectionRole } from './collaboration.schema';
+import { parsePosition, parseZone } from './geo.logic';
 
 const formatColors = [
   '#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF',
@@ -77,6 +79,7 @@ export class CollectionsService {
 
   private async ensureFormats(collection: Collection): Promise<Collection> {
     collection.units ??= [];
+    collection.codeLists ??= [];
     collection.exchangeRates ??= [];
     if (collection.formats?.length) return collection;
     const formatId = `legacy-${collection.id}`;
@@ -91,6 +94,7 @@ export class CollectionsService {
       { $set: { formatId } },
     ).exec();
     updated.units ??= [];
+    updated.codeLists ??= [];
     updated.exchangeRates ??= [];
     return updated;
   }
@@ -227,6 +231,9 @@ export class CollectionsService {
         throw new BadRequestException('Choice fields need 2 to 30 unique options');
       }
       const reference = field.kind === FieldKind.OBJECT_REF;
+      const codeListId = field.codeListId?.trim();
+      if (field.kind === FieldKind.CODE && !codeListId) throw new BadRequestException('Choose a code list in this collection');
+      if (field.kind !== FieldKind.CODE && codeListId) throw new BadRequestException('Only code fields can use a code list');
       const targetObjectFormatId = field.targetObjectFormatId?.trim();
       const variableName = field.variableName?.trim();
       const referenceMode = field.referenceMode ?? 'SNAPSHOT';
@@ -241,7 +248,7 @@ export class CollectionsService {
       if (requestedId && (!existingIds?.has(requestedId) || ids.has(requestedId))) throw new BadRequestException('Invalid or repeated field ID');
       const id = requestedId || randomUUID();
       ids.add(id);
-      return { id, name: fieldName, kind: field.kind, ...(unit ? { unit } : {}), ...(choice ? { options } : {}), ...(reference ? { targetObjectFormatId, multiple: field.multiple ?? false, variableName, referenceMode } : {}) };
+      return { id, name: fieldName, kind: field.kind, ...(unit ? { unit } : {}), ...(choice ? { options } : {}), ...(reference ? { targetObjectFormatId, multiple: field.multiple ?? false, variableName, referenceMode } : {}), ...(codeListId ? { codeListId } : {}) };
     });
   }
 
@@ -251,6 +258,12 @@ export class CollectionsService {
       if (!formats.some((candidate) => candidate.id === field.targetObjectFormatId && candidate.objectModel) && !grants.some((grant) => grant.sourceFormatId === field.targetObjectFormatId && (grant.mode === 'CURRENT' || field.referenceMode === 'SNAPSHOT'))) {
         throw new BadRequestException('Object reference must target a local model or an explicitly linked object');
       }
+    }
+  }
+
+  private assertCodeFields(formats: CollectionFormat[], lists: Collection['codeLists']): void {
+    for (const format of formats) for (const field of format.fields) {
+      if (field.kind === FieldKind.CODE && !lists.some((list) => list.id === field.codeListId)) throw new BadRequestException('Code field needs a list in this collection');
     }
   }
 
@@ -307,6 +320,9 @@ export class CollectionsService {
     for (const unit of units) this.checkUnit(unit, units, formats);
     this.assertFieldUnits(formats, units);
     this.assertReferenceFields(formats);
+    const codeLists = (input.codeLists ?? []).map((list) => ({ id: list.id || randomUUID(), name: list.name.trim(), version: 1, codes: validateClassificationCodes(list.codes.map((code) => ({ ...code, active: code.active !== false }))) }));
+    if (codeLists.length > 100 || new Set(codeLists.map((list) => list.id)).size !== codeLists.length || new Set(codeLists.map((list) => list.name.toLocaleLowerCase())).size !== codeLists.length || codeLists.some((list) => !list.name || list.name.length > 80 || !/^[\w.-]{1,100}$/.test(list.id))) throw new BadRequestException('Invalid code lists');
+    this.assertCodeFields(formats, codeLists);
     if ((input.exchangeRates?.length ?? 0) > 1000) throw new BadRequestException('Too many exchange rates in this collection');
     const exchangeRates = (input.exchangeRates ?? []).map((rate) => {
       const from = resolveUnit(rate.from, units);
@@ -317,7 +333,7 @@ export class CollectionsService {
       if (Number.isNaN(effectiveAt.getTime()) || !/^\d{4}-\d{2}-\d{2}T/.test(rate.effectiveAt)) throw new BadRequestException('Use a valid exchange rate date');
       return { id: randomUUID(), from: rate.from, to: rate.to, rate: rate.rate, effectiveAt };
     });
-    return this.collections.create({ name, fields: formats[0].fields, formats, units, exchangeRates, ownerId });
+    return this.collections.create({ name, fields: formats[0].fields, formats, codeLists, units, exchangeRates, ownerId });
   }
 
   async addFormat(id: string, input: CollectionFormatInput, ownerId: string): Promise<Collection> {
@@ -329,6 +345,7 @@ export class CollectionsService {
     const format = this.makeFormat(input);
     this.assertFieldUnits([format], collection.units);
     this.assertReferenceFields([...collection.formats, format], collection.sharedObjects);
+    this.assertCodeFields([...collection.formats, format], collection.codeLists ?? []);
     if (collection.formats.some((item) => item.name.toLocaleLowerCase() === format.name.toLocaleLowerCase())) {
       throw new BadRequestException('Data format names must be unique within a collection');
     }
@@ -389,6 +406,7 @@ export class CollectionsService {
     if (current.objectModel && !fields.some((field) => field.kind === FieldKind.TITLE)) throw new BadRequestException('An object data format needs a title field');
     this.assertFieldUnits([{ ...current, fields }], collection.units);
     this.assertReferenceFields(collection.formats.map((item) => item.id === formatId ? { ...item, fields } : item), collection.sharedObjects);
+    this.assertCodeFields(collection.formats.map((item) => item.id === formatId ? { ...item, fields } : item), collection.codeLists ?? []);
     const next = new Map(fields.map((field) => [field.id, field]));
     for (const field of current.fields) {
       if (!(collection.formulas ?? []).some((formula) => formula.expression.includes(`"${field.id}"`))) continue;
@@ -422,7 +440,7 @@ export class CollectionsService {
       const replacement = next.get(field.id);
       const isNumberToMeasure = field.kind === FieldKind.NUMBER && replacement?.kind === FieldKind.MEASURE;
       const isAllowedKind = replacement && (replacement.kind === field.kind || isNumberToMeasure);
-      if (impact.populatedFieldIds.includes(field.id) && (!isAllowedKind || (replacement.unit ?? '') !== (field.unit ?? '') || (replacement.targetObjectFormatId ?? '') !== (field.targetObjectFormatId ?? '') || (replacement.multiple ?? false) !== (field.multiple ?? false) || (replacement.referenceMode ?? '') !== (field.referenceMode ?? '') || (field.options ?? []).some((option) => !replacement.options?.includes(option)))) {
+      if (impact.populatedFieldIds.includes(field.id) && (!isAllowedKind || (replacement.unit ?? '') !== (field.unit ?? '') || (replacement.targetObjectFormatId ?? '') !== (field.targetObjectFormatId ?? '') || (replacement.codeListId ?? '') !== (field.codeListId ?? '') || (replacement.multiple ?? false) !== (field.multiple ?? false) || (replacement.referenceMode ?? '') !== (field.referenceMode ?? '') || (field.options ?? []).some((option) => !replacement.options?.includes(option)))) {
         throw new BadRequestException(`Field ${field.name} has saved values. Keep its type, unit and existing choices, or migrate entries first`);
       }
     }
@@ -490,7 +508,7 @@ export class CollectionsService {
     const collection = await this.one(collectionId, ownerId);
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     const entries = await this.entries.find({ ownerId: collection.ownerId, collectionId }).sort({ createdAt: -1 }).exec();
-    return entries.map((entry) => this.collaboration.filterEntryFields(entry, access.member));
+    return entries.map((entry) => this.collaboration.filterEntryFields(entry, access.member, collection));
   }
 
   async entryDetail(collectionId: string, entryId: string, ownerId: string): Promise<Entry> {
@@ -498,7 +516,7 @@ export class CollectionsService {
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     const entry = await this.entries.findOne({ _id: entryId, ownerId: collection.ownerId, collectionId }).exec();
     if (!entry) throw new NotFoundException('Entry not found');
-    return this.collaboration.filterEntryFields(entry, access.member);
+    return this.collaboration.filterEntryFields(entry, access.member, collection);
   }
 
   async saveView(collectionId: string, ownerId: string, input: SavedCollectionViewInput, viewId?: string): Promise<Collection> {
@@ -619,7 +637,7 @@ export class CollectionsService {
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || to <= from || to.getTime() - from.getTime() > 45 * 86_400_000) throw new BadRequestException('Choose a calendar range of at most 45 days');
     const rawEntries = await this.entries.find({ ownerId: collection.ownerId, collectionId, formatId: view.formatIds[0] }).limit(10_001).exec();
     if (rawEntries.length > 10_000) throw new BadRequestException('Calendar has too many events for this view');
-    const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member));
+    const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member, collection));
     const result: CalendarOccurrence[] = [];
     const clock = (date: Date, zone: string) => { const local = localTime(date, zone); return `${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}`; };
     for (const entry of entries) {
@@ -719,7 +737,7 @@ export class CollectionsService {
         if (!start) throw new BadRequestException('Manual order changed. Reload this view');
       }
       const rawEntries = all.slice(start, start + input.first);
-      const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member));
+      const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member, collection));
       const last = rawEntries.at(-1);
       const hasMore = start + rawEntries.length < all.length;
       return { entries, hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ manual: true, id: last.id })).toString('base64url') : undefined };
@@ -728,7 +746,7 @@ export class CollectionsService {
     const found = await this.entries.find(query as QueryFilter<Entry>).sort({ createdAt: sortDirection, _id: sortDirection }).limit(input.first + 1).exec();
     const hasMore = found.length > input.first;
     const rawEntries = found.slice(0, input.first);
-    const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member));
+    const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member, collection));
     const last = rawEntries.at(-1);
     return { entries, hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ createdAt: last.createdAt.toISOString(), id: last.id })).toString('base64url') : undefined };
   }
@@ -796,7 +814,7 @@ export class CollectionsService {
         const createdAt = new Date(row.createdAt);
         const updatedAt = new Date(row.updatedAt);
         if (Number.isNaN(createdAt.getTime()) || Number.isNaN(updatedAt.getTime()) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.createdAt) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.updatedAt) || updatedAt < createdAt) throw new BadRequestException('Invalid entry dates');
-        const values = this.validateValues(row.values, format.fields, [], collection.units, true);
+        const values = this.validateValues(row.values, format.fields, [], collection.units, true, collection.codeLists ?? []);
         await this.validateReferences(collection, format, values, ownerId);
         this.assertObjectTitle(format, values);
         rows.push({ sourceId: row.sourceId, values, createdAt, updatedAt });
@@ -855,7 +873,7 @@ export class CollectionsService {
       ? collection.formats.find((item) => item.id === formatId)
       : collection.formats[0];
     if (!format) throw new BadRequestException('Data format not found in this collection');
-    const validated = this.validateValues(values, format.fields, [], collection.units);
+    const validated = this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []);
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
     let entry: Entry;
@@ -990,7 +1008,7 @@ export class CollectionsService {
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     if (!collection.formats.some((format) => format.id === entry.formatId && format.objectModel)) throw new NotFoundException('Object not found');
     entry.revisions ??= [];
-    return this.collaboration.filterEntryFields(entry, access.member);
+    return this.collaboration.filterEntryFields(entry, access.member, collection);
   }
 
   async objectsPage(collectionId: string, formatId: string, ownerId: string, first: number, after?: string, search?: string): Promise<EntryPage> {
@@ -1053,7 +1071,7 @@ export class CollectionsService {
     if (formatId && formatId !== savedFormatId) throw new BadRequestException('Entry data format cannot be changed');
     const format = collection.formats.find((item) => item.id === savedFormatId);
     if (!format) throw new BadRequestException('Data format not found in this collection');
-    const validated = this.validateValues(values, format.fields, entry.values, collection.units);
+    const validated = this.validateValues(values, format.fields, entry.values, collection.units, false, collection.codeLists ?? []);
     await this.validateReferences(collection, format, validated, collection.ownerId, entry.id, entry.values);
     this.assertObjectTitle(format, validated);
     const saved = await this.entries.findOneAndUpdate(
@@ -1090,10 +1108,10 @@ export class CollectionsService {
     const collection = await this.one(entry.collectionId, ownerId);
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     const asOfEntry = await this.measurements.asOfDate(entry, asOfDate);
-    return this.collaboration.filterEntryFields(asOfEntry, access.member);
+    return this.collaboration.filterEntryFields(asOfEntry, access.member, collection);
   }
 
-  private validateValues(values: EntryValueInput[], fields: Collection['fields'], existing: EntryValue[] = [], units: CollectionUnit[] = [], imported = false): EntryValue[] {
+  private validateValues(values: EntryValueInput[], fields: Collection['fields'], existing: EntryValue[] = [], units: CollectionUnit[] = [], imported = false, codeLists: Collection['codeLists'] = []): EntryValue[] {
     if (!values.length) throw new BadRequestException('Write something before saving');
     const definitions = new Map(fields.map((field) => [field.id, field]));
     const seen = new Set<string>();
@@ -1210,6 +1228,16 @@ export class CollectionsService {
         case FieldKind.CHARACTER:
           if ([...text].length !== 1) throw new BadRequestException(`${field.name} must be one character`);
           break;
+        case FieldKind.CODE: {
+          const list = codeLists.find((item) => item.id === field.codeListId);
+          const code = list?.codes.find((item) => item.code === text);
+          if (!code || (!code.active && !imported && !existing.some((item) => item.fieldId === fieldId && item.value === text))) throw new BadRequestException(`${field.name} needs an active code`);
+          break;
+        }
+        case FieldKind.POSITION:
+          return { fieldId, value: JSON.stringify(parsePosition(text)) };
+        case FieldKind.ZONE:
+          return { fieldId, value: JSON.stringify(parseZone(text)) };
       }
       return { fieldId, value: text };
     });

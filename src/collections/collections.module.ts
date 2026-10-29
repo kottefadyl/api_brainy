@@ -30,6 +30,10 @@ import { RelationResolver } from './relation.resolver';
 import { RelationService } from './relation.service';
 import { WorkspaceBackupResolver } from './workspace-backup.resolver';
 import { WorkspaceBackupService } from './workspace-backup.service';
+import { ClassificationResolver } from './classification.resolver';
+import { ClassificationService } from './classification.service';
+import { GeoResolver } from './geo.resolver';
+import { GeoService } from './geo.service';
 
 @Module({
   imports: [
@@ -49,7 +53,7 @@ import { WorkspaceBackupService } from './workspace-backup.service';
       { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, AnalysisResolver, AnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, AnalysisResolver, AnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}

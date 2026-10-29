@@ -22,6 +22,9 @@ export enum FieldKind {
   ATTACHMENT = 'ATTACHMENT',
   OBJECT_REF = 'OBJECT_REF',
   MEASURE = 'MEASURE',
+  CODE = 'CODE',
+  POSITION = 'POSITION',
+  ZONE = 'ZONE',
 }
 
 registerEnumType(FieldKind, { name: 'FieldKind' });
@@ -68,6 +71,10 @@ export class CollectionField {
   @Field({ nullable: true })
   @Prop()
   sourceFieldId?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  codeListId?: string;
 }
 
 export const CollectionFieldSchema = SchemaFactory.createForClass(CollectionField);
@@ -116,6 +123,30 @@ export class CollectionFormat {
 export const CollectionFormatSchema = SchemaFactory.createForClass(CollectionFormat);
 
 @ObjectType()
+@Schema({ _id: false })
+export class ClassificationCode {
+  @Field() @Prop({ required: true }) code!: string;
+  @Field() @Prop({ required: true }) labelEn!: string;
+  @Field() @Prop({ required: true }) labelFr!: string;
+  @Field({ nullable: true }) @Prop() parentCode?: string;
+  @Field() @Prop({ default: true }) active!: boolean;
+  @Field({ nullable: true }) @Prop() mergedInto?: string;
+}
+export const ClassificationCodeSchema = SchemaFactory.createForClass(ClassificationCode);
+
+@ObjectType()
+@Schema({ _id: false })
+export class ClassificationList {
+  @Field() @Prop({ required: true }) id!: string;
+  @Field() @Prop({ required: true }) name!: string;
+  @Field() @Prop({ required: true, default: 1 }) version!: number;
+  @Field(() => [ClassificationCode]) @Prop({ type: [ClassificationCodeSchema], default: [] }) codes!: ClassificationCode[];
+  @Prop() copiedFromListId?: string;
+  @Prop() transferKey?: string;
+}
+export const ClassificationListSchema = SchemaFactory.createForClass(ClassificationList);
+
+@ObjectType()
 export class CollectionFormatImpact {
   @Field()
   entryCount!: number;
@@ -138,6 +169,7 @@ export class TransferPreview {
   @Field() targetName!: string;
   @Field(() => [String]) dataFormats!: string[];
   @Field(() => [String]) units!: string[];
+  @Field(() => [String]) codeLists!: string[];
   @Field(() => [String]) formulas!: string[];
   @Field() objects!: number;
   @Field() entries!: number;
@@ -259,6 +291,10 @@ export class Collection {
   @Field(() => [CollectionFormat])
   @Prop({ type: [CollectionFormatSchema], default: [] })
   formats!: CollectionFormat[];
+
+  @Field(() => [ClassificationList])
+  @Prop({ type: [ClassificationListSchema], default: [] })
+  codeLists!: ClassificationList[];
 
   @Field(() => [CollectionUnit])
   @Prop({ type: [CollectionUnitSchema], default: [] })

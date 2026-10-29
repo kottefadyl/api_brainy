@@ -6,6 +6,7 @@ import { AnalysisInput, AnalysisResult, AnalysisRow, FormulaInput, FormulaResult
 import { executeRegisteredOperation, getOperationSpec, ObservationRecord } from './analysis_registry';
 import { EntryFieldFilterInput, EntryFilterOperator } from './collection.input';
 import { Collection, CollectionField, CollectionFormula, FieldKind } from './collection.schema';
+import { codeAtDepth } from './classification.logic';
 import { Entry } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
 
@@ -222,7 +223,7 @@ export class AnalysisService {
     const date = format.fields.find((item) => item.id === input.dateFieldId && [FieldKind.DATE, FieldKind.DATETIME].includes(item.kind));
     const needsDate = spec.requiresDateOrder || ['DAY', 'MONTH'].includes(input.groupBy) || ['DAY', 'MONTH'].includes(input.secondaryGroupBy ?? '') || !!(input.from || input.to || input.comparisonFrom || input.comparisonTo);
     if (needsDate && !date) throw new BadRequestException('Choose a date field');
-    const groupField = format.fields.find((item) => item.id === input.groupFieldId && (input.groupBy === 'CATEGORY' ? [FieldKind.SELECT, FieldKind.TEXT].includes(item.kind) : input.groupBy === 'OBJECT' && item.kind === FieldKind.OBJECT_REF));
+    const groupField = format.fields.find((item) => item.id === input.groupFieldId && (input.groupBy === 'CATEGORY' ? [FieldKind.SELECT, FieldKind.TEXT, FieldKind.CODE].includes(item.kind) : input.groupBy === 'OBJECT' && item.kind === FieldKind.OBJECT_REF));
     if (['CATEGORY', 'OBJECT'].includes(input.groupBy) && !groupField) throw new BadRequestException('Choose a compatible group field');
     let secondaryGroupField: CollectionField | undefined;
     if (spec.id === 'CROSSTAB') {
@@ -230,7 +231,7 @@ export class AnalysisService {
         throw new BadRequestException('Choose both row and column groupings for a cross-tabulation');
       }
       if (['CATEGORY', 'OBJECT'].includes(input.secondaryGroupBy)) {
-        secondaryGroupField = format.fields.find((item) => item.id === input.secondaryGroupFieldId && (input.secondaryGroupBy === 'CATEGORY' ? [FieldKind.SELECT, FieldKind.TEXT].includes(item.kind) : item.kind === FieldKind.OBJECT_REF));
+        secondaryGroupField = format.fields.find((item) => item.id === input.secondaryGroupFieldId && (input.secondaryGroupBy === 'CATEGORY' ? [FieldKind.SELECT, FieldKind.TEXT, FieldKind.CODE].includes(item.kind) : item.kind === FieldKind.OBJECT_REF));
         if (!secondaryGroupField) throw new BadRequestException('Choose a compatible secondary group field');
       }
     }
@@ -272,9 +273,13 @@ export class AnalysisService {
     let unit: string | undefined;
     let dimension: string | undefined;
     let unitKnown = false;
-    const keyFor = (entry: Entry, dateValue: string | undefined, mode: string, targetField?: CollectionField): string => {
+    const keyFor = (entry: Entry, dateValue: string | undefined, mode: string, targetField?: CollectionField, depth?: number): string => {
       if (mode === 'DAY' || mode === 'MONTH') return dateValue?.slice(0, mode === 'DAY' ? 10 : 7) ?? 'Missing date';
-      if (mode === 'CATEGORY') return entry.values.find((item) => item.fieldId === targetField!.id)?.value || 'Missing category';
+      if (mode === 'CATEGORY') {
+        const value = entry.values.find((item) => item.fieldId === targetField!.id)?.value;
+        const list = collection.codeLists?.find((item) => item.id === targetField?.codeListId);
+        return value && list && depth !== undefined ? codeAtDepth(list, value, depth) : value || 'Missing category';
+      }
       if (mode === 'OBJECT') return entry.values.find((item) => item.fieldId === targetField!.id)?.objectIds?.[0] || 'Missing object';
       return 'All';
     };
@@ -290,8 +295,8 @@ export class AnalysisService {
         const dateValue = rawDate?.slice(0, 10);
         if (spec.requiresDateOrder && !dateValue) { skippedMissingCount++; continue; }
         if ((from && (!dateValue || dateValue < from)) || (to && (!dateValue || dateValue > to))) continue;
-        const primaryKey = keyFor(entry, dateValue, input.groupBy, groupField);
-        const secondaryKey = spec.id === 'CROSSTAB' && input.secondaryGroupBy ? keyFor(entry, dateValue, input.secondaryGroupBy, secondaryGroupField) : undefined;
+        const primaryKey = keyFor(entry, dateValue, input.groupBy, groupField, input.groupDepth);
+        const secondaryKey = spec.id === 'CROSSTAB' && input.secondaryGroupBy ? keyFor(entry, dateValue, input.secondaryGroupBy, secondaryGroupField, input.secondaryGroupDepth) : undefined;
         const quantity = formula
           ? await this.evaluateNode(this.parse(formula.expression), collection, entry, ownerId)
           : field
@@ -384,6 +389,16 @@ export class AnalysisService {
           row.label = names.get(row.group) || row.group;
         }
       }
+    }
+    if (groupField?.kind === FieldKind.CODE || secondaryGroupField?.kind === FieldKind.CODE) {
+      const labelFor = (field: CollectionField | undefined, code: string): string => {
+        if (field?.kind !== FieldKind.CODE) return code;
+        const item = collection.codeLists?.find((list) => list.id === field.codeListId)?.codes.find((candidate) => candidate.code === code);
+        return item ? (input.language === 'fr' ? item.labelFr : item.labelEn) : code;
+      };
+      for (const row of [...rows, ...(comparisonRows ?? [])]) row.label = row.rowKey && row.columnKey
+        ? `${labelFor(groupField, row.rowKey)} × ${labelFor(secondaryGroupField, row.columnKey)}`
+        : labelFor(groupField, row.group);
     }
     return {
       operation: input.operation,

@@ -63,6 +63,13 @@ export class WorkspaceBackupService {
     const conflicts: string[] = [];
     if (collectionIds.size !== docs.collections.length || entryIds.size !== docs.entries.length) conflicts.push('Duplicate collection or entry IDs in backup');
     for (const collection of docs.collections) if (collection.ownerId !== userId) conflicts.push('A collection belongs to another account');
+    for (const collection of docs.collections) {
+      const lists = (collection.codeLists as { id: string; codes: { code: string }[] }[] | undefined) ?? [];
+      const listIds = new Set(lists.map((list) => list.id));
+      for (const format of ((collection.formats as { fields: { kind: string; codeListId?: string }[] }[] | undefined) ?? [])) for (const field of format.fields) {
+        if (field.kind === 'CODE' && !listIds.has(field.codeListId ?? '')) conflicts.push('A code field has no local code list');
+      }
+    }
     for (const entry of docs.entries) {
       if (!collectionIds.has(String(entry.collectionId)) || entry.ownerId !== userId) conflicts.push('An entry is outside the workspace');
       const collection = docs.collections.find((item) => item._id!.toString() === entry.collectionId);

@@ -40,6 +40,9 @@ export class AnalysisInput {
   @Field() groupBy!: string;
   @Field({ nullable: true }) secondaryGroupBy?: string;
   @Field({ nullable: true }) secondaryGroupFieldId?: string;
+  @Field(() => Int, { nullable: true }) groupDepth?: number;
+  @Field(() => Int, { nullable: true }) secondaryGroupDepth?: number;
+  @Field({ nullable: true }) language?: string;
   @Field() operation!: string;
   @Field() measureKind!: string;
   @Field(() => Int, { nullable: true }) percentile?: number;
