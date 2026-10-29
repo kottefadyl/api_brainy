@@ -290,7 +290,11 @@ export class AnalysisService {
       const distinctGroups = new Set<string>();
       let scanned = 0;
       let skippedMissingCount = 0;
-      for await (const entry of this.entries.find({ ownerId, collectionId, formatId: format.id }).sort({ _id: 1 }).cursor()) {
+      const dateBounds = { ...(from ? { $gte: from } : {}), ...(to ? { $lt: `${to}\uffff` } : {}) };
+      const query = date && (from || to)
+        ? { ownerId, collectionId, formatId: format.id, values: { $elemMatch: { fieldId: date.id, value: dateBounds } } }
+        : { ownerId, collectionId, formatId: format.id };
+      for await (const entry of this.entries.find(query).select('-values.attachmentData').sort({ _id: 1 }).cursor()) {
         if (++scanned > 100000) throw new BadRequestException('Narrow the analysis to at most 100000 entries');
         if (!matches(entry)) continue;
         const rawDate = date ? entry.values.find((item) => item.fieldId === date.id)?.value : undefined;

@@ -261,6 +261,7 @@ export class CalendarOccurrence {
 
 export const EntrySchema = SchemaFactory.createForClass(Entry);
 EntrySchema.index({ ownerId: 1, collectionId: 1, createdAt: -1, _id: -1 });
+EntrySchema.index({ ownerId: 1, collectionId: 1, formatId: 1, 'values.fieldId': 1, 'values.value': 1 });
 EntrySchema.index({ ownerId: 1, collectionId: 1, 'values.value': 'text' }, { default_language: 'none' });
 EntrySchema.index({ ownerId: 1, collectionId: 1, importKey: 1, sourceId: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' }, sourceId: { $type: 'string' } } });
 EntrySchema.index({ ownerId: 1, collectionId: 1, clientMutationId: 1 }, { unique: true, partialFilterExpression: { clientMutationId: { $type: 'string' } } });
