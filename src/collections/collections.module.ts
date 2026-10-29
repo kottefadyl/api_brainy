@@ -41,6 +41,9 @@ import { BackgroundJobResolver } from './background-job.resolver';
 import { WorkflowNotification, WorkflowNotificationSchema } from './workflow.schema';
 import { WorkflowResolver } from './workflow.resolver';
 import { WorkflowService } from './workflow.service';
+import { ContributionLink, ContributionLinkSchema, ContributionSubmission, ContributionSubmissionSchema } from './contribution.schema';
+import { ContributionResolver } from './contribution.resolver';
+import { ContributionService } from './contribution.service';
 
 @Module({
   imports: [
@@ -60,9 +63,11 @@ import { WorkflowService } from './workflow.service';
       { name: AuditLog.name, schema: AuditLogSchema },
       { name: BackgroundJob.name, schema: BackgroundJobSchema },
       { name: WorkflowNotification.name, schema: WorkflowNotificationSchema },
+      { name: ContributionLink.name, schema: ContributionLinkSchema },
+      { name: ContributionSubmission.name, schema: ContributionSubmissionSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}

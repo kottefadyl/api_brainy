@@ -267,6 +267,7 @@ export class StockService {
     if (!Types.ObjectId.isValid(entryId)) throw new BadRequestException('Invalid entry ID');
     const entry = await this.entries.findOne({ _id: entryId, collectionId: collection.id, ownerId }).exec();
     if (!entry) throw new NotFoundException('Entry not found');
+    if (entry.contributionLinkId) throw new BadRequestException('Public contributions cannot create stock movements');
     if (expectedUpdatedAt && entry.updatedAt.toISOString() !== expectedUpdatedAt) throw new ConflictException('Entry changed. Refresh and try again');
     const rule = (collection.stockRules ?? []).find((item) => item.id === ruleId && item.formatId === entry.formatId);
     if (!rule) throw new BadRequestException('Choose a stock rule for this entry');

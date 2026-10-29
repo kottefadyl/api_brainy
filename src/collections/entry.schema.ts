@@ -250,6 +250,14 @@ export class Entry {
   @Field({ nullable: true })
   @Prop()
   copiedFromEntryId?: string;
+
+  @Field({ nullable: true })
+  @Prop({ index: true })
+  contributionLinkId?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  contributionReceivedAt?: Date;
 }
 
 @ObjectType()

@@ -6,6 +6,7 @@ import { CollectionExchangeRateInput, CollectionFieldInput, CollectionFormatInpu
 import { validateClassificationCodes } from './classification.logic';
 import { Collection, CollectionField, CollectionFormat, CollectionFormatImpact, FieldKind, ObjectModelTemplate, SavedCollectionView } from './collection.schema';
 import { CalendarOccurrence, Entry, EntryAttachment, EntryPage, EntryValue, ImportEntriesResult, ObjectPropertySnapshot, ObjectReferenceSnapshot, ResolvedObjectReference, ResolvedObjectVariable } from './entry.schema';
+import { ContributionLink, ContributionSubmission } from './contribution.schema';
 import { addLocalDays, addLocalMonths, localDate, localTime, localToInstant, validTimeZone } from './time_math';
 import { builtInUnits, decimal, divide, fractionText, multiply, resolveUnit } from './unit_math';
 import { CollectionUnit, QuantityConversion, UnitSnapshot } from './unit.schema';
@@ -53,6 +54,8 @@ export class CollectionsService {
   constructor(
     @InjectModel(Collection.name) private readonly collections: Model<Collection>,
     @InjectModel(Entry.name) private readonly entries: Model<Entry>,
+    @InjectModel(ContributionLink.name) private readonly contributionLinks: Model<ContributionLink>,
+    @InjectModel(ContributionSubmission.name) private readonly contributionSubmissions: Model<ContributionSubmission>,
     @InjectModel(StockMovement.name) private readonly stockMovements: Model<StockMovement>,
     private readonly collaboration: CollaborationService,
   ) {}
@@ -488,6 +491,7 @@ export class CollectionsService {
     if (enabled && !title) throw new BadRequestException('An object data format needs a title field');
     const entryCount = await this.entries.countDocuments({ collectionId, formatId }).exec();
     if (enabled && entryCount > 0) {
+      if (await this.entries.exists({ collectionId, formatId, contributionLinkId: { $exists: true } })) throw new BadRequestException('Delete public contributions before converting this data format to objects');
       const unnamedCount = await this.entries.countDocuments({ collectionId, formatId, values: { $not: { $elemMatch: { fieldId: title!.id, value: { $type: 'string', $regex: '\\S' } } } } }).exec();
       if (unnamedCount > 0) throw new BadRequestException('Existing entries need titles before becoming objects');
       if (expectedEntryCount !== entryCount) throw new BadRequestException('Review existing entries before converting them to objects');
@@ -507,6 +511,8 @@ export class CollectionsService {
     if (await this.collections.exists({ ownerId: collection.ownerId, sharedObjects: { $elemMatch: { sourceCollectionId: id, revokedAt: null } } })) throw new BadRequestException('Revoke object links before deleting this collection');
     if (await this.collections.exists({ ownerId: collection.ownerId, 'formats.linkedSource.sourceCollectionId': id })) throw new BadRequestException('Detach linked data formats before deleting this collection');
     await this.entries.deleteMany({ collectionId: id }).exec();
+    await this.contributionSubmissions.deleteMany({ collectionId: id }).exec();
+    await this.contributionLinks.deleteMany({ collectionId: id }).exec();
     await this.stockMovements.deleteMany({ collectionId: id }).exec();
     await this.collections.deleteOne({ _id: id }).exec();
     return true;
@@ -870,7 +876,13 @@ export class CollectionsService {
     return true;
   }
 
-  async createEntry(collectionId: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string, clientMutationId?: string): Promise<Entry> {
+  async validateContributionValues(collection: Collection, formatId: string, values: EntryValueInput[]): Promise<EntryValue[]> {
+    const format = collection.formats.find((item) => item.id === formatId);
+    if (!format) throw new BadRequestException('Data format not found in this collection');
+    return this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []);
+  }
+
+  async createEntry(collectionId: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string, clientMutationId?: string, contribution?: { linkId: string; receivedAt: Date }): Promise<Entry> {
     const collection = await this.one(collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
     if (clientMutationId && !/^[\w.-]{1,100}$/.test(clientMutationId)) throw new BadRequestException('Invalid mutation ID');
@@ -886,7 +898,7 @@ export class CollectionsService {
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
     let entry: Entry;
-    try { entry = await this.entries.create({ collectionId, ownerId: collection.ownerId, formatId: format.id, formatVersion: format.version ?? 1, values: validated, clientMutationId }); }
+    try { entry = await this.entries.create({ collectionId, ownerId: collection.ownerId, formatId: format.id, formatVersion: format.version ?? 1, values: validated, clientMutationId, contributionLinkId: contribution?.linkId, contributionReceivedAt: contribution?.receivedAt }); }
     catch (error) {
       if (clientMutationId && (error as { code?: number }).code === 11000) {
         const existing = await this.entries.findOne({ collectionId, ownerId: collection.ownerId, clientMutationId }).exec();

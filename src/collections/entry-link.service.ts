@@ -47,6 +47,10 @@ export class EntryLinkService {
     await this.links.updateMany({ ownerId, $or: [{ fromEntryId: entryId }, { toEntryId: entryId }], deletedAt: null }, { $set: { deletedAt: new Date() } }).exec();
   }
 
+  async purgeContributionEntry(entryId: string, ownerId: string): Promise<void> {
+    await this.links.deleteMany({ ownerId, $or: [{ fromEntryId: entryId }, { toEntryId: entryId }] }).exec();
+  }
+
   async importLinks(collectionId: string, ownerId: string, importKey: string, links: { fromSourceId: string; toSourceId: string; label: string }[]): Promise<boolean> {
     if (!importKey || importKey.length > 100 || !/^[\w.-]+$/.test(importKey) || links.length > 100) throw new BadRequestException('Invalid import batch');
     if (!links.length) return true;

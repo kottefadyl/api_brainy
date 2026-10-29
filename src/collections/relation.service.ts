@@ -171,6 +171,11 @@ export class RelationService {
     await this.relations.deleteMany({ collectionId }).exec();
   }
 
+  async purgeContributionEntry(collectionId: string, entryId: string, ownerId: string): Promise<void> {
+    await this.context(collectionId, ownerId, CollectionRole.OWNER);
+    await this.relations.deleteMany({ collectionId, $or: [{ fromEntryId: entryId }, { toEntryId: entryId }] }).exec();
+  }
+
   async total(collectionId: string, rootId: string, kind: RelationKind, fieldName: string, userId: string): Promise<RelationTotal> {
     const collection = await this.context(collectionId, userId);
     await this.assertEntries(collectionId, [rootId]);
