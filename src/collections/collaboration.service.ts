@@ -1,10 +1,11 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Collection, FieldKind } from './collection.schema';
+import { Collection } from './collection.schema';
 import { AuditLog, CollectionMember, CollectionRole } from './collaboration.schema';
 import { User } from '../auth/user.schema';
-import { Entry } from './entry.schema';
+import { Entry, EntryValue } from './entry.schema';
+import { protectedFields } from './sensitivity.logic';
 
 @Injectable()
 export class CollaborationService {
@@ -39,20 +40,58 @@ export class CollaborationService {
     return { role: member.role, member };
   }
 
-  filterEntryFields(entry: Entry, member?: CollectionMember, collection?: Collection): Entry {
+  filterEntryFields(entry: Entry, member: CollectionMember | undefined, collection: Collection): Entry {
     if (!member) {
       return entry;
     }
 
     const explicit = (member.sharedFieldIds?.length ?? 0) > 0;
     const allowed = new Set(member.sharedFieldIds ?? []);
-    const sensitive = new Set(collection?.formats.flatMap((format) => format.fields.filter((field) => field.kind === FieldKind.POSITION || field.kind === FieldKind.ZONE).map((field) => field.id)) ?? []);
+    const definition = collection.formats.find((format) => format.id === entry.formatId);
+    const protectedIds = definition ? protectedFields(definition) : new Set<string>();
+    const approved = new Set(member.sensitiveFieldIds ?? []);
     const doc = typeof (entry as any).toObject === 'function' ? (entry as any).toObject() : entry;
+    const visible = (values: EntryValue[]) => (values ?? []).filter((value) => (!explicit || allowed.has(value.fieldId)) && (!protectedIds.has(value.fieldId) || approved.has(value.fieldId))).map((value) => ({ ...value,
+      objectSnapshots: value.objectSnapshots?.map((snapshot) => {
+        const target = collection.formats.find((format) => format.id === snapshot.formatId);
+        const hidden = target ? protectedFields(target) : new Set<string>();
+        return { ...snapshot, properties: target ? snapshot.properties.filter((property) => !hidden.has(property.fieldId) || approved.has(property.fieldId)) : [] };
+      }),
+    }));
     return {
       ...doc,
       id: entry.id ?? doc._id?.toString(),
-      values: (entry.values ?? []).filter((v) => explicit ? allowed.has(v.fieldId) : !sensitive.has(v.fieldId)),
+      values: visible(doc.values ?? []),
+      revisions: (doc.revisions ?? []).map((revision: { values: EntryValue[] }) => ({ ...revision, values: visible(revision.values) })),
     } as Entry;
+  }
+
+  async auditProtectedRead(collection: Collection, actorId: string, entries: Entry[]): Promise<void> {
+    const seen = new Set<string>();
+    for (const entry of entries) {
+      const format = collection.formats.find((item) => item.id === entry.formatId);
+      if (format && entry.values.some((value) => protectedFields(format).has(value.fieldId))) seen.add(format.id);
+    }
+    if (seen.size) await this.logAction(collection.id, actorId, 'READ_PROTECTED_DATA', `Data formats: ${[...seen].join(',')}; entries: ${entries.length}`);
+  }
+
+  async projectCollection(collection: Collection, actorId: string): Promise<Collection> {
+    if (collection.ownerId === actorId) return collection;
+    this.checkAccess(collection, actorId);
+    const grants = collection.sharedObjects ?? [];
+    if (!grants.length) return collection;
+    const sources = await this.collections.find({ _id: { $in: [...new Set(grants.map((item) => item.sourceCollectionId))] }, ownerId: collection.ownerId }).exec();
+    const doc = typeof (collection as any).toObject === 'function' ? (collection as any).toObject() : collection;
+    return { ...doc, id: collection.id, sharedObjects: grants.map((grant) => {
+      const source = sources.find((item) => item.id === grant.sourceCollectionId);
+      const format = source?.formats.find((item) => item.id === grant.sourceFormatId);
+      const hidden = format ? protectedFields(format) : new Set(grant.propertyFieldIds);
+      const approved = new Set(grant.sensitiveFieldIds ?? []);
+      const title = format?.fields.find((item) => item.kind === 'TITLE');
+      return { ...JSON.parse(JSON.stringify(grant)) as typeof grant,
+        objectName: title && hidden.has(title.id) && !approved.has(title.id) ? 'Shared object' : grant.objectName,
+        snapshot: grant.snapshot.filter((item) => !hidden.has(item.fieldId) || approved.has(item.fieldId)) };
+    }) } as Collection;
   }
 
   async addOrUpdateMember(
@@ -60,6 +99,7 @@ export class CollaborationService {
     email: string,
     role: CollectionRole,
     sharedFieldIds: string[] | undefined,
+    sensitiveFieldIds: string[] | undefined,
     operatorUserId: string,
   ): Promise<Collection> {
     if (!Types.ObjectId.isValid(collectionId)) throw new BadRequestException('Invalid collection ID');
@@ -76,6 +116,10 @@ export class CollaborationService {
     }
 
     const existingMembers = collection.members ?? [];
+    const allIds = new Set(collection.formats.flatMap((format) => format.fields.map((field) => field.id)));
+    const protectedIds = new Set(collection.formats.flatMap((format) => [...protectedFields(format)]));
+    if ((sharedFieldIds ?? []).some((id) => !allIds.has(id)) || new Set(sharedFieldIds ?? []).size !== (sharedFieldIds ?? []).length) throw new BadRequestException('Choose valid shared fields');
+    if ((sensitiveFieldIds ?? []).some((id) => !protectedIds.has(id) || (sharedFieldIds?.length && !sharedFieldIds.includes(id))) || new Set(sensitiveFieldIds ?? []).size !== (sensitiveFieldIds ?? []).length) throw new BadRequestException('Choose protected fields explicitly');
     const index = existingMembers.findIndex((m) => m.userId === targetUser.id);
 
     const memberData: CollectionMember = {
@@ -85,6 +129,7 @@ export class CollaborationService {
       role,
       addedAt: index >= 0 ? existingMembers[index].addedAt : new Date(),
       sharedFieldIds: sharedFieldIds ?? [],
+      sensitiveFieldIds: sensitiveFieldIds ?? [],
     };
 
     let updatedMembers: CollectionMember[];
@@ -110,6 +155,7 @@ export class CollaborationService {
       actionName,
       `Member ${targetUser.email} set to ${role}${sharedFieldIds?.length ? ` with ${sharedFieldIds.length} shared fields` : ''}`,
     );
+    if (sensitiveFieldIds?.length) await this.logAction(collectionId, operatorUserId, 'SHARE_PROTECTED_FIELDS', `Member ${targetUser.id}; fields ${sensitiveFieldIds.join(',')}`);
 
     return updated!;
   }

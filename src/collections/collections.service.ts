@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { Model, QueryFilter, Types } from 'mongoose';
 import { CollectionExchangeRateInput, CollectionFieldInput, CollectionFormatInput, CollectionUnitInput, CreateCollectionInput, EntryFieldFilterInput, EntryFilterOperator, EntryRecurrenceInput, EntryValueInput, ImportEntriesInput, ImportObjectLinkInput, SavedCollectionViewInput, UpdateCollectionFieldInput, UpdateCollectionFormatInput } from './collection.input';
 import { validateClassificationCodes } from './classification.logic';
-import { Collection, CollectionField, CollectionFormat, CollectionFormatImpact, FieldKind, ObjectModelTemplate, SavedCollectionView } from './collection.schema';
+import { Collection, CollectionField, CollectionFormat, CollectionFormatImpact, FieldKind, ObjectModelTemplate, SavedCollectionView, SensitivityLevel } from './collection.schema';
 import { CalendarOccurrence, Entry, EntryAttachment, EntryPage, EntryValue, ImportEntriesResult, ObjectPropertySnapshot, ObjectReferenceSnapshot, ResolvedObjectReference, ResolvedObjectVariable } from './entry.schema';
 import { ContributionLink, ContributionSubmission } from './contribution.schema';
 import { addLocalDays, addLocalMonths, localDate, localTime, localToInstant, validTimeZone } from './time_math';
@@ -17,6 +17,7 @@ import { LedgerService } from './ledger.service';
 import { CollectionRole } from './collaboration.schema';
 import { parsePosition, parseZone } from './geo.logic';
 import { assertWorkflowEdit, importedWorkflowHistory, prepareWorkflowCreate, prepareWorkflowImport } from './workflow.rules';
+import { protectedFields, validSensitivity } from './sensitivity.logic';
 
 export const formatColors = [
   '#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF',
@@ -225,6 +226,7 @@ export class CollectionsService {
       if (names.has(key)) throw new BadRequestException('Field names must be unique within a format');
       names.add(key);
       if (!Object.values(FieldKind).includes(field.kind)) throw new BadRequestException('Invalid field type');
+      if (field.sensitivity && !validSensitivity(field.sensitivity)) throw new BadRequestException('Choose a sensitivity level');
       const unit = field.unit?.trim();
       if (unit && field.kind !== FieldKind.NUMBER && field.kind !== FieldKind.MEASURE) throw new BadRequestException('Only number and measure fields can have units');
       if (unit && ((unit.startsWith('local:') ? unit.length > 70 : unit.length > 24) || /[\x00-\x1f\x7f]/.test(unit))) {
@@ -255,7 +257,7 @@ export class CollectionsService {
       if (requestedId && (!existingIds?.has(requestedId) || ids.has(requestedId))) throw new BadRequestException('Invalid or repeated field ID');
       const id = requestedId || randomUUID();
       ids.add(id);
-      return { id, name: fieldName, kind: field.kind, ...(unit ? { unit } : {}), ...(choice ? { options } : {}), ...(reference ? { targetObjectFormatId, multiple: field.multiple ?? false, variableName, referenceMode } : {}), ...(codeListId ? { codeListId } : {}) };
+      return { id, name: fieldName, kind: field.kind, sensitivity: field.sensitivity ?? ([FieldKind.POSITION, FieldKind.ZONE].includes(field.kind) ? SensitivityLevel.SENSITIVE : SensitivityLevel.ORDINARY), ...(unit ? { unit } : {}), ...(choice ? { options } : {}), ...(reference ? { targetObjectFormatId, multiple: field.multiple ?? false, variableName, referenceMode } : {}), ...(codeListId ? { codeListId } : {}) };
     });
   }
 
@@ -279,8 +281,9 @@ export class CollectionsService {
     if (!name || name.length > 80) throw new BadRequestException('Data format name must be 1 to 80 characters');
     const color = this.validatedColor(input.color);
     const fields = this.validateFields(input.fields);
+    if (input.sensitivity && !validSensitivity(input.sensitivity)) throw new BadRequestException('Choose a sensitivity level');
     if (input.objectModel && !fields.some((field) => field.kind === FieldKind.TITLE)) throw new BadRequestException('An object data format needs a title field');
-    return { id: randomUUID(), name, color, fields, version: 1, objectModel: input.objectModel ?? false };
+    return { id: randomUUID(), name, color, fields, sensitivity: input.sensitivity ?? SensitivityLevel.ORDINARY, version: 1, objectModel: input.objectModel ?? false };
   }
 
   objectModelTemplates(language?: string): ObjectModelTemplate[] {
@@ -410,6 +413,11 @@ export class CollectionsService {
       throw new BadRequestException('Data format names must be unique within a collection');
     }
     const fields = this.validateFields(input.fields, new Set(current.fields.map((field) => field.id)));
+    for (const field of fields) {
+      const previous = current.fields.find((item) => item.id === field.id);
+      const requested = input.fields.find((item) => item.id === field.id);
+      if (previous && requested?.sensitivity === undefined) field.sensitivity = previous.sensitivity ?? SensitivityLevel.ORDINARY;
+    }
     if (current.workflow) {
       const before = current.fields.find((field) => field.id === current.workflow!.stateFieldId);
       const after = fields.find((field) => field.id === current.workflow!.stateFieldId);
@@ -528,7 +536,9 @@ export class CollectionsService {
     const collection = await this.one(collectionId, ownerId);
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     const entries = await this.entries.find({ ownerId: collection.ownerId, collectionId }).sort({ createdAt: -1 }).exec();
-    return entries.map((entry) => this.collaboration.filterEntryFields(entry, access.member, collection));
+    const visible = entries.map((entry) => this.collaboration.filterEntryFields(entry, access.member, collection));
+    await this.collaboration.auditProtectedRead(collection, ownerId, visible);
+    return visible;
   }
 
   async entryDetail(collectionId: string, entryId: string, ownerId: string): Promise<Entry> {
@@ -536,7 +546,9 @@ export class CollectionsService {
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     const entry = await this.entries.findOne({ _id: entryId, ownerId: collection.ownerId, collectionId }).exec();
     if (!entry) throw new NotFoundException('Entry not found');
-    return this.collaboration.filterEntryFields(entry, access.member, collection);
+    const visible = this.collaboration.filterEntryFields(entry, access.member, collection);
+    await this.collaboration.auditProtectedRead(collection, ownerId, [visible]);
+    return visible;
   }
 
   async saveView(collectionId: string, ownerId: string, input: SavedCollectionViewInput, viewId?: string): Promise<Collection> {
@@ -660,6 +672,7 @@ export class CollectionsService {
     const rawEntries = await this.entries.find({ ownerId: collection.ownerId, collectionId, formatId: view.formatIds[0] }).limit(10_001).exec();
     if (rawEntries.length > 10_000) throw new BadRequestException('Calendar has too many events for this view');
     const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member, collection));
+    await this.collaboration.auditProtectedRead(collection, ownerId, entries);
     const result: CalendarOccurrence[] = [];
     const clock = (date: Date, zone: string) => { const local = localTime(date, zone); return `${local.hour.toString().padStart(2, '0')}:${local.minute.toString().padStart(2, '0')}`; };
     for (const entry of entries) {
@@ -708,6 +721,7 @@ export class CollectionsService {
     if (!Number.isInteger(input.first) || input.first < 1 || input.first > 100) throw new BadRequestException('Page size must be between 1 and 100');
     const search = input.search?.trim() ?? '';
     if (search.length > 200) throw new BadRequestException('Search is too long');
+    if (access.member && search && collection.formats.some((item) => [...protectedFields(item)].some((id) => !access.member!.sensitiveFieldIds?.includes(id)))) throw new BadRequestException('Search is unavailable while protected fields are hidden');
     if ((input.filters?.length ?? 0) > 8) throw new BadRequestException('Choose at most 8 filters');
     let format = input.formatId ? collection.formats.find((item) => item.id === input.formatId) : undefined;
     if (input.formatId && !format) throw new BadRequestException('Data format not found in this collection');
@@ -717,6 +731,7 @@ export class CollectionsService {
       if (!matching || (format && matching.id !== format.id)) throw new BadRequestException('Filter field does not belong to this data format');
       format = matching;
       const field = matching.fields.find((item) => item.id === filter.fieldId)!;
+      if (access.member && ((access.member.sharedFieldIds?.length && !access.member.sharedFieldIds.includes(field.id)) || (protectedFields(matching).has(field.id) && !access.member.sensitiveFieldIds?.includes(field.id)))) throw new BadRequestException('This field is not shared for filtering');
       conditions.push(this.entryFilterCondition(field, filter));
     }
     if (input.after && view?.sort !== 'MANUAL') {
@@ -736,6 +751,7 @@ export class CollectionsService {
     if (search) query.$text = { $search: search };
     if (conditions.length) query.$and = conditions;
     if (view?.sort === 'MANUAL') {
+      if (access.member && (view.manualOrderFieldIds ?? []).some((id) => collection.formats.some((item) => protectedFields(item).has(id) && !access.member!.sensitiveFieldIds?.includes(id)))) throw new BadRequestException('This view sorts by a protected field');
       const all = await this.entries.find(query as QueryFilter<Entry>).limit(10001).exec();
       if (all.length > 10000) throw new BadRequestException('Manual order currently supports at most 10000 entries');
       const orderFields = new Map(view.formatIds.map((formatId) => [formatId, collection.formats.find((item) => item.id === formatId)?.fields.find((field) => view.manualOrderFieldIds?.includes(field.id))?.id]));
@@ -760,6 +776,7 @@ export class CollectionsService {
       }
       const rawEntries = all.slice(start, start + input.first);
       const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member, collection));
+      await this.collaboration.auditProtectedRead(collection, ownerId, entries);
       const last = rawEntries.at(-1);
       const hasMore = start + rawEntries.length < all.length;
       return { entries, hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ manual: true, id: last.id })).toString('base64url') : undefined };
@@ -769,6 +786,7 @@ export class CollectionsService {
     const hasMore = found.length > input.first;
     const rawEntries = found.slice(0, input.first);
     const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member, collection));
+    await this.collaboration.auditProtectedRead(collection, ownerId, entries);
     const last = rawEntries.at(-1);
     return { entries, hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ createdAt: last.createdAt.toISOString(), id: last.id })).toString('base64url') : undefined };
   }
@@ -1064,7 +1082,9 @@ export class CollectionsService {
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     if (!collection.formats.some((format) => format.id === entry.formatId && format.objectModel)) throw new NotFoundException('Object not found');
     entry.revisions ??= [];
-    return this.collaboration.filterEntryFields(entry, access.member, collection);
+    const visible = this.collaboration.filterEntryFields(entry, access.member, collection);
+    await this.collaboration.auditProtectedRead(collection, ownerId, [visible]);
+    return visible;
   }
 
   async objectsPage(collectionId: string, formatId: string, ownerId: string, first: number, after?: string, search?: string): Promise<EntryPage> {
@@ -1167,7 +1187,9 @@ export class CollectionsService {
     const collection = await this.one(entry.collectionId, ownerId);
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     const asOfEntry = await this.measurements.asOfDate(entry, asOfDate);
-    return this.collaboration.filterEntryFields(asOfEntry, access.member, collection);
+    const visible = this.collaboration.filterEntryFields(asOfEntry, access.member, collection);
+    await this.collaboration.auditProtectedRead(collection, ownerId, [visible]);
+    return visible;
   }
 
   private validateValues(values: EntryValueInput[], fields: Collection['fields'], existing: EntryValue[] = [], units: CollectionUnit[] = [], imported = false, codeLists: Collection['codeLists'] = []): EntryValue[] {

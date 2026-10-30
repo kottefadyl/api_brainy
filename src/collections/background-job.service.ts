@@ -10,9 +10,12 @@ import { ImportEntriesInput } from './collection.input';
 import { CollectionsService } from './collections.service';
 import { ForecastInput } from './forecast.input';
 import { ForecastService } from './forecast.service';
+import { CollaborationService } from './collaboration.service';
+import { protectedFields } from './sensitivity.logic';
+import { EntryValue } from './entry.schema';
 
 type ImportPayload = Pick<ImportEntriesInput, 'formatId' | 'rows'>;
-type ExportPayload = { formatId: string; limit?: number };
+type ExportPayload = { formatId: string; limit?: number; includeSensitive?: boolean };
 const kinds = ['IMPORT', 'EXPORT', 'RECALCULATE', 'CHART', 'FORECAST'] as const;
 const leaseMs = 120_000;
 const expiryMs = 30 * 24 * 60 * 60 * 1000;
@@ -29,6 +32,7 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
     private readonly collections: CollectionsService,
     private readonly analysis: AnalysisService,
     private readonly forecast: ForecastService,
+    private readonly collaboration: CollaborationService,
   ) {}
 
   onApplicationBootstrap() {
@@ -65,6 +69,7 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
     } else if (input.kind === 'EXPORT') {
       const limit = payload.limit ?? 5000;
       if (!Number.isInteger(limit) || Number(limit) < 1 || Number(limit) > 5000) throw new BadRequestException('Export 1 to 5000 entries per task');
+      if (payload.includeSensitive !== undefined && typeof payload.includeSensitive !== 'boolean') throw new BadRequestException('Choose whether to include protected fields');
       total = Number(limit);
     } else if (input.kind === 'FORECAST') {
       if (typeof payload.fieldId !== 'string' || typeof payload.dateFieldId !== 'string' || typeof payload.frequency !== 'string' || typeof payload.method !== 'string' || typeof payload.measureKind !== 'string' || !Number.isInteger(payload.horizon) || !Number.isInteger(payload.holdout)) throw new BadRequestException('Choose forecast fields, method and horizon');
@@ -191,7 +196,10 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
   }
 
   private async exportRows(job: BackgroundJob, payload: ExportPayload) {
-    const rows: unknown[] = [];
+    const collection = await this.ownedCollection(job.collectionId, job.ownerId);
+    const format = collection.formats.find((item) => item.id === payload.formatId);
+    if (!format) throw new BadRequestException('Data format not found');
+    const rows: { sourceId: string; createdAt: Date; updatedAt: Date; values: EntryValue[] }[] = [];
     let after: string | undefined;
     let hasMore = false;
     do {
@@ -203,6 +211,12 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
       await this.jobs.updateOne({ _id: job.id, workerId: this.workerId }, { $set: { processed: rows.length, leaseUntil: new Date(Date.now() + leaseMs) } }).exec();
       if (Buffer.byteLength(JSON.stringify(rows), 'utf8') > 3_500_000) throw new BadRequestException('Export result exceeds 3.5 MB; narrow the request');
     } while (after && rows.length < job.total);
-    return { formatId: payload.formatId, rows, hasMore };
+    const latest = await this.ownedCollection(job.collectionId, job.ownerId);
+    const currentFormat = latest.formats.find((item) => item.id === payload.formatId);
+    if (!currentFormat) throw new BadRequestException('Data format changed during export');
+    const hidden = payload.includeSensitive === true ? new Set<string>() : protectedFields(currentFormat);
+    const safeRows = rows.map((row) => ({ ...row, values: row.values.filter((value) => !hidden.has(value.fieldId)).map((value) => payload.includeSensitive ? value : { ...value, objectSnapshots: [] }) }));
+    if (payload.includeSensitive && protectedFields(currentFormat).size) await this.collaboration.logAction(job.collectionId, job.ownerId, 'EXPORT_PROTECTED_DATA', `Data format ${currentFormat.id}; rows ${rows.length}`);
+    return { formatId: payload.formatId, rows: safeRows, hasMore, protectedFieldsIncluded: payload.includeSensitive === true };
   }
 }

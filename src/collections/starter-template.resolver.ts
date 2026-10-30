@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Args, Context, Field, Mutation, ObjectType, Query, Resolver } from '@nestjs/graphql';
 import { AuthService } from '../auth/auth.service';
-import { Collection, FieldKind } from './collection.schema';
+import { Collection, FieldKind, SensitivityLevel } from './collection.schema';
 import { CollectionsService } from './collections.service';
 import { StockService } from './stock.service';
 
@@ -14,7 +14,7 @@ class StarterTemplate {
 
 type Request = { headers: { authorization?: string } };
 type TemplateField = { name: string; kind: FieldKind; options?: string[]; unit?: string };
-type TemplateFormat = { name: string; color: string; fields: TemplateField[]; objectModel?: boolean };
+type TemplateFormat = { name: string; color: string; fields: TemplateField[]; objectModel?: boolean; sensitivity?: SensitivityLevel };
 type TemplateDefinition = { id: string; name: string; description: string; formats: TemplateFormat[]; layout?: 'TASKS' | 'CALENDAR' };
 
 function templates(language: string): TemplateDefinition[] {
@@ -36,7 +36,7 @@ function templates(language: string): TemplateDefinition[] {
       ['weather', fr ? 'Observations météo' : 'Weather observations', fr ? 'Lieu' : 'Location', '#EDF9F3'],
       ['health', fr ? 'Suivi personnel de santé' : 'Personal health tracking', fr ? 'Sujet' : 'Subject', '#FFF0F4'],
       ['machine', fr ? 'Mesures de machines' : 'Machine measurements', fr ? 'Machine' : 'Machine', '#FFF5EB'],
-    ] as const).map(([id, name, subject, color]) => ({ id, name, description: fr ? 'Mesures datées avec qualité, conditions et source.' : 'Dated measurements with quality, conditions and source.', formats: [{ name: subject, color, objectModel: true, fields: [{ name: fr ? 'Nom' : 'Name', kind: FieldKind.TITLE }] }] })),
+    ] as const).map(([id, name, subject, color]) => ({ id, name, description: fr ? 'Mesures datées avec qualité, conditions et source.' : 'Dated measurements with quality, conditions and source.', formats: [{ name: subject, color, objectModel: true, sensitivity: id === 'health' ? SensitivityLevel.SENSITIVE : SensitivityLevel.ORDINARY, fields: [{ name: fr ? 'Nom' : 'Name', kind: FieldKind.TITLE }] }] })),
     { id: 'book', name: fr ? 'Livre' : 'Book', description: fr ? 'Chapitres, scènes et notes reliables, avec ordre manuel.' : 'Linkable chapters, scenes and notes with manual order.', formats: [
       { name: fr ? 'Chapitre' : 'Chapter', color: '#EEF5FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Ordre' : 'Order', kind: FieldKind.NUMBER }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.LONG_TEXT }] },
       { name: fr ? 'Scène' : 'Scene', color: '#EDF9F3', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Ordre' : 'Order', kind: FieldKind.NUMBER }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.LONG_TEXT }] },
@@ -99,7 +99,7 @@ export class StarterTemplateResolver {
       const unit = template.id === 'weather' ? '°C' : template.id === 'health' ? 'bpm' : template.id === 'machine' ? 'h' : 'g';
       const subjectId = collection.formats[0].id;
       collection = await this.collections.addFormat(collection.id, {
-        name: language === 'fr' ? 'Mesure' : 'Measurement', color: '#F4F0FF', fields: [
+        name: language === 'fr' ? 'Mesure' : 'Measurement', color: '#F4F0FF', sensitivity: template.id === 'health' ? SensitivityLevel.SENSITIVE : SensitivityLevel.ORDINARY, fields: [
           { name: language === 'fr' ? 'Titre' : 'Title', kind: FieldKind.TITLE },
           { name: language === 'fr' ? 'Objet mesuré' : 'Measured subject', kind: FieldKind.OBJECT_REF, targetObjectFormatId: subjectId },
           { name: language === 'fr' ? 'Valeur' : 'Value', kind: FieldKind.NUMBER, unit },

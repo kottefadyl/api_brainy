@@ -9,6 +9,8 @@ import { MoveOperation } from './move-operation.schema';
 import { EntryReminder } from './reminder.schema';
 import { StockMovement } from './stock.schema';
 import { EntryRelation } from './relation.schema';
+import { CollaborationService } from './collaboration.service';
+import { protectedFields } from './sensitivity.logic';
 
 const colors = ['#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF', '#FFF0F4', '#EAF8FA', '#FBF7E9', '#F1F8ED', '#F8F0FA', '#F1F5FA', '#FFF7F1', '#EFF8FF', '#FDEFF7', '#EDF7FF', '#F7FBEA', '#FFF0E8', '#EFEFFD', '#E9F8F4', '#FBF1E8', '#F0F8F9', '#FFF2EF', '#F4F8E8', '#F1F2FF', '#EFFAF0'];
 type CopyPlan = { source: Collection; target: Collection; formats: CollectionFormat[]; units: CollectionUnit[]; codeLists: ClassificationList[]; formulas: CollectionFormula[]; entries: Entry[]; relations: EntryRelation[]; conflicts: string[]; colors: Map<string, string> };
@@ -21,6 +23,7 @@ export class TransferService implements OnApplicationBootstrap {
     @InjectModel(MoveOperation.name) private readonly moves: Model<MoveOperation>,
     @InjectModel(EntryReminder.name) private readonly reminders: Model<EntryReminder>,
     @InjectModel(StockMovement.name) private readonly stockMovements: Model<StockMovement>,
+    private readonly collaboration: CollaborationService,
     @InjectModel(EntryRelation.name) private readonly relations: Model<EntryRelation>,
   ) {}
 
@@ -55,13 +58,15 @@ export class TransferService implements OnApplicationBootstrap {
     return { source, format };
   }
 
-  async shareObject(objectId: string, targetCollectionId: string, propertyFieldIds: string[], mode: string, ownerId: string): Promise<SharedObjectGrant> {
+  async shareObject(objectId: string, targetCollectionId: string, propertyFieldIds: string[], mode: string, ownerId: string, includeSensitive = false): Promise<SharedObjectGrant> {
     const { source, entry } = await this.objectSource(objectId, ownerId);
     if (entry.movingOperationId) throw new BadRequestException('This object is being moved');
     const target = await this.collection(targetCollectionId, ownerId);
     if (target.id === source.id) throw new BadRequestException('Choose another collection');
     if (!['CURRENT', 'SNAPSHOT'].includes(mode)) throw new BadRequestException('Choose current values or a snapshot');
     const format = source.formats.find((item) => item.id === entry.formatId)!;
+    const sensitiveFieldIds = propertyFieldIds.filter((id) => protectedFields(format).has(id));
+    if (sensitiveFieldIds.length && !includeSensitive) throw new BadRequestException('Choose explicitly to share protected object properties');
     const allowed = new Set(propertyFieldIds);
     const title = format.fields.find((field) => field.kind === 'TITLE');
     if (!title || !allowed.has(title.id) || allowed.size < 1 || allowed.size > 30 || allowed.size !== propertyFieldIds.length || propertyFieldIds.some((id) => !format.fields.some((field) => field.id === id && !['OBJECT_REF', 'ATTACHMENT'].includes(field.kind)))) {
@@ -73,9 +78,10 @@ export class TransferService implements OnApplicationBootstrap {
       const value = entry.values.find((item) => item.fieldId === field.id);
       return allowed.has(field.id) && value ? [{ fieldId: field.id, name: field.name, kind: field.kind, value: value.value, unitSnapshot: value.unitSnapshot }] : [];
     });
-    const grant: SharedObjectGrant = { id: randomUUID(), sourceCollectionId: source.id, sourceFormatId: format.id, sourceFormatVersion: format.version ?? 1, objectId, sourceName: source.name, objectName: entry.values.find((item) => item.fieldId === title.id)!.value, propertyFieldIds, mode, snapshot, createdAt: new Date() };
+    const grant: SharedObjectGrant = { id: randomUUID(), sourceCollectionId: source.id, sourceFormatId: format.id, sourceFormatVersion: format.version ?? 1, objectId, sourceName: source.name, objectName: entry.values.find((item) => item.fieldId === title.id)!.value, propertyFieldIds, sensitiveFieldIds, mode, snapshot, createdAt: new Date() };
     const result = await this.collections.updateOne({ _id: target.id, ownerId, 'sharedObjects.99': { $exists: false }, sharedObjects: { $not: { $elemMatch: { objectId, revokedAt: null } } } }, { $push: { sharedObjects: grant } }).exec();
     if (!result.modifiedCount) throw new BadRequestException('The target collection changed. Review the link again');
+    if (sensitiveFieldIds.length) await this.collaboration.logAction(source.id, ownerId, 'SHARE_PROTECTED_FIELDS', `Object ${objectId}; target ${target.id}; fields ${sensitiveFieldIds.join(',')}`);
     return grant;
   }
 

@@ -30,9 +30,16 @@ export enum FieldKind {
 
 registerEnumType(FieldKind, { name: 'FieldKind' });
 
+export enum SensitivityLevel { ORDINARY = 'ORDINARY', PERSONAL = 'PERSONAL', SENSITIVE = 'SENSITIVE' }
+registerEnumType(SensitivityLevel, { name: 'SensitivityLevel' });
+
 @ObjectType()
 @Schema({ _id: false })
 export class CollectionField {
+  @Field(() => SensitivityLevel)
+  @Prop({ enum: Object.values(SensitivityLevel), default: SensitivityLevel.ORDINARY })
+  sensitivity?: SensitivityLevel;
+
   @Field()
   @Prop({ required: true })
   id!: string;
@@ -93,6 +100,10 @@ export const LinkedFormatSourceSchema = SchemaFactory.createForClass(LinkedForma
 @ObjectType()
 @Schema({ _id: false })
 export class CollectionFormat {
+  @Field(() => SensitivityLevel)
+  @Prop({ enum: Object.values(SensitivityLevel), default: SensitivityLevel.ORDINARY })
+  sensitivity?: SensitivityLevel;
+
   @Field()
   @Prop({ required: true })
   id!: string;
@@ -231,6 +242,7 @@ export class SharedObjectGrant {
   @Field() @Prop({ required: true }) sourceName!: string;
   @Field() @Prop({ required: true }) objectName!: string;
   @Field(() => [String]) @Prop({ type: [String], required: true }) propertyFieldIds!: string[];
+  @Field(() => [String], { nullable: true }) @Prop({ type: [String], default: [] }) sensitiveFieldIds?: string[];
   @Field() @Prop({ required: true, enum: ['CURRENT', 'SNAPSHOT'] }) mode!: string;
   @Field(() => [ObjectPropertySnapshot]) @Prop({ type: [ObjectPropertySnapshotSchema], required: true }) snapshot!: ObjectPropertySnapshot[];
   @Field() @Prop({ required: true }) createdAt!: Date;
@@ -280,6 +292,9 @@ export const CollectionFormulaSchema = SchemaFactory.createForClass(CollectionFo
 @ObjectType()
 @Schema({ timestamps: true })
 export class Collection {
+  @Field({ nullable: true })
+  @Prop({ default: 5, min: 2, max: 100 })
+  minAggregateSize?: number;
   @Prop({ default: 0 }) relationVersion?: number;
   @Prop() relationLockOwner?: string;
   @Prop() relationLockAt?: Date;

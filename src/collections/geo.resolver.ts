@@ -72,7 +72,7 @@ export class GeoResolver {
   }
 
   @Query(() => String)
-  async exportGeoPoints(@Args('collectionId') collectionId: string, @Args('formatId') formatId: string, @Args('fieldId') fieldId: string, @Args('kind') kind: string, @Context('req') request: Request) {
-    return this.service.exportPoints(collectionId, await this.user(request), formatId, fieldId, kind);
+  async exportGeoPoints(@Args('collectionId') collectionId: string, @Args('formatId') formatId: string, @Args('fieldId') fieldId: string, @Args('kind') kind: string, @Args('includeSensitive', { type: () => Boolean, nullable: true }) includeSensitive: boolean | undefined, @Context('req') request: Request) {
+    return this.service.exportPoints(collectionId, await this.user(request), formatId, fieldId, kind, includeSensitive === true);
   }
 }

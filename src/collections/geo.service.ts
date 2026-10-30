@@ -9,6 +9,7 @@ import { CollectionsService } from './collections.service';
 import { AnalysisService } from './analysis.service';
 import { Entry } from './entry.schema';
 import { distanceMeters, parsePosition, Position } from './geo.logic';
+import { protectedFields } from './sensitivity.logic';
 
 type ImportRow = { sourceId: string; name: string; position: Position };
 
@@ -155,17 +156,21 @@ export class GeoService {
     return { count, errors: [] };
   }
 
-  async exportPoints(collectionId: string, userId: string, formatId: string, fieldId: string, kind: string) {
+  async exportPoints(collectionId: string, userId: string, formatId: string, fieldId: string, kind: string, includeSensitive = false) {
     const collection = await this.context(collectionId, userId);
     this.positionField(collection, formatId, fieldId);
+    const format = collection.formats.find((item) => item.id === formatId)!;
+    const protectedIds = protectedFields(format);
+    if (protectedIds.has(fieldId) && !includeSensitive) throw new BadRequestException('Choose explicitly to include protected position data in this export');
     if (!['GEOJSON', 'CSV'].includes(kind)) throw new BadRequestException('Choose GEOJSON or CSV');
     const entries = await this.entries.find({ collectionId, ownerId: collection.ownerId, formatId, values: { $elemMatch: { fieldId } } }).limit(10001).exec();
     if (entries.length > 10000) throw new BadRequestException('Export at most 10000 points at a time');
-    const titleId = collection.formats.find((item) => item.id === formatId)?.fields.find((item) => item.kind === FieldKind.TITLE)?.id;
+    const titleId = format.fields.find((item) => item.kind === FieldKind.TITLE)?.id;
     const rows = entries.flatMap((entry) => {
-      try { return [{ id: entry.id, name: entry.values.find((item) => item.fieldId === titleId)?.value || '', position: parsePosition(entry.values.find((item) => item.fieldId === fieldId)!.value) }]; }
+      try { return [{ id: entry.id, name: !includeSensitive && titleId && protectedIds.has(titleId) ? '' : entry.values.find((item) => item.fieldId === titleId)?.value || '', position: parsePosition(entry.values.find((item) => item.fieldId === fieldId)!.value) }]; }
       catch { return []; }
     });
+    if (includeSensitive && protectedIds.size) await this.collaboration.logAction(collectionId, userId, 'EXPORT_PROTECTED_DATA', `Geo data format ${formatId}; rows ${rows.length}`);
     if (kind === 'GEOJSON') return JSON.stringify({ type: 'FeatureCollection', features: rows.map((row) => ({ type: 'Feature', id: row.id, geometry: { type: 'Point', coordinates: [row.position.longitude, row.position.latitude] }, properties: { name: row.name, ...(row.position.accuracy === undefined ? {} : { accuracy: row.position.accuracy }) } })) });
     const escape = (value: string) => `"${value.replace(/"/g, '""')}"`;
     return ['latitude,longitude,accuracy,name', ...rows.map((row) => `${row.position.latitude},${row.position.longitude},${row.position.accuracy ?? ''},${escape(row.name)}`)].join('\n');

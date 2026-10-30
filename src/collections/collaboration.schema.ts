@@ -35,6 +35,10 @@ export class CollectionMember {
   @Field(() => [String], { nullable: true })
   @Prop({ type: [String], default: [] })
   sharedFieldIds?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @Prop({ type: [String], default: [] })
+  sensitiveFieldIds?: string[];
 }
 
 export const CollectionMemberSchema = SchemaFactory.createForClass(CollectionMember);

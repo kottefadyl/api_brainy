@@ -1,5 +1,5 @@
 import { Field, InputType, registerEnumType } from '@nestjs/graphql';
-import { FieldKind } from './collection.schema';
+import { FieldKind, SensitivityLevel } from './collection.schema';
 import { WorkflowEventImportInput } from './workflow.schema';
 
 @InputType()
@@ -45,6 +45,8 @@ export class EntryReminderInput {
 
 @InputType()
 export class CollectionFieldInput {
+  @Field(() => SensitivityLevel, { nullable: true })
+  sensitivity?: SensitivityLevel;
   @Field()
   name!: string;
 
@@ -93,6 +95,8 @@ export class UpdateCollectionFormatInput {
 
 @InputType()
 export class CollectionFormatInput {
+  @Field(() => SensitivityLevel, { nullable: true })
+  sensitivity?: SensitivityLevel;
   @Field()
   name!: string;
 

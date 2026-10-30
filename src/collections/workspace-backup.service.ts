@@ -15,6 +15,8 @@ import { ContributionLink, ContributionSubmission } from './contribution.schema'
 import { LedgerHead, LedgerRedaction } from './ledger.schema';
 import { LedgerService, verifyLedgerRows } from './ledger.service';
 import { StockLedgerService, verifyStockRows } from './stock-ledger.service';
+import { hasProtectedData } from './sensitivity.logic';
+import { CollaborationService } from './collaboration.service';
 
 type Kind = 'collections' | 'entries' | 'entryLinks' | 'relations' | 'stockMovements' | 'reminders' | 'deliveries' | 'auditLogs' | 'moves' | 'contributionLinks' | 'contributionSubmissions' | 'ledgerHeads' | 'ledgerRedactions' | 'stockLedgerHeads';
 const legacyKinds: Kind[] = ['collections', 'entries', 'entryLinks', 'relations', 'stockMovements', 'reminders', 'deliveries', 'auditLogs', 'moves'];
@@ -30,12 +32,14 @@ function canonical(value: unknown): string {
 
 @Injectable()
 export class WorkspaceBackupService {
-  constructor(@InjectConnection() private readonly connection: Connection, private readonly ledger: LedgerService, private readonly stockLedger: StockLedgerService) {}
+  constructor(@InjectConnection() private readonly connection: Connection, private readonly ledger: LedgerService, private readonly stockLedger: StockLedgerService, private readonly collaboration: CollaborationService) {}
   private collection(kind: Kind) { return this.connection.db!.collection(this.connection.model(modelName[kind]).collection.name); }
   private encode(rows: unknown[]): string[] { return rows.map((row) => mongo.BSON.EJSON.stringify(row, { relaxed: false })); }
 
-  async export(userId: string): Promise<string> {
+  async export(userId: string, includeSensitive = false): Promise<string> {
     const collections = await this.collection('collections').find({ ownerId: userId }).toArray();
+    const protectedCollections = collections.filter((item) => hasProtectedData(item as unknown as Collection));
+    if (protectedCollections.length && !includeSensitive) throw new BadRequestException('Choose explicitly to include protected data in a complete workspace backup');
     const ids = collections.map((item) => item._id.toString());
     for (const collection of collections) for (const format of ((collection.formats as { id: string; appendOnly?: boolean }[] | undefined) ?? [])) if (format.appendOnly) {
       const integrity = await this.ledger.verify(collection._id.toString(), format.id, userId);
@@ -55,6 +59,7 @@ export class WorkspaceBackupService {
     const data: Archive['data'] = { collections: this.encode(collections), entries: this.encode(entries), entryLinks: this.encode(entryLinks), relations: this.encode(relations), stockMovements: this.encode(stockMovements), reminders: this.encode(reminders), deliveries: this.encode(deliveries), auditLogs: this.encode(auditLogs), moves: this.encode(moves), contributionLinks: this.encode(contributionLinks), contributionSubmissions: this.encode(contributionSubmissions), ledgerHeads: this.encode(ledgerHeads), ledgerRedactions: this.encode(ledgerRedactions), stockLedgerHeads: this.encode(stockLedgerHeads) };
     const result = JSON.stringify({ brainyWorkspaceVersion: 1, ownerId: userId, exportedAt: new Date().toISOString(), data, checksum: checksum(data) });
     if (result.length > 50_000_000) throw new BadRequestException('Workspace backup exceeds 50 MB. Export collections separately until large backups are available');
+    for (const collection of protectedCollections) await this.collaboration.logAction(collection._id.toString(), userId, 'EXPORT_PROTECTED_DATA', 'Complete workspace backup');
     return result;
   }
 

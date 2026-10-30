@@ -8,6 +8,8 @@ import { EntryFieldFilterInput, EntryFilterOperator } from './collection.input';
 import { Collection, CollectionField, CollectionFormula, FieldKind } from './collection.schema';
 import { codeAtDepth } from './classification.logic';
 import { ZoneAnalysisService } from './zone-analysis.service';
+import { CollaborationService } from './collaboration.service';
+import { assertSensitiveAnalysisRequest, enforceSensitiveAggregate } from './sensitivity.logic';
 import { Entry } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
 
@@ -18,7 +20,7 @@ const negate = (a: Rational): Rational => ({ n: -a.n, d: a.d });
 
 @Injectable()
 export class AnalysisService {
-  constructor(@InjectModel(Collection.name) private readonly collections: Model<Collection>, @InjectModel(Entry.name) private readonly entries: Model<Entry>, private readonly zoneAnalysis: ZoneAnalysisService) {}
+  constructor(@InjectModel(Collection.name) private readonly collections: Model<Collection>, @InjectModel(Entry.name) private readonly entries: Model<Entry>, private readonly zoneAnalysis: ZoneAnalysisService, private readonly collaboration: CollaborationService) {}
 
   private async collection(collectionId: string, ownerId: string): Promise<Collection> {
     if (!Types.ObjectId.isValid(collectionId)) throw new NotFoundException('Collection not found');
@@ -211,6 +213,7 @@ export class AnalysisService {
     const collection = await this.collection(collectionId, ownerId);
     const format = collection.formats.find((item) => item.id === input.formatId);
     if (!format) throw new BadRequestException('Data format not found');
+    const sensitive = assertSensitiveAnalysisRequest(format, input);
     if (input.groupBy === 'ZONE') return this.zoneAnalysis.analyse(collection, ownerId, input);
     const spec = getOperationSpec(input.operation);
     if (!['NONE', 'DAY', 'MONTH', 'CATEGORY', 'OBJECT'].includes(input.groupBy) || !['EVENT', 'SNAPSHOT', 'RATE'].includes(input.measureKind)) {
@@ -406,7 +409,7 @@ export class AnalysisService {
         ? `${labelFor(groupField, row.rowKey)} × ${labelFor(secondaryGroupField, row.columnKey)}`
         : labelFor(groupField, row.group);
     }
-    return {
+    const result: AnalysisResult = {
       operation: input.operation,
       operationVersion: spec.version,
       groupBy: input.groupBy,
@@ -422,5 +425,9 @@ export class AnalysisService {
       rows,
       comparisonRows,
     };
+    if (!sensitive) return result;
+    const safe = enforceSensitiveAggregate(result, collection.minAggregateSize ?? 5);
+    await this.collaboration.logAction(collectionId, ownerId, 'READ_SENSITIVE_AGGREGATE', `Data format ${format.id}; operation ${input.operation}`);
+    return safe;
   }
 }

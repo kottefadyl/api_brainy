@@ -48,6 +48,8 @@ import { ContributionService } from './contribution.service';
 import { LedgerHead, LedgerHeadSchema, LedgerRedaction, LedgerRedactionSchema } from './ledger.schema';
 import { LedgerResolver } from './ledger.resolver';
 import { LedgerService } from './ledger.service';
+import { SensitivityService } from './sensitivity.service';
+import { SensitivityResolver } from './sensitivity.resolver';
 
 @Module({
   imports: [
@@ -74,7 +76,7 @@ import { LedgerService } from './ledger.service';
       { name: LedgerRedaction.name, schema: LedgerRedactionSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}

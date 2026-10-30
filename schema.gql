@@ -1,0 +1,1442 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+input AnalysisInput {
+  comparisonFrom: String
+  comparisonTo: String
+  counterResetFieldId: String
+  dateFieldId: String
+  denominatorFieldId: String
+  denominatorValue: String
+  fieldId: String
+  filters: [EntryFieldFilterInput!]
+  formatId: String!
+  formulaId: String
+  from: String
+  groupBy: String!
+  groupDepth: Int
+  groupFieldId: String
+  language: String
+  measureKind: String!
+  operation: String!
+  percentile: Int
+  rateBase: Int
+  search: String
+  secondaryGroupBy: String
+  secondaryGroupDepth: Int
+  secondaryGroupFieldId: String
+  sourceGroup: String
+  sourceOffset: Float
+  to: String
+  viewId: String
+  weightFieldId: String
+  windowSize: Int
+  zoneFieldId: String
+  zoneFormatId: String
+}
+
+type AnalysisOperationSpec {
+  acceptedMeasureKinds: [String!]!
+  id: String!
+  minObservations: Int!
+  missingValuePolicy: String!
+  outputKind: String!
+  requiresDateOrder: Boolean!
+  requiresNumeric: Boolean!
+  version: Int!
+}
+
+type AnalysisResult {
+  comparisonRows: [AnalysisRow!]
+  dimension: String
+  explanation: String
+  groupBy: String!
+  hasEstimated: Boolean
+  operation: String!
+  operationVersion: Int
+  propagatedUncertainty: String
+  refreshedAt: String!
+  rows: [AnalysisRow!]!
+  secondaryGroupBy: String
+  skippedMissingCount: Int
+  slope: String
+  unit: String
+}
+
+type AnalysisRow {
+  columnKey: String
+  count: Float!
+  group: String!
+  label: String!
+  rowKey: String
+  sources: [AnalysisSource!]!
+  sourcesHasMore: Boolean!
+  value: String!
+}
+
+type AnalysisSource {
+  entryId: String!
+  value: String!
+}
+
+type AuditLog {
+  action: String!
+  collectionId: String!
+  details: String
+  id: ID!
+  occurredAt: DateTime!
+  userId: String!
+}
+
+type AuthPayload {
+  token: String!
+  user: User!
+}
+
+type BackgroundJob {
+  collectionId: String!
+  createdAt: DateTime!
+  createdCount: Int!
+  errorCount: Int!
+  failure: String
+  id: ID!
+  kind: String!
+  logs: [BackgroundJobLog!]!
+  processed: Int!
+  requestKey: String!
+  result: String
+  skippedCount: Int!
+  state: String!
+  total: Int!
+  updatedAt: DateTime!
+}
+
+type BackgroundJobLog {
+  message: String!
+  row: Int!
+}
+
+type CalendarOccurrence {
+  endAt: String!
+  entry: Entry!
+  localDate: String!
+  localEndClock: String!
+  localStartClock: String!
+  recurring: Boolean!
+  startAt: String!
+  timeZone: String!
+}
+
+type ClassificationCode {
+  active: Boolean!
+  code: String!
+  labelEn: String!
+  labelFr: String!
+  mergedInto: String
+  parentCode: String
+}
+
+input ClassificationCodeInput {
+  active: Boolean
+  code: String!
+  labelEn: String!
+  labelFr: String!
+  mergedInto: String
+  parentCode: String
+}
+
+type ClassificationCopyPreview {
+  allowed: Boolean!
+  codeCount: Int!
+  conflicts: [String!]!
+  sourceName: String!
+  targetName: String!
+}
+
+type ClassificationCsvError {
+  message: String!
+  row: Int!
+}
+
+type ClassificationCsvPreview {
+  codes: [ClassificationCode!]!
+  errors: [ClassificationCsvError!]!
+}
+
+type ClassificationList {
+  codes: [ClassificationCode!]!
+  id: String!
+  name: String!
+  version: Float!
+}
+
+type ClassificationMergePreview {
+  affectedEntries: Int!
+  allowed: Boolean!
+}
+
+type Collection {
+  allowNegativeStock: Boolean!
+  codeLists: [ClassificationList!]!
+  exchangeRates: [CollectionExchangeRate!]!
+  fields: [CollectionField!]!
+  formats: [CollectionFormat!]!
+  formulas: [CollectionFormula!]!
+  id: ID!
+  members: [CollectionMember!]
+  minAggregateSize: Float
+  name: String!
+  ownerId: String!
+  savedViews: [SavedCollectionView!]!
+  sharedObjects: [SharedObjectGrant!]!
+  stockRules: [StockRule!]!
+  units: [CollectionUnit!]!
+}
+
+type CollectionExchangeRate {
+  effectiveAt: DateTime!
+  from: String!
+  id: String!
+  rate: String!
+  to: String!
+}
+
+input CollectionExchangeRateInput {
+  effectiveAt: String!
+  from: String!
+  rate: String!
+  to: String!
+}
+
+type CollectionField {
+  codeListId: String
+  id: String!
+  kind: FieldKind!
+  multiple: Boolean
+  name: String!
+  options: [String!]
+  referenceMode: String
+  sensitivity: SensitivityLevel!
+  sourceFieldId: String
+  targetObjectFormatId: String
+  unit: String
+  variableName: String
+}
+
+input CollectionFieldInput {
+  codeListId: String
+  kind: FieldKind!
+  multiple: Boolean
+  name: String!
+  options: [String!]
+  referenceMode: String
+  sensitivity: SensitivityLevel
+  targetObjectFormatId: String
+  unit: String
+  variableName: String
+}
+
+type CollectionFormat {
+  appendOnly: Boolean!
+  color: String!
+  copiedFromFormatId: String
+  fields: [CollectionField!]!
+  id: String!
+  linkedSource: LinkedFormatSource
+  name: String!
+  objectModel: Boolean!
+  sensitivity: SensitivityLevel!
+  version: Float
+  workflow: WorkflowDefinition
+}
+
+type CollectionFormatImpact {
+  entryCount: Float!
+  populatedFieldIds: [String!]!
+}
+
+input CollectionFormatInput {
+  color: String!
+  fields: [CollectionFieldInput!]!
+  name: String!
+  objectModel: Boolean
+  sensitivity: SensitivityLevel
+}
+
+type CollectionFormula {
+  dependencies: [String!]!
+  expression: String!
+  formatId: String!
+  id: String!
+  name: String!
+  version: Float!
+}
+
+type CollectionMember {
+  addedAt: DateTime!
+  email: String!
+  name: String!
+  role: CollectionRole!
+  sensitiveFieldIds: [String!]
+  sharedFieldIds: [String!]
+  userId: String!
+}
+
+enum CollectionRole {
+  EDITOR
+  OWNER
+  READER
+}
+
+type CollectionUnit {
+  baseUnitId: String
+  copiedFromUnitId: String
+  dimension: String!
+  factor: String!
+  id: String!
+  name: String!
+  objectFormatId: String
+  symbol: String!
+  version: Float!
+}
+
+input CollectionUnitInput {
+  baseUnitId: String
+  dimension: String!
+  expectedVersion: Float
+  factor: String!
+  id: String
+  name: String!
+  objectFormatId: String
+  symbol: String!
+}
+
+type ContributionEvent {
+  actorId: String
+  at: DateTime!
+  kind: String!
+}
+
+type ContributionLink {
+  allowAnonymous: Boolean!
+  collectionId: String!
+  consentEn: String!
+  consentFr: String!
+  createdAt: DateTime!
+  expiresAt: DateTime!
+  fieldIds: [String!]!
+  formatId: String!
+  id: ID!
+  revokedAt: DateTime
+  titleEn: String!
+  titleFr: String!
+}
+
+type ContributionReceipt {
+  receipt: String!
+  receivedAt: DateTime!
+}
+
+type ContributionSubmission {
+  acceptedEntryId: String
+  collectionId: String!
+  duplicateOf: String
+  events: [ContributionEvent!]!
+  formatId: String!
+  id: ID!
+  linkId: String!
+  receivedAt: DateTime!
+  respondentEmail: String
+  status: String!
+  values: [EntryValue!]!
+}
+
+input CreateCollectionInput {
+  codeLists: [InitialCodeListInput!]
+  exchangeRates: [CollectionExchangeRateInput!]
+  fields: [CollectionFieldInput!]
+  formats: [CollectionFormatInput!]
+  name: String!
+  units: [CollectionUnitInput!]
+}
+
+input CreateContributionLinkInput {
+  allowAnonymous: Boolean!
+  consentEn: String!
+  consentFr: String!
+  expiresAt: String!
+  fieldIds: [String!]!
+  formatId: String!
+  titleEn: String!
+  titleFr: String!
+}
+
+input CreateNoteInput {
+  content: String!
+  title: String!
+}
+
+type CreatedContributionLink {
+  link: ContributionLink!
+  token: String!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
+
+type Entry {
+  collectionId: String!
+  contributionLinkId: String
+  contributionReceivedAt: DateTime
+  copiedFromCollectionId: String
+  copiedFromEntryId: String
+  correctionOf: String
+  createdAt: DateTime!
+  formatId: String
+  formatVersion: Float
+  id: ID!
+  ledgerHash: String
+  ledgerPreviousHash: String
+  ledgerSequence: Float
+  recurrence: EntryRecurrence
+  revisions: [EntryRevision!]!
+  sourceObjectId: String
+  updatedAt: DateTime!
+  values: [EntryValue!]!
+  workflow: EntryWorkflow
+}
+
+type EntryAttachment {
+  base64: String!
+  fileName: String!
+  mimeType: String!
+  size: Float!
+}
+
+input EntryFieldFilterInput {
+  fieldId: String!
+  operator: EntryFilterOperator!
+  value: String!
+}
+
+enum EntryFilterOperator {
+  CONTAINS
+  EQ
+  GT
+  GTE
+  LT
+  LTE
+}
+
+type EntryLink {
+  collectionId: String!
+  createdAt: DateTime!
+  deletedAt: DateTime
+  fromEntryId: String!
+  id: ID!
+  label: String!
+  ownerId: String!
+  toEntryId: String!
+}
+
+type EntryMeasureValue {
+  instrument: String
+  observedAt: String
+  quality: String
+  recordedAt: String
+  revisedAt: String
+  revisionNote: String
+  status: String
+  uncertainty: String
+  uncertaintyType: String
+}
+
+input EntryMeasureValueInput {
+  instrument: String
+  observedAt: String
+  quality: String
+  recordedAt: String
+  revisedAt: String
+  revisionNote: String
+  status: String
+  uncertainty: String
+  uncertaintyType: String
+}
+
+type EntryPage {
+  entries: [Entry!]!
+  hasMore: Boolean!
+  nextCursor: String
+}
+
+type EntryRecurrence {
+  endFieldId: String!
+  excludedDates: [String!]!
+  frequency: String!
+  interval: Float!
+  startFieldId: String!
+  timeZone: String!
+  untilDate: String
+}
+
+input EntryRecurrenceInput {
+  excludedDates: [String!]!
+  frequency: String!
+  interval: Float!
+  timeZone: String!
+  untilDate: String
+}
+
+type EntryRelation {
+  collectionId: String!
+  createdAt: DateTime!
+  createdBy: String!
+  deletedAt: DateTime
+  fromEntryId: String!
+  id: ID!
+  kind: RelationKind!
+  label: String!
+  ownerId: String!
+  quantity: String
+  snapshotFieldId: String
+  snapshotUnit: String
+  snapshotValue: String
+  toEntryId: String!
+  unit: String
+}
+
+type EntryReminder {
+  attempts: Float!
+  channels: [String!]!
+  collectionId: String!
+  createdAt: DateTime!
+  entryId: String!
+  failure: String
+  fieldId: String!
+  id: ID!
+  lockedUntil: DateTime
+  minutesBefore: Float!
+  nextAt: DateTime
+  occurrenceAt: DateTime
+  ownerId: String!
+  state: String!
+  timeOfDay: String
+  timeZone: String!
+  updatedAt: DateTime!
+  viewId: String
+}
+
+input EntryReminderInput {
+  channels: [String!]!
+  fieldId: String!
+  minutesBefore: Float!
+  timeOfDay: String
+  timeZone: String!
+  viewId: String
+}
+
+type EntryRevision {
+  at: DateTime!
+  formatVersion: Float!
+  values: [EntryValue!]!
+}
+
+type EntryValue {
+  attachmentMimeType: String
+  attachmentSize: Float
+  booleanValue: Boolean
+  dateTimeValue: String
+  dateValue: String
+  durationSeconds: Float
+  fieldId: String!
+  measureValue: EntryMeasureValue
+  numberValue: String
+  objectIds: [String!]
+  objectSnapshots: [ObjectReferenceSnapshot!]
+  selectedValues: [String!]
+  unitSnapshot: UnitSnapshot
+  value: String!
+}
+
+input EntryValueInput {
+  attachmentBase64: String
+  attachmentMimeType: String
+  fieldId: String!
+  measureValue: EntryMeasureValueInput
+  unitSnapshot: UnitSnapshotInput
+  value: String!
+}
+
+type EntryWorkflow {
+  assigneeUserId: String
+  dueAt: DateTime
+  history: [WorkflowEvent!]!
+  reminderMinutesBefore: Int
+}
+
+enum FieldKind {
+  ATTACHMENT
+  BOOLEAN
+  CHARACTER
+  CODE
+  DATE
+  DATETIME
+  DURATION
+  LINK
+  LONG_TEXT
+  MEASURE
+  MULTI_SELECT
+  NUMBER
+  OBJECT_REF
+  POSITION
+  SELECT
+  TEXT
+  TIME
+  TITLE
+  ZONE
+}
+
+input ForecastInput {
+  dateFieldId: String!
+  fieldId: String!
+  formatId: String!
+  frequency: String!
+  from: String
+  holdout: Int!
+  horizon: Int!
+  measureKind: String!
+  method: String!
+  to: String
+}
+
+type ForecastPoint {
+  date: String!
+  estimate: String!
+  lower: String!
+  observed: String
+  upper: String!
+}
+
+type ForecastResult {
+  dimension: String
+  forecast: [ForecastPoint!]!
+  frequency: String!
+  holdoutCount: Int!
+  holdoutMae: String!
+  method: String!
+  observations: [ForecastPoint!]!
+  sourceFrom: String!
+  sourceTo: String!
+  trainingCount: Int!
+  uncertainty: String!
+  unit: String
+  validation: [ForecastPoint!]!
+}
+
+input FormulaInput {
+  expectedVersion: Float
+  expression: String!
+  formatId: String!
+  name: String!
+}
+
+type FormulaResult {
+  dimension: String
+  entryId: String!
+  missing: String
+  unit: String
+  value: String
+}
+
+type GeoDistance {
+  unit: String!
+  value: String!
+}
+
+type GeoImportError {
+  message: String!
+  row: Int!
+}
+
+type GeoImportResult {
+  count: Int!
+  errors: [GeoImportError!]!
+}
+
+type GeoPage {
+  hasMore: Boolean!
+  nextCursor: String
+  points: [GeoPoint!]!
+}
+
+type GeoPoint {
+  accuracy: Float
+  entryId: String!
+  latitude: Float!
+  longitude: Float!
+  name: String!
+}
+
+type GeoZoneCount {
+  count: Int!
+  label: String!
+  zoneEntryId: String!
+}
+
+input ImportEntriesInput {
+  dryRun: Boolean!
+  formatId: String!
+  importKey: String!
+  rows: [ImportEntryRowInput!]!
+}
+
+type ImportEntriesResult {
+  createdCount: Float!
+  errors: [ImportRowError!]!
+  skippedCount: Float!
+  validCount: Float!
+}
+
+input ImportEntryRowInput {
+  createdAt: String!
+  sourceId: String!
+  updatedAt: String!
+  values: [EntryValueInput!]!
+  workflowHistory: [WorkflowEventImportInput!]
+}
+
+input ImportObjectLinkInput {
+  sourceId: String!
+  sourceObjectId: String!
+}
+
+type ImportRowError {
+  message: String!
+  sourceId: String!
+}
+
+input ImportedEntryLinkInput {
+  fromSourceId: String!
+  label: String!
+  toSourceId: String!
+}
+
+input ImportedRelationInput {
+  fromSourceId: String!
+  kind: RelationKind!
+  label: String!
+  quantity: String
+  snapshotFieldId: String
+  snapshotUnit: String
+  snapshotValue: String
+  toSourceId: String!
+  unit: String
+}
+
+input InitialCodeInput {
+  active: Boolean
+  code: String!
+  labelEn: String!
+  labelFr: String!
+  mergedInto: String
+  parentCode: String
+}
+
+input InitialCodeListInput {
+  codes: [InitialCodeInput!]!
+  id: String
+  name: String!
+}
+
+type LedgerIntegrity {
+  checked: Float!
+  headHash: String!
+  problem: String
+  redactionHash: String!
+  valid: Boolean!
+}
+
+type LinkedFormatSource {
+  acceptedVersion: Float!
+  sourceCollectionId: String!
+  sourceFormatId: String!
+  targetVersion: Float!
+}
+
+type LinkedFormatUpdatePreview {
+  acceptedVersion: Float!
+  addedFields: [String!]!
+  allowed: Boolean!
+  changedFields: [String!]!
+  conflicts: [String!]!
+  removedFields: [String!]!
+  sourceVersion: Float!
+  targetFormatId: String!
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+}
+
+type MoveOperationStatus {
+  failure: String
+  id: String!
+  sourceObjectId: String!
+  state: String!
+  targetCollectionId: String!
+  targetObjectId: String
+}
+
+type Mutation {
+  acceptLinkedDataFormatVersion(expectedSourceVersion: Int!, targetCollectionId: String!, targetFormatId: String!): Collection!
+  addCollectionFormat(collectionId: String!, input: CollectionFormatInput!): Collection!
+  addCollectionMember(collectionId: String!, email: String!, role: CollectionRole!, sensitiveFieldIds: [String!], sharedFieldIds: [String!]): Collection!
+  addCollectionWorkflowTemplate(collectionId: String!, color: String!, language: String, templateId: String!): Collection!
+  addObjectModelFromTemplate(collectionId: String!, color: String!, language: String, name: String!, templateId: String!): Collection!
+  assignWorkflowEntry(entryId: String!, input: WorkflowAssignmentInput!): Entry!
+  cancelBackgroundJob(jobId: String!): BackgroundJob!
+  cancelEntryReminder(reminderId: String!): Boolean!
+  commitEntryStockEffect(collectionId: String!, entryId: String!, expectedUpdatedAt: String!, ruleId: String!): StockMovement!
+  commitStockMovement(collectionId: String!, input: StockMovementInput!): StockMovement!
+  copyClassification(collectionId: String!, listId: String!, targetCollectionId: String!): Collection!
+  copyCollectionDataFormat(formatId: String!, targetCollectionId: String!, withEntries: Boolean! = false): TransferResult!
+  copyCollectionObject(objectId: String!, targetCollectionId: String!): TransferResult!
+  correctContribution(id: String!, values: [EntryValueInput!]!): ContributionSubmission!
+  correctLedgerEntry(input: SaveEntryInput!, originalId: String!): Entry!
+  createCollection(input: CreateCollectionInput!): Collection!
+  createCollectionEntryLink(collectionId: String!, fromEntryId: String!, label: String, toEntryId: String!): EntryLink!
+  createCollectionFromTemplate(language: String, name: String!, templateId: String!, timeZone: String): Collection!
+  createCollectionRelation(collectionId: String!, fromEntryId: String!, kind: RelationKind!, label: String, quantity: String, snapshotFieldId: String, toEntryId: String!, unit: String): EntryRelation!
+  createContributionLink(collectionId: String!, input: CreateContributionLinkInput!): CreatedContributionLink!
+  createEntry(collectionId: String!, input: SaveEntryInput!): Entry!
+  createNote(input: CreateNoteInput!): Note!
+  deleteCollection(id: String!): Boolean!
+  deleteCollectionFormula(collectionId: String!, formulaId: String!): Collection!
+  deleteCollectionView(collectionId: String!, viewId: String!): Collection!
+  deleteEntry(id: String!): Boolean!
+  deleteNote(id: String!): Boolean!
+  deleteStockRule(collectionId: String!, ruleId: String!): Collection!
+  detachCollectionRelations(collectionId: String!, entryId: String!, replacementId: String): Boolean!
+  detachLinkedDataFormat(targetCollectionId: String!, targetFormatId: String!): Collection!
+  duplicateCollectionObject(id: String!): Entry!
+  enableLedger(collectionId: String!, formatId: String!): Collection!
+  eraseContribution(id: String!): Boolean!
+  eraseContributionByReceipt(receipt: String!): Boolean!
+  importCollectionRelations(collectionId: String!, importKey: String!, rows: [ImportedRelationInput!]!): Boolean!
+  importEntriesBatch(collectionId: String!, input: ImportEntriesInput!): ImportEntriesResult!
+  importGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, importKey: String!, kind: String!, text: String!): GeoImportResult!
+  linkCollectionDataFormat(formatId: String!, targetCollectionId: String!): TransferResult!
+  linkImportedEntries(collectionId: String!, importKey: String!, links: [ImportedEntryLinkInput!]!): Boolean!
+  linkImportedObjects(collectionId: String!, importKey: String!, links: [ImportObjectLinkInput!]!): Boolean!
+  login(input: LoginInput!): AuthPayload!
+  loginWithGoogle(firebaseIdToken: String!): AuthPayload!
+  mergeClassificationCodes(collectionId: String!, expectedVersion: Int!, fromCode: String!, listId: String!, toCode: String!): Collection!
+  moveCollectionObject(objectId: String!, targetCollectionId: String!): TransferResult!
+  readWorkflowNotification(id: String!): Boolean!
+  recordCollectionExchangeRate(collectionId: String!, input: CollectionExchangeRateInput!): Collection!
+  recoverCollectionMove(operationId: String!): MoveOperationStatus!
+  redactLedgerFields(collectionId: String!, entryId: String!, fieldIds: [String!]!, formatId: String!, reason: String!): LedgerIntegrity!
+  register(input: RegisterInput!): AuthPayload!
+  registerPushDevice(label: String!, platform: String!, targetKind: String, token: String!): PushDevice!
+  removeCollectionMember(collectionId: String!, memberUserId: String!): Collection!
+  removeCollectionRelation(collectionId: String!, relationId: String!): Boolean!
+  renameCollection(id: String!, name: String!): Collection!
+  restoreWorkspaceBackup(archive: String!, dryRun: Boolean!): WorkspaceBackupPreview!
+  resumeBackgroundJob(jobId: String!): BackgroundJob!
+  reviewContribution(action: String!, duplicateOf: String, id: String!): ContributionSubmission!
+  revokeCollectionObjectShare(grantId: String!, targetCollectionId: String!): Boolean!
+  revokeContributionLink(id: String!): ContributionLink!
+  saveClassification(codes: [ClassificationCodeInput!]!, collectionId: String!, expectedVersion: Int, listId: String, name: String!): Collection!
+  saveCollectionFormula(collectionId: String!, formulaId: String, input: FormulaInput!): Collection!
+  saveCollectionUnit(collectionId: String!, input: CollectionUnitInput!, unitId: String): Collection!
+  saveCollectionView(collectionId: String!, input: SavedCollectionViewInput!, viewId: String): Collection!
+  saveEntryReminder(entryId: String!, input: EntryReminderInput!, reminderId: String): EntryReminder!
+  saveStockRule(collectionId: String!, input: StockRuleInput!, ruleId: String): Collection!
+  sealStockHistory(collectionId: String!, productId: String!): LedgerIntegrity!
+  setCollectionEntryLinkActive(active: Boolean!, collectionId: String!, linkId: String!): EntryLink!
+  setCollectionEntryRecurrence(collectionId: String!, entryId: String!, input: EntryRecurrenceInput, viewId: String!): Entry!
+  setCollectionFormatColor(collectionId: String!, color: String!, formatId: String!): Collection!
+  setCollectionFormatObjectModel(collectionId: String!, enabled: Boolean!, expectedEntryCount: Int, expectedVersion: Int!, formatId: String!): Collection!
+  setCollectionFormatWorkflow(collectionId: String!, formatId: String!, input: WorkflowDefinitionInput!): Collection!
+  setCollectionTaskCompleted(collectionId: String!, done: Boolean!, entryId: String!, viewId: String!): Entry!
+  setFieldSensitivity(collectionId: String!, expectedVersion: Int!, fieldId: String!, formatId: String!, level: SensitivityLevel!): Collection!
+  setFormatSensitivity(collectionId: String!, expectedVersion: Int!, formatId: String!, level: SensitivityLevel!): Collection!
+  setMinimumAggregateSize(collectionId: String!, minimum: Int!): Collection!
+  setStockNegativePolicy(allowNegative: Boolean!, collectionId: String!): Collection!
+  shareCollectionObject(includeSensitive: Boolean, mode: String!, objectId: String!, propertyFieldIds: [String!]!, targetCollectionId: String!): SharedObjectGrant!
+  startBackgroundJob(collectionId: String!, input: StartBackgroundJobInput!): BackgroundJob!
+  submitContribution(input: SubmitContributionInput!, token: String!): ContributionReceipt!
+  transitionWorkflowEntry(entryId: String!, expectedUpdatedAt: String!, to: String!): Entry!
+  unregisterPushDevice(id: String!): Boolean!
+  updateCollectionFormat(collectionId: String!, formatId: String!, input: UpdateCollectionFormatInput!): Collection!
+  updateEntry(id: String!, input: SaveEntryInput!): Entry!
+  updateNote(id: String!, input: UpdateNoteInput!): Note
+  updateProfile(input: ProfileInput!): User!
+  useCollectionObject(objectId: String!, targetFieldId: String!, targetFormatId: String!): Entry!
+}
+
+type Note {
+  content: String!
+  id: ID!
+  title: String!
+}
+
+type ObjectModelTemplate {
+  description: String!
+  fields: [CollectionField!]!
+  id: String!
+  name: String!
+}
+
+type ObjectPropertySnapshot {
+  fieldId: String!
+  kind: String!
+  name: String!
+  unitSnapshot: UnitSnapshot
+  value: String!
+}
+
+type ObjectReferenceSnapshot {
+  capturedAt: DateTime!
+  formatId: String!
+  formatVersion: Float!
+  objectId: String!
+  properties: [ObjectPropertySnapshot!]!
+}
+
+input ProfileInput {
+  fieldOfStudy: String!
+  hobbies: [String!]!
+  interests: [String!]!
+  job: String!
+  name: String!
+  profession: String!
+}
+
+type PublicContributionField {
+  id: String!
+  kind: FieldKind!
+  name: String!
+  options: [String!]
+}
+
+type PublicContributionForm {
+  allowAnonymous: Boolean!
+  consentEn: String!
+  consentFr: String!
+  fields: [PublicContributionField!]!
+  formatName: String!
+  titleEn: String!
+  titleFr: String!
+}
+
+type PushDevice {
+  id: ID!
+  label: String!
+  lastSeenAt: DateTime!
+  platform: String!
+  targetKind: String!
+}
+
+type QuantityConversion {
+  fromSymbol: String!
+  rateDate: DateTime
+  toSymbol: String!
+  value: String!
+}
+
+type Query {
+  analyseCollection(collectionId: String!, input: AnalysisInput!): AnalysisResult!
+  analysisOperations: [AnalysisOperationSpec!]!
+  backgroundJob(jobId: String!): BackgroundJob!
+  backgroundJobs(collectionId: String!): [BackgroundJob!]!
+  calculateCollectionFormula(collectionId: String!, entryId: String!, formulaId: String!): FormulaResult!
+  classificationCopyPreview(collectionId: String!, listId: String!, targetCollectionId: String!): ClassificationCopyPreview!
+  classificationMergePreview(collectionId: String!, fromCode: String!, listId: String!, toCode: String!): ClassificationMergePreview!
+  collectionAuditLogs(collectionId: String!): [AuditLog!]!
+  collectionAvailableUnits(collectionId: String!): [CollectionUnit!]!
+  collectionCalendarOccurrences(collectionId: String!, from: String!, to: String!, viewId: String!): [CalendarOccurrence!]!
+  collectionDuplicateLinks(collectionId: String!, excludeEntryId: String, fieldId: String!, formatId: String!, url: String!): [Entry!]!
+  collectionEntries(collectionId: String!): [Entry!]!
+  collectionEntriesPage(after: String, collectionId: String!, filters: [EntryFieldFilterInput!], first: Int! = 30, formatId: String, search: String, viewId: String): EntryPage!
+  collectionEntry(collectionId: String!, entryId: String!): Entry!
+  collectionEntryAsOfDate(asOfDate: String!, entryId: String!): Entry!
+  collectionEntryLinks(collectionId: String!, entryId: String!, includeDeleted: Boolean): [EntryLink!]!
+  collectionFormatImpact(collectionId: String!, formatId: String!): CollectionFormatImpact!
+  collectionGeoDistance(collectionId: String!, fieldId: String!, firstEntryId: String!, formatId: String!, secondEntryId: String!, unit: String!): GeoDistance!
+  collectionGeoPage(after: String, collectionId: String!, fieldId: String!, filters: [EntryFieldFilterInput!], first: Int!, formatId: String!, search: String, viewId: String): GeoPage!
+  collectionGeoZoneSummary(collectionId: String!, filters: [EntryFieldFilterInput!], positionFieldId: String!, positionFormatId: String!, search: String, viewId: String, zoneFieldId: String!, zoneFormatId: String!): [GeoZoneCount!]!
+  collectionMoveStatus(operationId: String!): MoveOperationStatus!
+  collectionObject(id: String!): Entry!
+  collectionObjectsPage(after: String, collectionId: String!, first: Int! = 30, formatId: String!, search: String): EntryPage!
+  collectionQuantityConversion(amount: String!, asOf: String, collectionId: String!, from: String!, to: String!): QuantityConversion!
+  collectionRelationImpact(collectionId: String!, entryId: String!, replacementId: String): RelationImpact!
+  collectionRelationTotal(collectionId: String!, fieldName: String!, kind: RelationKind!, rootId: String!): RelationTotal!
+  collectionRelations(collectionId: String!, entryId: String!): [EntryRelation!]!
+  collectionsList: [Collection!]!
+  contributionByReceipt(receipt: String!): RespondentContribution!
+  contributionLinks(collectionId: String!): [ContributionLink!]!
+  contributionSubmissions(collectionId: String!): [ContributionSubmission!]!
+  dataFormatCopyPreview(formatId: String!, targetCollectionId: String!, withEntries: Boolean! = false): TransferPreview!
+  entryAttachment(entryId: String!, fieldId: String!): EntryAttachment!
+  entryObjectReferences(entryId: String!): [ResolvedObjectReference!]!
+  entryReminders(entryId: String!): [EntryReminder!]!
+  exportGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, includeSensitive: Boolean, kind: String!): String!
+  forecastCollection(collectionId: String!, input: ForecastInput!): ForecastResult!
+  health: String!
+  ledgerBalance(collectionId: String!, fieldId: String!, formatId: String!): String!
+  ledgerProof(collectionId: String!, formatId: String!): String!
+  linkedDataFormatUpdatePreview(targetCollectionId: String!, targetFormatId: String!): LinkedFormatUpdatePreview!
+  me: User!
+  note(id: String!): Note
+  notesList: [Note!]!
+  objectCopyPreview(objectId: String!, targetCollectionId: String!): TransferPreview!
+  objectModelTemplates(language: String): [ObjectModelTemplate!]!
+  objectMovePreview(objectId: String!, targetCollectionId: String!): TransferPreview!
+  objectVariableProperty(entryId: String!, objectId: String, propertyFieldId: String!, variableName: String!): ResolvedObjectVariable!
+  previewClassificationCsv(csv: String!): ClassificationCsvPreview!
+  previewEntryStockEffect(collectionId: String!, entryId: String!, ruleId: String!): StockPreview!
+  previewGeoImport(collectionId: String!, fieldId: String!, formatId: String!, kind: String!, text: String!): GeoImportResult!
+  previewStockMovement(collectionId: String!, input: StockMovementInput!): StockPreview!
+  publicContributionForm(token: String!): PublicContributionForm!
+  pushDevices: [PushDevice!]!
+  reminderCapabilities: ReminderCapabilities!
+  starterTemplates(language: String): [StarterTemplate!]!
+  stockDailyReport(collectionId: String!, from: String!, location: String, lot: String, productId: String!, timeZone: String!, to: String!): [StockDailyRow!]!
+  stockLedgerProof(collectionId: String!, productId: String!): String!
+  stockMovements(before: String, collectionId: String!, limit: Int, productId: String): [StockMovement!]!
+  stockPositions(collectionId: String!): [StockPosition!]!
+  verifyLedger(collectionId: String!, formatId: String!): LedgerIntegrity!
+  verifyStockLedger(collectionId: String!, productId: String!): LedgerIntegrity!
+  workflowNotifications: [WorkflowNotification!]!
+  workspaceBackup(includeSensitive: Boolean): String!
+}
+
+input RegisterInput {
+  email: String!
+  name: String!
+  password: String!
+}
+
+type RelationImpact {
+  relations: [EntryRelation!]!
+  replacementAllowed: Boolean!
+}
+
+enum RelationKind {
+  ASSOCIATION
+  COMPONENT
+  PARENT
+}
+
+type RelationTotal {
+  nodes: Float!
+  unit: String
+  value: String!
+}
+
+type ReminderCapabilities {
+  email: Boolean!
+  push: Boolean!
+}
+
+type ResolvedObjectReference {
+  capturedAt: DateTime
+  fieldId: String!
+  missing: Boolean!
+  mode: String!
+  name: String
+  objectId: String!
+  properties: [ObjectPropertySnapshot!]!
+}
+
+type ResolvedObjectVariable {
+  capturedAt: DateTime
+  mode: String!
+  objectId: String!
+  property: ObjectPropertySnapshot!
+  variableName: String!
+}
+
+type RespondentContribution {
+  receivedAt: DateTime!
+  respondentEmail: String
+  status: String!
+  values: [EntryValue!]!
+}
+
+input SaveEntryInput {
+  clientMutationId: String
+  expectedUpdatedAt: String
+  formatId: String
+  values: [EntryValueInput!]!
+}
+
+type SavedCollectionView {
+  calendarEndFieldId: String
+  calendarStartFieldId: String
+  calendarTimeZone: String
+  columnFieldIds: [String!]!
+  filterFieldId: String
+  filterOperator: String
+  filterValue: String
+  formatIds: [String!]!
+  groupByFormat: Boolean!
+  id: String!
+  layout: String!
+  manualOrderFieldIds: [String!]!
+  name: String!
+  search: String!
+  sort: String!
+  taskCompletedFieldId: String
+  taskDoneFieldId: String
+  taskDueFieldId: String
+  taskPriorityFieldId: String
+}
+
+input SavedCollectionViewInput {
+  calendarEndFieldId: String
+  calendarStartFieldId: String
+  calendarTimeZone: String
+  columnFieldIds: [String!]!
+  filterFieldId: String
+  filterOperator: String
+  filterValue: String
+  formatIds: [String!]!
+  groupByFormat: Boolean!
+  layout: String!
+  manualOrderFieldIds: [String!]
+  name: String!
+  search: String
+  sort: String!
+  taskCompletedFieldId: String
+  taskDoneFieldId: String
+  taskDueFieldId: String
+  taskPriorityFieldId: String
+}
+
+enum SensitivityLevel {
+  ORDINARY
+  PERSONAL
+  SENSITIVE
+}
+
+type SharedObjectGrant {
+  createdAt: DateTime!
+  id: String!
+  mode: String!
+  objectId: String!
+  objectName: String!
+  propertyFieldIds: [String!]!
+  revokedAt: DateTime
+  sensitiveFieldIds: [String!]
+  snapshot: [ObjectPropertySnapshot!]!
+  sourceCollectionId: String!
+  sourceFormatId: String!
+  sourceFormatVersion: Float!
+  sourceName: String!
+}
+
+input StartBackgroundJobInput {
+  kind: String!
+  payload: String!
+  requestKey: String!
+}
+
+type StarterTemplate {
+  description: String!
+  id: String!
+  name: String!
+}
+
+type StockDailyRow {
+  closing: String!
+  date: String!
+  incoming: String!
+  movements: [StockMovement!]!
+  opening: String!
+  outgoing: String!
+}
+
+type StockMovement {
+  actorId: String!
+  baseQuantity: String!
+  collectionId: String!
+  createdAt: DateTime!
+  fromLocation: String!
+  id: ID!
+  idempotencyKey: String!
+  kind: String!
+  ledgerHash: String
+  ledgerPreviousHash: String
+  ledgerSequence: Float
+  lot: String!
+  occurredAt: DateTime!
+  packageFactor: String!
+  priceSnapshot: String
+  priceUnit: String
+  productId: String!
+  productName: String!
+  quantity: String!
+  reason: String
+  reversalOf: String
+  ruleId: String
+  sourceEntryId: String
+  sourceEntryUpdatedAt: DateTime
+  toLocation: String!
+}
+
+input StockMovementInput {
+  fromLocation: String
+  idempotencyKey: String!
+  kind: String!
+  lot: String
+  occurredAt: String!
+  packageFactor: String
+  priceSnapshot: String
+  priceUnit: String
+  productId: String!
+  quantity: String!
+  reason: String
+  reversalOf: String
+  toLocation: String
+}
+
+type StockPosition {
+  location: String!
+  lot: String!
+  productId: String!
+  productName: String!
+  quantity: String!
+}
+
+type StockPreview {
+  afterFrom: String!
+  afterTo: String!
+  allowed: Boolean!
+  baseQuantity: String!
+  beforeFrom: String!
+  beforeTo: String!
+  existingMovementId: String
+  fromLocation: String!
+  kind: String!
+  lot: String!
+  productId: String!
+  productName: String!
+  reason: String
+  toLocation: String!
+}
+
+type StockRule {
+  dateFieldId: String
+  formatId: String!
+  fromLocationFieldId: String
+  id: String!
+  kind: String!
+  lotFieldId: String
+  name: String!
+  packageFactor: String!
+  priceFieldId: String
+  productFieldId: String!
+  quantityFieldId: String!
+  reasonFieldId: String
+  toLocationFieldId: String
+  version: Float!
+}
+
+input StockRuleInput {
+  dateFieldId: String
+  expectedVersion: Float
+  formatId: String!
+  fromLocationFieldId: String
+  kind: String!
+  lotFieldId: String
+  name: String!
+  packageFactor: String
+  priceFieldId: String
+  productFieldId: String!
+  quantityFieldId: String!
+  reasonFieldId: String
+  toLocationFieldId: String
+}
+
+input SubmitContributionInput {
+  consent: Boolean!
+  respondentEmail: String
+  values: [EntryValueInput!]!
+  website: String
+}
+
+type TransferPreview {
+  activeShares: Float
+  allowed: Boolean!
+  codeLists: [String!]!
+  conflicts: [String!]!
+  dataFormats: [String!]!
+  entries: Float!
+  formulas: [String!]!
+  inboundReferences: Float
+  objects: Float!
+  relations: Float!
+  sourceName: String!
+  stockMovementCount: Float!
+  targetName: String!
+  units: [String!]!
+}
+
+type TransferResult {
+  copiedEntries: Float!
+  copiedObjects: Float!
+  copiedRelations: Float!
+  dataFormatId: String
+  objectId: String
+  operationId: String
+  targetCollectionId: String!
+}
+
+type UnitSnapshot {
+  dimension: String!
+  factor: String!
+  id: String!
+  objectFormatId: String
+  root: String!
+  symbol: String!
+  version: Float!
+}
+
+input UnitSnapshotInput {
+  dimension: String!
+  factor: String!
+  id: String!
+  objectFormatId: String
+  root: String!
+  symbol: String!
+  version: Float!
+}
+
+input UpdateCollectionFieldInput {
+  codeListId: String
+  id: String
+  kind: FieldKind!
+  multiple: Boolean
+  name: String!
+  options: [String!]
+  referenceMode: String
+  sensitivity: SensitivityLevel
+  targetObjectFormatId: String
+  unit: String
+  variableName: String
+}
+
+input UpdateCollectionFormatInput {
+  expectedVersion: Float!
+  fields: [UpdateCollectionFieldInput!]!
+  name: String!
+}
+
+input UpdateNoteInput {
+  content: String
+  title: String
+}
+
+type User {
+  email: String!
+  fieldOfStudy: String
+  hobbies: [String!]!
+  id: ID!
+  interests: [String!]!
+  job: String
+  name: String!
+  profession: String
+  profileCompleted: Boolean!
+}
+
+input WorkflowAssignmentInput {
+  assigneeUserId: String
+  dueAt: String
+  expectedUpdatedAt: String!
+  reminderMinutesBefore: Int
+}
+
+type WorkflowDefinition {
+  initialState: String!
+  requirements: [WorkflowRequirement!]!
+  stateFieldId: String!
+  transitions: [WorkflowTransition!]!
+}
+
+input WorkflowDefinitionInput {
+  expectedVersion: Int!
+  initialState: String!
+  requirements: [WorkflowRequirementInput!]!
+  stateFieldId: String!
+  transitions: [WorkflowTransitionInput!]!
+}
+
+type WorkflowEvent {
+  actorUserId: String!
+  assigneeUserId: String
+  at: DateTime!
+  dueAt: DateTime
+  from: String!
+  kind: String!
+  to: String!
+}
+
+input WorkflowEventImportInput {
+  actorUserId: String!
+  assigneeUserId: String
+  at: String!
+  dueAt: String
+  from: String!
+  kind: String!
+  to: String!
+}
+
+type WorkflowNotification {
+  actorUserId: String!
+  collectionId: String!
+  createdAt: DateTime!
+  entryId: String!
+  id: ID!
+  kind: String!
+  readAt: DateTime
+  recipientUserId: String!
+}
+
+type WorkflowRequirement {
+  fieldIds: [String!]!
+  state: String!
+}
+
+input WorkflowRequirementInput {
+  fieldIds: [String!]!
+  state: String!
+}
+
+type WorkflowTransition {
+  from: String!
+  minimumRole: CollectionRole!
+  to: String!
+}
+
+input WorkflowTransitionInput {
+  from: String!
+  minimumRole: CollectionRole!
+  to: String!
+}
+
+type WorkspaceBackupPreview {
+  allowed: Boolean!
+  collections: Float!
+  conflicts: [String!]!
+  entries: Float!
+  relations: Float!
+  restored: Boolean!
+  stockMovements: Float!
+  version: Float!
+}

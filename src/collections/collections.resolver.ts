@@ -32,7 +32,9 @@ export class CollectionsResolver {
 
   @Query(() => [Collection])
   async collectionsList(@Context('req') request: Request): Promise<Collection[]> {
-    return this.service.list(await this.ownerId(request));
+    const actorId = await this.ownerId(request);
+    const collections = await this.service.list(actorId);
+    return Promise.all(collections.map((collection) => this.collaboration.projectCollection(collection, actorId)));
   }
 
   @Mutation(() => Collection)
@@ -226,8 +228,8 @@ export class CollectionsResolver {
   }
 
   @Mutation(() => SharedObjectGrant)
-  async shareCollectionObject(@Args('objectId') objectId: string, @Args('targetCollectionId') targetCollectionId: string, @Args('propertyFieldIds', { type: () => [String] }) propertyFieldIds: string[], @Args('mode') mode: string, @Context('req') request: Request): Promise<SharedObjectGrant> {
-    return this.transfers.shareObject(objectId, targetCollectionId, propertyFieldIds, mode, await this.ownerId(request));
+  async shareCollectionObject(@Args('objectId') objectId: string, @Args('targetCollectionId') targetCollectionId: string, @Args('propertyFieldIds', { type: () => [String] }) propertyFieldIds: string[], @Args('mode') mode: string, @Args('includeSensitive', { type: () => Boolean, nullable: true }) includeSensitive: boolean | undefined, @Context('req') request: Request): Promise<SharedObjectGrant> {
+    return this.transfers.shareObject(objectId, targetCollectionId, propertyFieldIds, mode, await this.ownerId(request), includeSensitive === true);
   }
 
   @Mutation(() => Boolean)
@@ -361,9 +363,10 @@ export class CollectionsResolver {
     @Args('email') email: string,
     @Args('role', { type: () => CollectionRole }) role: CollectionRole,
     @Args('sharedFieldIds', { type: () => [String], nullable: true }) sharedFieldIds: string[] | undefined,
+    @Args('sensitiveFieldIds', { type: () => [String], nullable: true }) sensitiveFieldIds: string[] | undefined,
     @Context('req') request: Request,
   ): Promise<Collection> {
-    return this.collaboration.addOrUpdateMember(collectionId, email, role, sharedFieldIds, await this.ownerId(request));
+    return this.collaboration.addOrUpdateMember(collectionId, email, role, sharedFieldIds, sensitiveFieldIds, await this.ownerId(request));
   }
 
   @Mutation(() => Collection)

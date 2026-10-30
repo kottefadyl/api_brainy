@@ -48,7 +48,7 @@ export class ClassificationResolver {
   private async user(request: Request) { return (await this.auth.currentUser(request.headers.authorization)).id; }
 
   @Mutation(() => Collection)
-  async saveClassification(@Args('collectionId') collectionId: string, @Args('name') name: string, @Args('codes', { type: () => [ClassificationCodeInput] }) codes: ClassificationCodeInput[], @Args('listId', { nullable: true }) listId: string | undefined, @Args('expectedVersion', { type: () => Int, nullable: true }) expectedVersion: number | undefined, @Context('req') request: Request) {
+  async saveClassification(@Args('collectionId') collectionId: string, @Args('name') name: string, @Args('codes', { type: () => [ClassificationCodeInput] }) codes: ClassificationCodeInput[], @Args('listId', { type: () => String, nullable: true }) listId: string | undefined, @Args('expectedVersion', { type: () => Int, nullable: true }) expectedVersion: number | undefined, @Context('req') request: Request) {
     return this.service.save(collectionId, await this.user(request), listId, expectedVersion, name, codes as ClassificationCode[]);
   }
 

@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
@@ -11,7 +12,8 @@ import { NotesModule } from './notes/notes.module';
   imports: [
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: true,
+      autoSchemaFile: join(process.cwd(), 'schema.gql'),
+      sortSchema: true,
       context: ({ req }: { req: { headers: { authorization?: string } } }) => ({ req }),
       graphiql: process.env.NODE_ENV !== 'production',
     }),
