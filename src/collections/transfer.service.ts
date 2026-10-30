@@ -149,6 +149,7 @@ export class TransferService implements OnApplicationBootstrap {
       }
     }
     const formats = source.formats.filter((item) => formatIds.has(item.id));
+    if (formats.some((item) => item.appendOnly)) conflicts.push('A register cannot be copied or moved as a data format');
     const requiredListIds = new Set(formats.flatMap((format) => format.fields.map((field) => field.codeListId).filter((id): id is string => !!id)));
     const codeLists = (source.codeLists ?? []).filter((item) => requiredListIds.has(item.id));
     if (codeLists.length !== requiredListIds.size) conflicts.push('A required code list is missing');

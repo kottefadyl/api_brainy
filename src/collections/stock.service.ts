@@ -8,6 +8,7 @@ import { StockDailyRow, StockMovementInput, StockPosition, StockPreview, StockRu
 import { StockLock, StockMovement, StockRule } from './stock.schema';
 import { decimal, fractionText, multiply, Rational, resolveUnit } from './unit_math';
 import { localDate, localTime, validTimeZone } from './time_math';
+import { StockLedgerService } from './stock-ledger.service';
 
 type Prepared = {
   input: StockMovementInput;
@@ -32,6 +33,7 @@ export class StockService {
     @InjectModel(Entry.name) private readonly entries: Model<Entry>,
     @InjectModel(StockMovement.name) private readonly movements: Model<StockMovement>,
     @InjectModel(StockLock.name) private readonly locks: Model<StockLock>,
+    private readonly stockLedger: StockLedgerService,
   ) {}
 
   private async collection(collectionId: string, ownerId: string): Promise<Collection> {
@@ -179,16 +181,17 @@ export class StockService {
 
   private async commitPrepared(collection: Collection, ownerId: string, prepared: Prepared): Promise<StockMovement> {
     const prior = await this.existingOrConflict(collection.id, ownerId, prepared);
-    if (prior) return prior;
+    if (prior) { await this.stockLedger.sealExisting(ownerId, collection.id, prepared.input.productId); return prior; }
     const token = await this.acquire(collection.id, ownerId, prepared.input.productId);
     try {
       const again = await this.existingOrConflict(collection.id, ownerId, prepared);
-      if (again) return again;
+      if (again) { await this.stockLedger.sealExisting(ownerId, collection.id, prepared.input.productId); return again; }
+      await this.stockLedger.sealExisting(ownerId, collection.id, prepared.input.productId);
       const freshCollection = await this.collection(collection.id, ownerId);
       const preview = await this.previewPrepared(freshCollection, ownerId, prepared);
       if (!preview.allowed) throw new BadRequestException(preview.reason);
       try {
-        return await this.movements.create({
+        const movement = await this.movements.create({
           collectionId: collection.id, ownerId, actorId: ownerId, productId: prepared.input.productId, productName: prepared.productName,
           kind: prepared.input.kind, quantity: prepared.input.quantity, packageFactor: prepared.input.packageFactor, baseQuantity: prepared.baseQuantity,
           fromLocation: prepared.input.fromLocation ?? '', toLocation: prepared.input.toLocation ?? '', lot: prepared.input.lot ?? '',
@@ -196,6 +199,8 @@ export class StockService {
           reason: prepared.input.reason, reversalOf: prepared.input.reversalOf, idempotencyKey: prepared.input.idempotencyKey,
           sourceEntryId: prepared.sourceEntryId, sourceEntryUpdatedAt: prepared.sourceEntryUpdatedAt, ruleId: prepared.ruleId,
         });
+        await this.stockLedger.sealExisting(ownerId, collection.id, prepared.input.productId);
+        return (await this.movements.findById(movement.id).exec())!;
       } catch (error) {
         if ((error as { code?: number }).code === 11000) {
           const duplicate = await this.existingOrConflict(collection.id, ownerId, prepared);

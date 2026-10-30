@@ -51,6 +51,7 @@ export class WorkflowService {
     const collection = await this.collection(collectionId, actorUserId, CollectionRole.OWNER);
     const format = collection.formats.find((item) => item.id === formatId);
     if (!format) throw new NotFoundException('Data format not found');
+    if (format.appendOnly) throw new BadRequestException('A register cannot use a workflow');
     const version = format.version ?? 1;
     if (input.expectedVersion !== version) throw new BadRequestException('Data format changed. Refresh and try again');
     const definition = validateWorkflowDefinition(format, input);

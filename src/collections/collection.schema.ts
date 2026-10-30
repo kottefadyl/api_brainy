@@ -117,6 +117,10 @@ export class CollectionFormat {
   @Prop({ default: false })
   objectModel!: boolean;
 
+  @Field()
+  @Prop({ default: false })
+  appendOnly?: boolean;
+
   @Field({ nullable: true }) @Prop() copiedFromFormatId?: string;
   @Field(() => LinkedFormatSource, { nullable: true }) @Prop({ type: LinkedFormatSourceSchema }) linkedSource?: LinkedFormatSource;
   @Field(() => WorkflowDefinition, { nullable: true }) @Prop({ type: WorkflowDefinitionSchema }) workflow?: WorkflowDefinition;

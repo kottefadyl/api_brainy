@@ -202,6 +202,13 @@ export class Entry {
   @Prop()
   formatVersion?: number;
 
+  @Field({ nullable: true }) @Prop() correctionOf?: string;
+  @Field({ nullable: true }) @Prop() ledgerHash?: string;
+  @Field({ nullable: true }) @Prop() ledgerPreviousHash?: string;
+  @Field({ nullable: true }) @Prop() ledgerSequence?: number;
+  @Prop({ type: [String], default: undefined }) ledgerValueHashes?: string[];
+  @Prop({ type: [String], default: undefined }) ledgerRedactedFieldIds?: string[];
+
   @Field(() => [EntryValue])
   @Prop({ type: [EntryValueSchema], required: true })
   values!: EntryValue[];

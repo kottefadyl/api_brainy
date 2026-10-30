@@ -137,6 +137,7 @@ export class GeoService {
   async importPoints(collectionId: string, userId: string, formatId: string, fieldId: string, text: string, kind: string, importKey: string) {
     const collection = await this.context(collectionId, userId, CollectionRole.EDITOR);
     const { format } = this.positionField(collection, formatId, fieldId);
+    if (format.appendOnly) throw new BadRequestException('Import into a register is not supported');
     if (!/^[\w.-]{1,100}$/.test(importKey)) throw new BadRequestException('Invalid import key');
     const parsed = this.records(text, kind);
     if (parsed.errors.length) return { count: 0, errors: parsed.errors };

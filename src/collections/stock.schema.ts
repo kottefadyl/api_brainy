@@ -47,10 +47,26 @@ export class StockMovement {
   @Field({ nullable: true }) @Prop() reversalOf?: string;
   @Field() @Prop({ required: true }) actorId!: string;
   @Field() @Prop({ required: true }) idempotencyKey!: string;
+  @Field({ nullable: true }) @Prop() ledgerSequence?: number;
+  @Field({ nullable: true }) @Prop() ledgerPreviousHash?: string;
+  @Field({ nullable: true }) @Prop() ledgerHash?: string;
 }
 export const StockMovementSchema = SchemaFactory.createForClass(StockMovement);
 StockMovementSchema.index({ ownerId: 1, collectionId: 1, idempotencyKey: 1 }, { unique: true });
 StockMovementSchema.index({ ownerId: 1, collectionId: 1, productId: 1, occurredAt: 1 });
+
+@Schema()
+export class StockLedgerHead {
+  @Prop({ required: true }) ownerId!: string;
+  @Prop({ required: true }) collectionId!: string;
+  @Prop({ required: true }) productId!: string;
+  @Prop({ required: true, default: 0 }) count!: number;
+  @Prop({ required: true, default: '' }) hash!: string;
+  @Prop({ required: true, default: new Date(0) }) lockedUntil!: Date;
+  @Prop() token?: string;
+}
+export const StockLedgerHeadSchema = SchemaFactory.createForClass(StockLedgerHead);
+StockLedgerHeadSchema.index({ ownerId: 1, collectionId: 1, productId: 1 }, { unique: true });
 
 @Schema()
 export class StockLock {

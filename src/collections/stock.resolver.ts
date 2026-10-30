@@ -4,17 +4,34 @@ import { Collection } from './collection.schema';
 import { StockDailyRow, StockMovementInput, StockPosition, StockPreview, StockRuleInput } from './stock.input';
 import { StockMovement } from './stock.schema';
 import { StockService } from './stock.service';
+import { StockLedgerService } from './stock-ledger.service';
+import { LedgerIntegrity } from './ledger.schema';
 
 type Request = { headers: { authorization?: string } };
 
 @Resolver()
 export class StockResolver {
-  constructor(private readonly service: StockService, private readonly auth: AuthService) {}
+  constructor(private readonly service: StockService, private readonly auth: AuthService, private readonly ledger: StockLedgerService) {}
   private async owner(request: Request): Promise<string> { return (await this.auth.currentUser(request.headers.authorization)).id; }
 
   @Query(() => [StockPosition])
   async stockPositions(@Args('collectionId') collectionId: string, @Context('req') request: Request): Promise<StockPosition[]> {
     return this.service.positions(collectionId, await this.owner(request));
+  }
+
+  @Query(() => LedgerIntegrity)
+  async verifyStockLedger(@Args('collectionId') collectionId: string, @Args('productId') productId: string, @Context('req') request: Request): Promise<LedgerIntegrity> {
+    return this.ledger.verify(collectionId, productId, await this.owner(request));
+  }
+
+  @Query(() => String)
+  async stockLedgerProof(@Args('collectionId') collectionId: string, @Args('productId') productId: string, @Context('req') request: Request): Promise<string> {
+    return this.ledger.proof(collectionId, productId, await this.owner(request));
+  }
+
+  @Mutation(() => LedgerIntegrity)
+  async sealStockHistory(@Args('collectionId') collectionId: string, @Args('productId') productId: string, @Context('req') request: Request): Promise<LedgerIntegrity> {
+    return this.ledger.sealHistory(collectionId, productId, await this.owner(request));
   }
 
   @Query(() => [StockMovement])

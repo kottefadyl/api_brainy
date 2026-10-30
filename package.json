@@ -10,6 +10,7 @@
     "smoke:auth": "node scripts/auth-smoke.mjs",
     "smoke:collections": "node scripts/collections-smoke.mjs",
     "smoke:stock-forecast": "node scripts/stock-forecast-smoke.mjs",
+    "smoke:ledger": "node scripts/ledger-smoke.mjs",
     "smoke:reminders": "node scripts/reminder-smoke.mjs",
     "smoke:workflow": "node scripts/workflow-smoke.mjs",
     "smoke:web": "node scripts/web-smoke.mjs"

@@ -97,11 +97,14 @@ export class ClassificationService {
     if (!source || !target || fromCode === toCode || !target.active || (source.mergedInto && source.mergedInto !== toCode)) throw new BadRequestException('Choose two compatible codes');
     const fieldIds = collection.formats.flatMap((format) => format.fields.filter((field) => field.kind === FieldKind.CODE && field.codeListId === listId).map((field) => field.id));
     const affectedEntries = fieldIds.length ? await this.entries.countDocuments({ collectionId, 'values': { $elemMatch: { fieldId: { $in: fieldIds }, value: fromCode } } }).exec() : 0;
-    return { affectedEntries, allowed: true };
+    const registerFieldIds = collection.formats.filter((format) => format.appendOnly).flatMap((format) => format.fields.filter((field) => field.kind === FieldKind.CODE && field.codeListId === listId).map((field) => field.id));
+    const inRegister = registerFieldIds.length ? await this.entries.exists({ collectionId, values: { $elemMatch: { fieldId: { $in: registerFieldIds }, value: fromCode } } }) : false;
+    return { affectedEntries, allowed: !inRegister };
   }
 
   async merge(collectionId: string, listId: string, fromCode: string, toCode: string, expectedVersion: number, userId: string): Promise<Collection> {
-    await this.mergePreview(collectionId, listId, fromCode, toCode, userId);
+    const preview = await this.mergePreview(collectionId, listId, fromCode, toCode, userId);
+    if (!preview.allowed) throw new BadRequestException('A code used in a register cannot be merged');
     const collection = await this.context(collectionId, userId, CollectionRole.OWNER);
     const list = this.list(collection, listId);
     if (list.version !== expectedVersion && list.codes.find((item) => item.code === fromCode)?.mergedInto !== toCode) throw new BadRequestException('Code list changed. Refresh and try again');

@@ -7,16 +7,19 @@ import { Collection } from './collection.schema';
 import { Entry } from './entry.schema';
 import { EntryLink } from './entry-link.schema';
 import { EntryRelation } from './relation.schema';
-import { StockMovement } from './stock.schema';
+import { StockLedgerHead, StockMovement } from './stock.schema';
 import { EntryReminder, ReminderDelivery } from './reminder.schema';
 import { AuditLog } from './collaboration.schema';
 import { MoveOperation } from './move-operation.schema';
 import { ContributionLink, ContributionSubmission } from './contribution.schema';
+import { LedgerHead, LedgerRedaction } from './ledger.schema';
+import { LedgerService, verifyLedgerRows } from './ledger.service';
+import { StockLedgerService, verifyStockRows } from './stock-ledger.service';
 
-type Kind = 'collections' | 'entries' | 'entryLinks' | 'relations' | 'stockMovements' | 'reminders' | 'deliveries' | 'auditLogs' | 'moves' | 'contributionLinks' | 'contributionSubmissions';
+type Kind = 'collections' | 'entries' | 'entryLinks' | 'relations' | 'stockMovements' | 'reminders' | 'deliveries' | 'auditLogs' | 'moves' | 'contributionLinks' | 'contributionSubmissions' | 'ledgerHeads' | 'ledgerRedactions' | 'stockLedgerHeads';
 const legacyKinds: Kind[] = ['collections', 'entries', 'entryLinks', 'relations', 'stockMovements', 'reminders', 'deliveries', 'auditLogs', 'moves'];
-const kinds: Kind[] = [...legacyKinds, 'contributionLinks', 'contributionSubmissions'];
-const modelName: Record<Kind, string> = { collections: Collection.name, entries: Entry.name, entryLinks: EntryLink.name, relations: EntryRelation.name, stockMovements: StockMovement.name, reminders: EntryReminder.name, deliveries: ReminderDelivery.name, auditLogs: AuditLog.name, moves: MoveOperation.name, contributionLinks: ContributionLink.name, contributionSubmissions: ContributionSubmission.name };
+const kinds: Kind[] = [...legacyKinds, 'contributionLinks', 'contributionSubmissions', 'ledgerHeads', 'ledgerRedactions', 'stockLedgerHeads'];
+const modelName: Record<Kind, string> = { collections: Collection.name, entries: Entry.name, entryLinks: EntryLink.name, relations: EntryRelation.name, stockMovements: StockMovement.name, reminders: EntryReminder.name, deliveries: ReminderDelivery.name, auditLogs: AuditLog.name, moves: MoveOperation.name, contributionLinks: ContributionLink.name, contributionSubmissions: ContributionSubmission.name, ledgerHeads: LedgerHead.name, ledgerRedactions: LedgerRedaction.name, stockLedgerHeads: StockLedgerHead.name };
 type Archive = { brainyWorkspaceVersion: 1; ownerId: string; exportedAt: string; data: Record<Kind, string[]>; checksum: string };
 
 function checksum(data: Archive['data']): string { return createHash('sha256').update(JSON.stringify(data)).digest('hex'); }
@@ -27,21 +30,29 @@ function canonical(value: unknown): string {
 
 @Injectable()
 export class WorkspaceBackupService {
-  constructor(@InjectConnection() private readonly connection: Connection) {}
+  constructor(@InjectConnection() private readonly connection: Connection, private readonly ledger: LedgerService, private readonly stockLedger: StockLedgerService) {}
   private collection(kind: Kind) { return this.connection.db!.collection(this.connection.model(modelName[kind]).collection.name); }
   private encode(rows: unknown[]): string[] { return rows.map((row) => mongo.BSON.EJSON.stringify(row, { relaxed: false })); }
 
   async export(userId: string): Promise<string> {
     const collections = await this.collection('collections').find({ ownerId: userId }).toArray();
     const ids = collections.map((item) => item._id.toString());
+    for (const collection of collections) for (const format of ((collection.formats as { id: string; appendOnly?: boolean }[] | undefined) ?? [])) if (format.appendOnly) {
+      const integrity = await this.ledger.verify(collection._id.toString(), format.id, userId);
+      if (!integrity.valid) throw new BadRequestException(`Register integrity failed: ${integrity.problem}`);
+    }
     const activeMoves = await this.collection('moves').countDocuments({ ownerId: userId, state: { $in: ['PLANNED', 'PREPARED', 'COPIED', 'RECOVERING'] } });
     if (activeMoves) throw new BadRequestException('Wait for active moves to finish before backing up');
     const query = { collectionId: { $in: ids } };
-    const [entries, entryLinks, relations, stockMovements, reminders, auditLogs, moves, contributionLinks, contributionSubmissions] = await Promise.all([
-      this.collection('entries').find(query).toArray(), this.collection('entryLinks').find(query).toArray(), this.collection('relations').find(query).toArray(), this.collection('stockMovements').find(query).toArray(), this.collection('reminders').find(query).toArray(), this.collection('auditLogs').find(query).toArray(), this.collection('moves').find({ ownerId: userId, sourceCollectionId: { $in: ids }, targetCollectionId: { $in: ids } }).toArray(), this.collection('contributionLinks').find(query).toArray(), this.collection('contributionSubmissions').find(query).toArray(),
+    const [entries, entryLinks, relations, stockMovements, reminders, auditLogs, moves, contributionLinks, contributionSubmissions, ledgerHeads, ledgerRedactions, stockLedgerHeads] = await Promise.all([
+      this.collection('entries').find(query).toArray(), this.collection('entryLinks').find(query).toArray(), this.collection('relations').find(query).toArray(), this.collection('stockMovements').find(query).toArray(), this.collection('reminders').find(query).toArray(), this.collection('auditLogs').find(query).toArray(), this.collection('moves').find({ ownerId: userId, sourceCollectionId: { $in: ids }, targetCollectionId: { $in: ids } }).toArray(), this.collection('contributionLinks').find(query).toArray(), this.collection('contributionSubmissions').find(query).toArray(), this.collection('ledgerHeads').find(query).toArray(), this.collection('ledgerRedactions').find(query).toArray(), this.collection('stockLedgerHeads').find(query).toArray(),
     ]);
     const deliveries = await this.collection('deliveries').find({ ownerId: userId, reminderId: { $in: reminders.map((item) => item._id.toString()) } }).toArray();
-    const data: Archive['data'] = { collections: this.encode(collections), entries: this.encode(entries), entryLinks: this.encode(entryLinks), relations: this.encode(relations), stockMovements: this.encode(stockMovements), reminders: this.encode(reminders), deliveries: this.encode(deliveries), auditLogs: this.encode(auditLogs), moves: this.encode(moves), contributionLinks: this.encode(contributionLinks), contributionSubmissions: this.encode(contributionSubmissions) };
+    for (const head of stockLedgerHeads) {
+      const integrity = await this.stockLedger.verify(String(head.collectionId), String(head.productId), userId);
+      if (!integrity.valid) throw new BadRequestException(`Stock integrity failed: ${integrity.problem}`);
+    }
+    const data: Archive['data'] = { collections: this.encode(collections), entries: this.encode(entries), entryLinks: this.encode(entryLinks), relations: this.encode(relations), stockMovements: this.encode(stockMovements), reminders: this.encode(reminders), deliveries: this.encode(deliveries), auditLogs: this.encode(auditLogs), moves: this.encode(moves), contributionLinks: this.encode(contributionLinks), contributionSubmissions: this.encode(contributionSubmissions), ledgerHeads: this.encode(ledgerHeads), ledgerRedactions: this.encode(ledgerRedactions), stockLedgerHeads: this.encode(stockLedgerHeads) };
     const result = JSON.stringify({ brainyWorkspaceVersion: 1, ownerId: userId, exportedAt: new Date().toISOString(), data, checksum: checksum(data) });
     if (result.length > 50_000_000) throw new BadRequestException('Workspace backup exceeds 50 MB. Export collections separately until large backups are available');
     return result;
@@ -52,7 +63,7 @@ export class WorkspaceBackupService {
     let archive: Archive;
     try { archive = JSON.parse(raw) as Archive; } catch { throw new BadRequestException('Invalid backup file'); }
     if (archive.brainyWorkspaceVersion !== 1 || archive.ownerId !== userId || !archive.data || typeof archive.checksum !== 'string' || checksum(archive.data) !== archive.checksum || legacyKinds.some((kind) => !Array.isArray(archive.data[kind]))) throw new BadRequestException('Backup version, owner or checksum is invalid');
-    for (const kind of ['contributionLinks', 'contributionSubmissions'] as const) {
+    for (const kind of ['contributionLinks', 'contributionSubmissions', 'ledgerHeads', 'ledgerRedactions', 'stockLedgerHeads'] as const) {
       if (archive.data[kind] !== undefined && !Array.isArray(archive.data[kind])) throw new BadRequestException('Backup version, owner or checksum is invalid');
       archive.data[kind] ??= [];
     }
@@ -91,6 +102,24 @@ export class WorkspaceBackupService {
     const linkIds = new Set(docs.contributionLinks.map((item) => item._id!.toString()));
     for (const link of docs.contributionLinks) if (!collectionIds.has(String(link.collectionId)) || !docs.collections.some((item) => item._id!.toString() === String(link.collectionId) && ((item.formats as { id: string }[] | undefined) ?? []).some((format) => format.id === link.formatId))) conflicts.push('A contribution link is outside this workspace or has no data format');
     for (const submission of docs.contributionSubmissions) if (!collectionIds.has(String(submission.collectionId)) || !linkIds.has(String(submission.linkId)) || (submission.acceptedEntryId && !entryIds.has(String(submission.acceptedEntryId)))) conflicts.push('A contribution submission has a missing link or accepted entry');
+    for (const head of docs.ledgerHeads) if (!collectionIds.has(String(head.collectionId)) || head.ownerId !== userId || !docs.collections.some((item) => item._id!.toString() === String(head.collectionId) && ((item.formats as { id: string; appendOnly?: boolean }[] | undefined) ?? []).some((format) => format.id === head.formatId && format.appendOnly))) conflicts.push('A register head is outside this workspace or has no register');
+    for (const redaction of docs.ledgerRedactions) if (!collectionIds.has(String(redaction.collectionId)) || !entryIds.has(String(redaction.entryId)) || redaction.ownerId !== userId) conflicts.push('A register redaction has a missing writing');
+    for (const head of docs.stockLedgerHeads) if (!collectionIds.has(String(head.collectionId)) || !entryIds.has(String(head.productId)) || head.ownerId !== userId) conflicts.push('A stock integrity head has a missing product');
+    for (const collection of docs.collections) for (const format of ((collection.formats as { id: string; appendOnly?: boolean }[] | undefined) ?? [])) if (format.appendOnly && !docs.ledgerHeads.some((head) => String(head.collectionId) === collection._id!.toString() && head.formatId === format.id)) conflicts.push('A register has no head');
+    const hydrate = <T>(kind: Kind, row: Record<string, unknown>): T => this.connection.model(modelName[kind]).hydrate(row) as T;
+    for (const collection of docs.collections) for (const format of ((collection.formats as { id: string; appendOnly?: boolean }[] | undefined) ?? [])) if (format.appendOnly) {
+      const collectionId = String(collection._id);
+      const head = docs.ledgerHeads.find((item) => String(item.collectionId) === collectionId && item.formatId === format.id);
+      const rows = docs.entries.filter((item) => item.collectionId === collectionId && item.formatId === format.id).sort((a, b) => Number(a.ledgerSequence) - Number(b.ledgerSequence) || String(a._id).localeCompare(String(b._id)));
+      const redactions = docs.ledgerRedactions.filter((item) => item.collectionId === collectionId && item.formatId === format.id).sort((a, b) => Number(a.sequence) - Number(b.sequence));
+      const integrity = await verifyLedgerRows(head ? hydrate<LedgerHead>('ledgerHeads', head) : null, rows.map((item) => hydrate<Entry>('entries', item)), redactions.map((item) => hydrate<LedgerRedaction>('ledgerRedactions', item)));
+      if (!integrity.valid) conflicts.push(`Register ${format.id}: ${integrity.problem}`);
+    }
+    for (const head of docs.stockLedgerHeads) {
+      const rows = docs.stockMovements.filter((item) => item.collectionId === head.collectionId && item.productId === head.productId).sort((a, b) => new Date(String(a.createdAt)).getTime() - new Date(String(b.createdAt)).getTime() || String(a._id).localeCompare(String(b._id)));
+      const integrity = await verifyStockRows(hydrate<StockLedgerHead>('stockLedgerHeads', head), rows.map((item) => hydrate<StockMovement>('stockMovements', item)));
+      if (!integrity.valid) conflicts.push(`Stock ${head.productId}: ${integrity.problem}`);
+    }
     for (const kind of kinds) {
       const native = this.collection(kind);
       const existing = await native.find({ _id: { $in: docs[kind].map((doc) => doc._id as Types.ObjectId) } }).toArray();

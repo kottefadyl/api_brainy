@@ -46,7 +46,7 @@ export class ContributionService {
   async create(collectionId: string, input: CreateContributionLinkInput, actorId: string): Promise<{ link: ContributionLink; token: string }> {
     const collection = await this.owned(collectionId, actorId);
     const format = collection.formats.find((item) => item.id === input.formatId);
-    if (!format || format.objectModel || format.workflow) throw new BadRequestException('Choose an ordinary data format without a state flow');
+    if (!format || format.objectModel || format.workflow || format.appendOnly) throw new BadRequestException('Choose an ordinary data format without a state flow or register');
     if (!input.fieldIds.length || input.fieldIds.length > 30 || new Set(input.fieldIds).size !== input.fieldIds.length || input.fieldIds.some((id) => !format.fields.some((field) => field.id === id && supported.has(field.kind)))) throw new BadRequestException('Choose valid public fields');
     for (const value of [input.titleEn, input.titleFr, input.consentEn, input.consentFr]) {
       if (!value?.trim() || value.length > 2000) throw new BadRequestException('Information and consent text are required in English and French');

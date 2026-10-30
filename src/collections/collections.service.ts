@@ -10,9 +10,10 @@ import { ContributionLink, ContributionSubmission } from './contribution.schema'
 import { addLocalDays, addLocalMonths, localDate, localTime, localToInstant, validTimeZone } from './time_math';
 import { builtInUnits, decimal, divide, fractionText, multiply, resolveUnit } from './unit_math';
 import { CollectionUnit, QuantityConversion, UnitSnapshot } from './unit.schema';
-import { StockMovement } from './stock.schema';
+import { StockLedgerHead, StockMovement } from './stock.schema';
 import { MeasurementService } from './measurement.service';
 import { CollaborationService } from './collaboration.service';
+import { LedgerService } from './ledger.service';
 import { CollectionRole } from './collaboration.schema';
 import { parsePosition, parseZone } from './geo.logic';
 import { assertWorkflowEdit, importedWorkflowHistory, prepareWorkflowCreate, prepareWorkflowImport } from './workflow.rules';
@@ -57,7 +58,9 @@ export class CollectionsService {
     @InjectModel(ContributionLink.name) private readonly contributionLinks: Model<ContributionLink>,
     @InjectModel(ContributionSubmission.name) private readonly contributionSubmissions: Model<ContributionSubmission>,
     @InjectModel(StockMovement.name) private readonly stockMovements: Model<StockMovement>,
+    @InjectModel(StockLedgerHead.name) private readonly stockLedgerHeads: Model<StockLedgerHead>,
     private readonly collaboration: CollaborationService,
+    private readonly ledger: LedgerService,
   ) {}
 
   private validId(id: string): void {
@@ -485,6 +488,7 @@ export class CollectionsService {
     const collection = await this.one(collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.OWNER);
     const format = collection.formats.find((item) => item.id === formatId);
+    if (format?.appendOnly) throw new BadRequestException('A register cannot become an object model');
     if (!format) throw new NotFoundException('Data format not found');
     if ((format.version ?? 1) !== expectedVersion) throw new BadRequestException('Data format changed. Refresh and try again');
     const title = format.fields.find((field) => field.kind === FieldKind.TITLE);
@@ -508,12 +512,14 @@ export class CollectionsService {
   async remove(id: string, ownerId: string): Promise<boolean> {
     const collection = await this.one(id, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.OWNER);
+    if (collection.formats.some((item) => item.appendOnly)) throw new BadRequestException('A collection with a register cannot be deleted until the retention policy is defined');
     if (await this.collections.exists({ ownerId: collection.ownerId, sharedObjects: { $elemMatch: { sourceCollectionId: id, revokedAt: null } } })) throw new BadRequestException('Revoke object links before deleting this collection');
     if (await this.collections.exists({ ownerId: collection.ownerId, 'formats.linkedSource.sourceCollectionId': id })) throw new BadRequestException('Detach linked data formats before deleting this collection');
     await this.entries.deleteMany({ collectionId: id }).exec();
     await this.contributionSubmissions.deleteMany({ collectionId: id }).exec();
     await this.contributionLinks.deleteMany({ collectionId: id }).exec();
     await this.stockMovements.deleteMany({ collectionId: id }).exec();
+    await this.stockLedgerHeads.deleteMany({ collectionId: id }).exec();
     await this.collections.deleteOne({ _id: id }).exec();
     return true;
   }
@@ -600,6 +606,7 @@ export class CollectionsService {
     if (!view?.taskDoneFieldId) throw new NotFoundException('Task view not found');
     const entry = await this.entries.findOne({ _id: entryId, collectionId, formatId: view.formatIds[0], movingOperationId: null }).exec();
     if (!entry) throw new NotFoundException('Task not found');
+    if (entry.ledgerHash || collection.formats.find((item) => item.id === entry.formatId)?.appendOnly) throw new BadRequestException('A register writing cannot be edited');
     const values = entry.values.filter((item) => item.fieldId !== view.taskDoneFieldId && item.fieldId !== view.taskCompletedFieldId);
     values.push({ fieldId: view.taskDoneFieldId, value: done ? 'true' : 'false', booleanValue: done });
     if (done && view.taskCompletedFieldId) {
@@ -620,6 +627,7 @@ export class CollectionsService {
     if (!view?.calendarStartFieldId || !view.calendarEndFieldId) throw new NotFoundException('Calendar view not found');
     const entry = await this.entries.findOne({ _id: entryId, collectionId, formatId: view.formatIds[0], movingOperationId: null }).exec();
     if (!entry) throw new NotFoundException('Event not found');
+    if (entry.ledgerHash || collection.formats.find((item) => item.id === entry.formatId)?.appendOnly) throw new BadRequestException('A register writing cannot be edited');
     if (!input) {
       const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $unset: { recurrence: '' } }, { new: true }).exec();
       if (!updated) throw new BadRequestException('Event changed. Refresh and try again');
@@ -816,6 +824,7 @@ export class CollectionsService {
     const collection = await this.one(collectionId, ownerId);
     const format = collection.formats.find((item) => item.id === input.formatId);
     if (!format) throw new BadRequestException('Data format not found in this collection');
+    if (format.appendOnly) throw new BadRequestException('Import into a register is not supported; add writings through the register');
     if (!input.importKey || input.importKey.length > 100 || !/^[\w.-]+$/.test(input.importKey)) throw new BadRequestException('Invalid import key');
     if (!input.rows.length || input.rows.length > 50) throw new BadRequestException('Import 1 to 50 rows at a time');
     const seen = new Set<string>();
@@ -882,7 +891,7 @@ export class CollectionsService {
     return this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []);
   }
 
-  async createEntry(collectionId: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string, clientMutationId?: string, contribution?: { linkId: string; receivedAt: Date }): Promise<Entry> {
+  async createEntry(collectionId: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string, clientMutationId?: string, contribution?: { linkId: string; receivedAt: Date }, correctionOf?: string): Promise<Entry> {
     const collection = await this.one(collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
     if (clientMutationId && !/^[\w.-]{1,100}$/.test(clientMutationId)) throw new BadRequestException('Invalid mutation ID');
@@ -894,11 +903,15 @@ export class CollectionsService {
       ? collection.formats.find((item) => item.id === formatId)
       : collection.formats[0];
     if (!format) throw new BadRequestException('Data format not found in this collection');
+    if (correctionOf && !format.appendOnly) throw new BadRequestException('Corrections require a register');
+    if (format.appendOnly && contribution) throw new BadRequestException('Public contributions cannot write directly to a register');
     const validated = prepareWorkflowCreate(format, this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []));
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
     let entry: Entry;
-    try { entry = await this.entries.create({ collectionId, ownerId: collection.ownerId, formatId: format.id, formatVersion: format.version ?? 1, values: validated, clientMutationId, contributionLinkId: contribution?.linkId, contributionReceivedAt: contribution?.receivedAt }); }
+    try { entry = format.appendOnly
+      ? await this.ledger.append(collection, format, validated, ownerId, clientMutationId, correctionOf)
+      : await this.entries.create({ collectionId, ownerId: collection.ownerId, formatId: format.id, formatVersion: format.version ?? 1, values: validated, clientMutationId, contributionLinkId: contribution?.linkId, contributionReceivedAt: contribution?.receivedAt }); }
     catch (error) {
       if (clientMutationId && (error as { code?: number }).code === 11000) {
         const existing = await this.entries.findOne({ collectionId, ownerId: collection.ownerId, clientMutationId }).exec();
@@ -908,6 +921,28 @@ export class CollectionsService {
     }
     await this.collaboration.logAction(collectionId, ownerId, 'CREATE_ENTRY', `Created entry in format ${format.name}`);
     return entry;
+  }
+
+  async correctLedgerEntry(originalId: string, values: EntryValueInput[], actorId: string, clientMutationId?: string): Promise<Entry> {
+    this.validId(originalId);
+    const original = await this.entries.findOne({ _id: originalId }).exec();
+    if (!original) throw new NotFoundException('Original writing not found');
+    const collection = await this.one(original.collectionId, actorId);
+    this.collaboration.checkAccess(collection, actorId, CollectionRole.EDITOR);
+    const format = collection.formats.find((item) => item.id === original.formatId);
+    if (!format?.appendOnly || !original.ledgerHash) throw new BadRequestException('Choose a writing in a register');
+    const proposed = this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []);
+    for (const field of format.fields.filter((item) => item.kind === FieldKind.NUMBER)) {
+      const before = original.values.find((item) => item.fieldId === field.id);
+      const after = proposed.find((item) => item.fieldId === field.id);
+      if (!before && after) throw new BadRequestException(`Counter-writing cannot add an amount for ${field.name}`);
+      if (!before) continue;
+      if (!after) throw new BadRequestException(`Counter-writing needs the opposite amount for ${field.name}`);
+      const a = decimal(before.numberValue ?? before.value);
+      const b = decimal(after.numberValue ?? after.value);
+      if (a.n * b.d + b.n * a.d !== 0n) throw new BadRequestException(`Counter-writing needs the opposite amount for ${field.name}`);
+    }
+    return this.createEntry(collection.id, values, format.id, actorId, clientMutationId, undefined, originalId);
   }
 
   private assertObjectTitle(format: CollectionFormat, values: EntryValue[]): void {
@@ -1059,7 +1094,7 @@ export class CollectionsService {
     const sourceFormat = collection.formats.find((item) => item.id === source.formatId)!;
     const target = collection.formats.find((item) => item.id === targetFormatId);
     const field = target?.fields.find((item) => item.id === targetFieldId);
-    if (!target || target.objectModel || !field || ![FieldKind.TITLE, FieldKind.TEXT, FieldKind.LONG_TEXT].includes(field.kind)) throw new BadRequestException('Choose a text field in a regular data format in this collection');
+    if (!target || target.objectModel || target.appendOnly || !field || ![FieldKind.TITLE, FieldKind.TEXT, FieldKind.LONG_TEXT].includes(field.kind)) throw new BadRequestException('Choose a text field in a regular data format outside a register');
     const summary = sourceFormat.fields.flatMap((definition) => {
       const value = source.values.find((item) => item.fieldId === definition.id);
       if (!value) return [];
@@ -1083,6 +1118,7 @@ export class CollectionsService {
     if (!entry) throw new NotFoundException('Entry not found');
     const collection = await this.one(entry.collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
+    if (entry.ledgerHash || collection.formats.find((item) => item.id === entry.formatId)?.appendOnly) throw new BadRequestException('A register writing cannot be edited. Add a linked correction');
     if (clientMutationId && !/^[\w.-]{1,100}$/.test(clientMutationId)) throw new BadRequestException('Invalid mutation ID');
     if (clientMutationId && entry.lastMutationId === clientMutationId) return entry;
     if (expectedUpdatedAt && (!Number.isFinite(Date.parse(expectedUpdatedAt)) || entry.updatedAt.getTime() !== Date.parse(expectedUpdatedAt))) throw new BadRequestException('This entry changed elsewhere. Review the conflict before syncing');
@@ -1111,6 +1147,7 @@ export class CollectionsService {
     if (!entry) throw new NotFoundException('Entry not found');
     const collection = await this.one(entry.collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
+    if (entry.ledgerHash || collection.formats.find((item) => item.id === entry.formatId)?.appendOnly) throw new BadRequestException('A register writing cannot be deleted. Add a linked correction');
     if (entry.movingOperationId) throw new BadRequestException('This object is being moved');
     if (await this.stockMovements.exists({ collectionId: collection.id, $or: [{ sourceEntryId: id }, { productId: id }] })) throw new BadRequestException('This entry has stock history. Preserve it and add a correction or return');
     if (await this.entries.exists({ collectionId: collection.id, $or: [{ sourceObjectId: id }, { 'values.objectIds': id }] })) throw new BadRequestException('This object is used in entries. Remove those links first');

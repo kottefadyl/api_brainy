@@ -17,8 +17,9 @@ import { EntryLink, EntryLinkSchema } from './entry-link.schema';
 import { EntryLinkResolver } from './entry-link.resolver';
 import { EntryLinkService } from './entry-link.service';
 import { StarterTemplateResolver } from './starter-template.resolver';
-import { StockLock, StockLockSchema, StockMovement, StockMovementSchema } from './stock.schema';
+import { StockLedgerHead, StockLedgerHeadSchema, StockLock, StockLockSchema, StockMovement, StockMovementSchema } from './stock.schema';
 import { StockService } from './stock.service';
+import { StockLedgerService } from './stock-ledger.service';
 import { StockResolver } from './stock.resolver';
 import { ForecastResolver } from './forecast.resolver';
 import { ForecastService } from './forecast.service';
@@ -44,6 +45,9 @@ import { WorkflowService } from './workflow.service';
 import { ContributionLink, ContributionLinkSchema, ContributionSubmission, ContributionSubmissionSchema } from './contribution.schema';
 import { ContributionResolver } from './contribution.resolver';
 import { ContributionService } from './contribution.service';
+import { LedgerHead, LedgerHeadSchema, LedgerRedaction, LedgerRedactionSchema } from './ledger.schema';
+import { LedgerResolver } from './ledger.resolver';
+import { LedgerService } from './ledger.service';
 
 @Module({
   imports: [
@@ -53,6 +57,7 @@ import { ContributionService } from './contribution.service';
       { name: Entry.name, schema: EntrySchema },
       { name: StockMovement.name, schema: StockMovementSchema },
       { name: StockLock.name, schema: StockLockSchema },
+      { name: StockLedgerHead.name, schema: StockLedgerHeadSchema },
       { name: EntryLink.name, schema: EntryLinkSchema },
       { name: EntryRelation.name, schema: EntryRelationSchema },
       { name: MoveOperation.name, schema: MoveOperationSchema },
@@ -65,9 +70,11 @@ import { ContributionService } from './contribution.service';
       { name: WorkflowNotification.name, schema: WorkflowNotificationSchema },
       { name: ContributionLink.name, schema: ContributionLinkSchema },
       { name: ContributionSubmission.name, schema: ContributionSubmissionSchema },
+      { name: LedgerHead.name, schema: LedgerHeadSchema },
+      { name: LedgerRedaction.name, schema: LedgerRedactionSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}
