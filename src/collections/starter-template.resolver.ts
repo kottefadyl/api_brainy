@@ -37,6 +37,23 @@ function templates(language: string): TemplateDefinition[] {
       ['health', fr ? 'Suivi personnel de santé' : 'Personal health tracking', fr ? 'Sujet' : 'Subject', '#FFF0F4'],
       ['machine', fr ? 'Mesures de machines' : 'Machine measurements', fr ? 'Machine' : 'Machine', '#FFF5EB'],
     ] as const).map(([id, name, subject, color]) => ({ id, name, description: fr ? 'Mesures datées avec qualité, conditions et source.' : 'Dated measurements with quality, conditions and source.', formats: [{ name: subject, color, objectModel: true, sensitivity: id === 'health' ? SensitivityLevel.SENSITIVE : SensitivityLevel.ORDINARY, fields: [{ name: fr ? 'Nom' : 'Name', kind: FieldKind.TITLE }] }] })),
+        { id: 'fitness', name: fr ? 'Entraînement et sport' : 'Fitness and workouts', description: fr ? 'Exercices, séances, séries, charges et calendrier d’entraînement.' : 'Exercises, workouts, sets, weights and training calendar.', formats: [
+      { name: fr ? 'Exercice' : 'Exercise', color: '#EEF5FF', objectModel: true, fields: [
+        { name: fr ? 'Nom' : 'Name', kind: FieldKind.TITLE },
+        { name: fr ? 'Groupe musculaire' : 'Muscle group', kind: FieldKind.SELECT, options: fr ? ['Pectoraux', 'Dos', 'Jambes', 'Épaules', 'Bras', 'Abdominaux', 'Cardio', 'Corps complet'] : ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Abs', 'Cardio', 'Full body'] },
+        { name: fr ? 'Équipement' : 'Equipment', kind: FieldKind.SELECT, options: fr ? ['Haltères', 'Barre', 'Machine', 'Poids du corps', 'Autre'] : ['Dumbbell', 'Barbell', 'Machine', 'Bodyweight', 'Other'] },
+        { name: fr ? 'Consignes' : 'Instructions', kind: FieldKind.LONG_TEXT },
+      ] },
+      { name: fr ? 'Séance' : 'Workout', color: '#EDF9F3', fields: [
+        { name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE },
+        { name: fr ? 'Début' : 'Start', kind: FieldKind.DATETIME },
+        { name: fr ? 'Fin' : 'End', kind: FieldKind.DATETIME },
+        { name: fr ? 'Durée' : 'Duration', kind: FieldKind.DURATION },
+        { name: fr ? 'Type de séance' : 'Workout type', kind: FieldKind.SELECT, options: fr ? ['Musculation', 'Cardio / Course', 'HIIT', 'Étirements', 'Autre'] : ['Strength', 'Cardio / Run', 'HIIT', 'Stretching', 'Other'] },
+        { name: fr ? 'Difficulté (RPE 1-10)' : 'RPE (1-10)', kind: FieldKind.NUMBER },
+        { name: fr ? 'Notes' : 'Notes', kind: FieldKind.LONG_TEXT },
+      ] },
+    ] },
     { id: 'book', name: fr ? 'Livre' : 'Book', description: fr ? 'Chapitres, scènes et notes reliables, avec ordre manuel.' : 'Linkable chapters, scenes and notes with manual order.', formats: [
       { name: fr ? 'Chapitre' : 'Chapter', color: '#EEF5FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Ordre' : 'Order', kind: FieldKind.NUMBER }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.LONG_TEXT }] },
       { name: fr ? 'Scène' : 'Scene', color: '#EDF9F3', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Ordre' : 'Order', kind: FieldKind.NUMBER }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.LONG_TEXT }] },
@@ -94,6 +111,46 @@ export class StarterTemplateResolver {
       await add('IN', language === 'fr' ? 'Réception de stock' : 'Stock receipt', '#FFF5EB');
       await add('OUT', language === 'fr' ? 'Vente ou sortie' : 'Sale or outgoing', '#FFF0F4');
       await add('TRANSFER', language === 'fr' ? 'Transfert de stock' : 'Stock transfer', '#F4F0FF');
+    }
+        if (template.id === 'fitness') {
+      const exerciseFormatId = collection.formats[0].id;
+      const workoutFormat = collection.formats[1];
+      const dates = workoutFormat.fields.filter((field) => field.kind === FieldKind.DATETIME);
+      collection = await this.collections.addFormat(collection.id, {
+        name: language === 'fr' ? 'Série' : 'Set',
+        color: '#FFF0F4',
+        fields: [
+          { name: language === 'fr' ? 'Titre' : 'Title', kind: FieldKind.TITLE },
+          { name: language === 'fr' ? 'Exercice' : 'Exercise', kind: FieldKind.OBJECT_REF, targetObjectFormatId: exerciseFormatId },
+          { name: language === 'fr' ? 'Charge' : 'Weight', kind: FieldKind.NUMBER, unit: 'kg' },
+          { name: language === 'fr' ? 'Répétitions' : 'Reps', kind: FieldKind.NUMBER },
+          { name: language === 'fr' ? 'Récupération' : 'Rest', kind: FieldKind.DURATION },
+          { name: language === 'fr' ? 'Date' : 'Date', kind: FieldKind.DATETIME },
+          { name: language === 'fr' ? 'Commentaire' : 'Comment', kind: FieldKind.TEXT },
+        ],
+      }, ownerId);
+      const setFormat = collection.formats.at(-1)!;
+      if (dates.length >= 2) {
+        collection = await this.collections.saveView(collection.id, ownerId, {
+          name: language === 'fr' ? 'Calendrier des séances' : 'Workout calendar',
+          layout: 'CALENDAR',
+          formatIds: [workoutFormat.id],
+          columnFieldIds: workoutFormat.fields.map((field) => field.id),
+          sort: 'NEWEST',
+          groupByFormat: false,
+          calendarStartFieldId: dates[0].id,
+          calendarEndFieldId: dates[1].id,
+          calendarTimeZone: timeZone || 'UTC',
+        });
+      }
+      collection = await this.collections.saveView(collection.id, ownerId, {
+        name: language === 'fr' ? 'Journal des séries' : 'Sets log',
+        layout: 'TABLE',
+        formatIds: [setFormat.id],
+        columnFieldIds: setFormat.fields.map((field) => field.id),
+        sort: 'NEWEST',
+        groupByFormat: false,
+      });
     }
     if (['science', 'weather', 'health', 'machine'].includes(template.id)) {
       const unit = template.id === 'weather' ? '°C' : template.id === 'health' ? 'bpm' : template.id === 'machine' ? 'h' : 'g';
