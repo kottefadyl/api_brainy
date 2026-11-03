@@ -36,7 +36,7 @@ registerEnumType(SensitivityLevel, { name: 'SensitivityLevel' });
 @ObjectType()
 @Schema({ _id: false })
 export class CollectionField {
-  @Field(() => SensitivityLevel)
+  @Field(() => SensitivityLevel, { nullable: true, defaultValue: SensitivityLevel.ORDINARY })
   @Prop({ enum: Object.values(SensitivityLevel), default: SensitivityLevel.ORDINARY })
   sensitivity?: SensitivityLevel;
 
@@ -100,7 +100,7 @@ export const LinkedFormatSourceSchema = SchemaFactory.createForClass(LinkedForma
 @ObjectType()
 @Schema({ _id: false })
 export class CollectionFormat {
-  @Field(() => SensitivityLevel)
+  @Field(() => SensitivityLevel, { nullable: true, defaultValue: SensitivityLevel.ORDINARY })
   @Prop({ enum: Object.values(SensitivityLevel), default: SensitivityLevel.ORDINARY })
   sensitivity?: SensitivityLevel;
 

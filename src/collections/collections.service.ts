@@ -89,6 +89,18 @@ export class CollectionsService {
     collection.units ??= [];
     collection.codeLists ??= [];
     collection.exchangeRates ??= [];
+    collection.fields = (collection.fields ?? []).map((f) => {
+      f.sensitivity ??= SensitivityLevel.ORDINARY;
+      return f;
+    });
+    collection.formats = (collection.formats ?? []).map((format) => {
+      format.sensitivity ??= SensitivityLevel.ORDINARY;
+      format.fields = (format.fields ?? []).map((field) => {
+        field.sensitivity ??= SensitivityLevel.ORDINARY;
+        return field;
+      });
+      return format;
+    });
     if (collection.formats?.length) return collection;
     const formatId = `legacy-${collection.id}`;
     const updated = await this.collections.findOneAndUpdate(
@@ -104,6 +116,18 @@ export class CollectionsService {
     updated.units ??= [];
     updated.codeLists ??= [];
     updated.exchangeRates ??= [];
+    updated.fields = (updated.fields ?? []).map((f) => {
+      f.sensitivity ??= SensitivityLevel.ORDINARY;
+      return f;
+    });
+    updated.formats = (updated.formats ?? []).map((format) => {
+      format.sensitivity ??= SensitivityLevel.ORDINARY;
+      format.fields = (format.fields ?? []).map((field) => {
+        field.sensitivity ??= SensitivityLevel.ORDINARY;
+        return field;
+      });
+      return format;
+    });
     return updated;
   }
 

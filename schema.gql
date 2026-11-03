@@ -217,7 +217,7 @@ type CollectionField {
   name: String!
   options: [String!]
   referenceMode: String
-  sensitivity: SensitivityLevel!
+  sensitivity: SensitivityLevel
   sourceFieldId: String
   targetObjectFormatId: String
   unit: String
@@ -246,7 +246,7 @@ type CollectionFormat {
   linkedSource: LinkedFormatSource
   name: String!
   objectModel: Boolean!
-  sensitivity: SensitivityLevel!
+  sensitivity: SensitivityLevel
   version: Float
   workflow: WorkflowDefinition
 }
