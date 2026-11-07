@@ -387,6 +387,86 @@ A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date
 """
 scalar DateTime
 
+type DomainPackageExport {
+  dataFormats: Float!
+  fileName: String!
+  packageJson: String!
+  warnings: [String!]!
+}
+
+input DomainPackageExportInput {
+  author: String!
+  description: String
+  license: String!
+  name: String!
+  notice: String
+  packageId: String!
+  version: String!
+}
+
+type DomainPackageInstall {
+  author: String!
+  collectionId: String!
+  dataFormatCount: Float!
+  detachedAt: DateTime
+  id: ID!
+  installedAt: DateTime!
+  keyFingerprint: String
+  license: String!
+  name: String!
+  packageId: String!
+  publishedAt: String!
+  signatureStatus: String!
+  updatedFrom: String
+  version: String!
+}
+
+type DomainPackageInstallResult {
+  addedDataFormats: Float!
+  addedFields: Float!
+  collectionId: String!
+  exampleObjects: Float!
+  installId: String!
+  mode: String!
+  version: String!
+}
+
+type DomainPackagePreview {
+  addedFields: [String!]!
+  adjustments: [String!]!
+  allowed: Boolean!
+  author: String!
+  codeLists: [String!]!
+  conflicts: [String!]!
+  dataFormats: [String!]!
+  dependencies: [String!]!
+  description: String!
+  exampleObjects: Float!
+  formulas: [String!]!
+  homepage: String
+  installedVersion: String
+  keyFingerprint: String
+  license: String!
+  mode: String!
+  name: String!
+  notice: String!
+  packageId: String!
+  publishedAt: String!
+  signatureStatus: String!
+  stockRules: [String!]!
+  units: [String!]!
+  version: String!
+  views: [String!]!
+}
+
+type DomainPackageSummary {
+  description: String!
+  id: String!
+  name: String!
+  packageJson: String!
+  version: String!
+}
+
 type Entry {
   collectionId: String!
   contributionLinkId: String
@@ -821,6 +901,7 @@ type Mutation {
   deleteNote(id: String!): Boolean!
   deleteStockRule(collectionId: String!, ruleId: String!): Collection!
   detachCollectionRelations(collectionId: String!, entryId: String!, replacementId: String): Boolean!
+  detachDomainPackage(installId: String!): Boolean!
   detachLinkedDataFormat(targetCollectionId: String!, targetFormatId: String!): Collection!
   duplicateCollectionObject(id: String!): Entry!
   enableLedger(collectionId: String!, formatId: String!): Collection!
@@ -829,6 +910,7 @@ type Mutation {
   importCollectionRelations(collectionId: String!, importKey: String!, rows: [ImportedRelationInput!]!): Boolean!
   importEntriesBatch(collectionId: String!, input: ImportEntriesInput!): ImportEntriesResult!
   importGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, importKey: String!, kind: String!, text: String!): GeoImportResult!
+  installDomainPackage(collectionId: String, collectionName: String, language: String, packageJson: String!): DomainPackageInstallResult!
   linkCollectionDataFormat(formatId: String!, targetCollectionId: String!): TransferResult!
   linkImportedEntries(collectionId: String!, importKey: String!, links: [ImportedEntryLinkInput!]!): Boolean!
   linkImportedObjects(collectionId: String!, importKey: String!, links: [ImportObjectLinkInput!]!): Boolean!
@@ -982,9 +1064,12 @@ type Query {
   contributionLinks(collectionId: String!): [ContributionLink!]!
   contributionSubmissions(collectionId: String!): [ContributionSubmission!]!
   dataFormatCopyPreview(formatId: String!, targetCollectionId: String!, withEntries: Boolean! = false): TransferPreview!
+  domainPackageInstalls(collectionId: String!): [DomainPackageInstall!]!
+  domainPackagePilots(language: String): [DomainPackageSummary!]!
   entryAttachment(entryId: String!, fieldId: String!): EntryAttachment!
   entryObjectReferences(entryId: String!): [ResolvedObjectReference!]!
   entryReminders(entryId: String!): [EntryReminder!]!
+  exportDomainPackage(collectionId: String!, input: DomainPackageExportInput!, language: String): DomainPackageExport!
   exportGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, includeSensitive: Boolean, kind: String!): String!
   forecastCollection(collectionId: String!, input: ForecastInput!): ForecastResult!
   health: String!
@@ -999,6 +1084,7 @@ type Query {
   objectMovePreview(objectId: String!, targetCollectionId: String!): TransferPreview!
   objectVariableProperty(entryId: String!, objectId: String, propertyFieldId: String!, variableName: String!): ResolvedObjectVariable!
   previewClassificationCsv(csv: String!): ClassificationCsvPreview!
+  previewDomainPackage(collectionId: String, language: String, packageJson: String!): DomainPackagePreview!
   previewEntryStockEffect(collectionId: String!, entryId: String!, ruleId: String!): StockPreview!
   previewGeoImport(collectionId: String!, fieldId: String!, formatId: String!, kind: String!, text: String!): GeoImportResult!
   previewStockMovement(collectionId: String!, input: StockMovementInput!): StockPreview!

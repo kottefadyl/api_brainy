@@ -15,6 +15,7 @@
     "smoke:reminders": "node scripts/reminder-smoke.mjs",
     "smoke:workflow": "node scripts/workflow-smoke.mjs",
     "smoke:fitness": "node scripts/fitness-smoke.mjs",
+    "smoke:domain-packages": "node scripts/domain-package-smoke.mjs",
     "smoke:web": "node scripts/web-smoke.mjs"
   },
   "dependencies": {
