@@ -16,6 +16,17 @@ export const formulaChildKeys: readonly string[] = ['value', 'condition', 'then'
 
 const dateKinds: readonly string[] = ['dateField', 'dateLiteral', 'addDays', 'startOfMonth', 'endOfMonth'];
 export const isDateExpression = (node: FormulaNode): node is DateExpression => dateKinds.includes(node.kind);
+const numberKinds: readonly string[] = ['number', 'field', 'property', 'sumRelated', 'avgRelated', 'minRelated', 'maxRelated', 'countRelated', 'coalesce', 'formula', 'textLength', 'dateDifference', 'dateDiff', 'datePart', 'durationField', 'durationIn', 'round', 'operation', 'conditional', 'min', 'max', 'abs', 'floor', 'ceil', 'modulo'];
+const conditionKinds: readonly string[] = ['boolean', 'comparison', 'logical', 'not'];
+/** Names what a node gives, for error messages; undefined for anything that is not a formula node. */
+export function describeNode(node: unknown): 'a number' | 'text' | 'a date' | 'a condition' | undefined {
+  const kind = (node as { kind?: unknown } | null | undefined)?.kind;
+  if (typeof kind !== 'string') return undefined;
+  if (numberKinds.includes(kind)) return 'a number';
+  if (textKinds.includes(kind)) return 'text';
+  if (dateKinds.includes(kind)) return 'a date';
+  return conditionKinds.includes(kind) ? 'a condition' : undefined;
+}
 const relatedKinds: readonly string[] = ['sumRelated', 'avgRelated', 'minRelated', 'maxRelated'];
 export const isRelatedAggregate = (node: FormulaNode): node is RelatedAggregate => relatedKinds.includes(node.kind);
 const textKinds: readonly string[] = ['textField', 'textLiteral', 'textProperty', 'unitOf', 'coalesceText', 'upper', 'lower', 'proper', 'concat', 'substring', 'formatText'];

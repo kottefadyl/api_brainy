@@ -135,9 +135,7 @@ try {
     assert.equal(checked.analyseCollection.rows[0].value, expected);
   }
   const incompatible = { kind: 'operation', operator: 'ADD', args: [{ kind: 'property', referenceFieldId: idOf(saleFormat, 'Product'), propertyFieldId: idOf(product, 'Price') }, { kind: 'field', fieldId: idOf(saleFormat, 'Distance') }] };
-  const badSaved = await gql('mutation($id:String!,$input:FormulaInput!) { saveCollectionFormula(collectionId:$id,input:$input) { formulas { id name } } }', { id: collection.id, input: { name: 'Bad unit', formatId: saleFormat.id, expression: JSON.stringify(incompatible) } });
-  const badId = badSaved.saveCollectionFormula.formulas.find((item) => item.name === 'Bad unit').id;
-  await gql('query($id:String!,$formulaId:String!,$entryId:String!) { calculateCollectionFormula(collectionId:$id,formulaId:$formulaId,entryId:$entryId) { value } }', { id: collection.id, formulaId: badId, entryId: first }, token, true);
+  assert.match(await gql('mutation($id:String!,$input:FormulaInput!) { saveCollectionFormula(collectionId:$id,input:$input) { formulas { id name } } }', { id: collection.id, input: { name: 'Bad unit', formatId: saleFormat.id, expression: JSON.stringify(incompatible) } }, token, true), /Cannot add incompatible units/);
   const follow = await gql('mutation($id:String!,$input:FormulaInput!) { saveCollectionFormula(collectionId:$id,input:$input) { formulas { id name } } }', { id: collection.id, input: { name: 'Follow', formatId: saleFormat.id, expression: JSON.stringify({ kind: 'formula', formulaId }) } });
   const followId = follow.saveCollectionFormula.formulas.find((item) => item.name === 'Follow').id;
   await gql('mutation($id:String!,$formulaId:String!,$input:FormulaInput!) { saveCollectionFormula(collectionId:$id,formulaId:$formulaId,input:$input) { id } }', { id: collection.id, formulaId, input: { name: 'Total', formatId: saleFormat.id, expectedVersion: 1, expression: JSON.stringify({ kind: 'formula', formulaId: followId }) } }, token, true);
@@ -481,7 +479,7 @@ try {
   assert.match(await refusedT21(yesNo(cmp('GT', num('1', 'EUR'), num('1', 'km')))), /incompatible units/);
   assert.match(await refusedT21(yesNo(cmp('EQ', num('1', 'EUR'), num('1', 'USD')))), /dated rate/);
   assert.match(await refusedT21(yesNo(cmp('GT', t21Field('Price'), num('5')))), /incompatible units/);
-  assert.match(await failsT21(yesNo(cmp('GT', { kind: 'abs', value: t21Field('Price') }, { kind: 'abs', value: num('1', 'km') }))), /incompatible units/);
+  assert.match(await refusedT21(yesNo(cmp('GT', { kind: 'abs', value: t21Field('Price') }, { kind: 'abs', value: num('1', 'km') }))), /incompatible units/);
 
   // Logic, short-circuit and three-valued handling of missing values
   const missingTest = cmp('GT', t21Field('Quantity'), num('0'));
@@ -491,7 +489,7 @@ try {
   for (const condition of [logical('AND', yes, missingTest), logical('OR', no, missingTest), { kind: 'not', arg: missingTest }]) {
     assert.ok((await evalT21(yesNo(condition), blankOrder)).missing, JSON.stringify(condition));
   }
-  assert.equal((await evalT21(yesNo(logical('OR', yes, cmp('GT', { kind: 'abs', value: num('1', 'EUR') }, { kind: 'abs', value: num('1', 'km') }))))).value, '1', 'OR stops at the first true condition');
+  assert.equal((await evalT21(yesNo(logical('OR', yes, cmp('GT', { kind: 'operation', operator: 'DIVIDE', args: [num('1'), num('0')] }, num('1')))))).value, '1', 'OR stops at the first true condition');
 
   // MIN and MAX keep the unit of the selected quantity
   const euros = [num('10', 'EUR'), num('4', 'EUR'), num('15', 'EUR')];
@@ -639,7 +637,7 @@ try {
   assert.match(await refusedDate(part('CENTURY', day('2026-01-01'))), /weekday/);
   assert.match(await refusedDate(diff('YEARS', day('2026-01-01'), day('2026-01-02'))), /months/);
   assert.match(await refusedDate({ kind: 'nextMonday', date: day('2026-01-01') }), /Unknown formula operation/);
-  assert.match(await refusedDate(addDays({ kind: 'number', value: '1' }, num('1'))), /Unknown date operation/);
+  assert.match(await refusedDate(addDays({ kind: 'number', value: '1' }, num('1'))), /Expected a date but found a number/);
   assert.match(await refusedDate(addDays(day('2026-01-01'), num('1.5'))), /whole number/);
   assert.match(await refusedDate(addDays(day('2026-01-01'), { kind: 'field', fieldId: idOf(eventFmt, 'Weight') })), /plain number or a duration/);
   assert.match(await refusedDate({ kind: 'durationField', fieldId: idOf(eventFmt, 'Offset') }), /duration field/);
@@ -782,7 +780,7 @@ try {
   assert.deepEqual(await evalText({ kind: 'upper', text: concat(lit('total: '), formatted(num('2'), '0.0')) }), textOf('TOTAL: 2.0'));
   assert.deepEqual(await evalText({ kind: 'proper', text: substring(textField('Body'), num('1'), num('4')) }), textOf('Jean'));
   assert.match(await refusedText({ kind: 'upper', text: { kind: 'textField', fieldId: idOf(noteFmt, 'Count') } }), /text, title, code or link/);
-  assert.match(await refusedText({ kind: 'upper', text: num('1') }), /Unknown text operation/);
+  assert.match(await refusedText({ kind: 'upper', text: num('1') }), /Expected text but found a number/);
   assert.match(await refusedText({ kind: 'operation', operator: 'ADD', args: [lit('1'), num('1')] }), /gives text/);
   assert.match(await refusedText(lit('x'.repeat(1001))), /at most 1000/);
   const textFormula = await saveText(lit('x'));
@@ -970,6 +968,114 @@ try {
   const relationInstall = (await gql('mutation($json:String!) { installDomainPackage(packageJson:$json,collectionName:"T24 Installed",language:"en") { collectionId } }', { json: relationPackage.packageJson })).installDomainPackage;
   ids.push(relationInstall.collectionId);
   await assertRelationsIn(relationInstall.collectionId);
+
+  // T21/5 — Everything below is refused or typed on save, before any entry exists
+  const typesCol = (await gql(CREATE_COLLECTION, { input: { name: 'T25 Types', formats: [{ name: 'Sheet', color: '#EEF5FF', fields: [{ name: 'Label', kind: 'TITLE' }, { name: 'Note', kind: 'TEXT' }, { name: 'Price', kind: 'NUMBER', unit: 'EUR' }, { name: 'Cost', kind: 'NUMBER', unit: 'USD' }, { name: 'Weight', kind: 'NUMBER', unit: 'kg' }, { name: 'Distance', kind: 'NUMBER', unit: 'km' }, { name: 'Time', kind: 'NUMBER', unit: 'h' }, { name: 'Length', kind: 'NUMBER', unit: 'm' }, { name: 'Width', kind: 'NUMBER', unit: 'm' }, { name: 'Quantity', kind: 'NUMBER' }, { name: 'Day', kind: 'DATE' }, { name: 'At', kind: 'DATETIME' }] }] } })).createCollection;
+  ids.push(typesCol.id);
+  const sheetFmt = typesCol.formats[0];
+  const sheetNumber = (name) => ({ kind: 'field', fieldId: idOf(sheetFmt, name) });
+  const sheetDate = (name) => ({ kind: 'dateField', fieldId: idOf(sheetFmt, name) });
+  const sheetText = (name) => ({ kind: 'textField', fieldId: idOf(sheetFmt, name) });
+  const binary = (operator, left, right) => ({ kind: 'operation', operator, args: [left, right] });
+  const SAVE_TYPED = 'mutation($id:String!,$input:FormulaInput!,$formulaId:String) { saveCollectionFormula(collectionId:$id,formulaId:$formulaId,input:$input) { formulas { id name version } } }';
+  const saveTyped = async (name, expression) => (await gql(SAVE_TYPED, { id: typesCol.id, input: { name, formatId: sheetFmt.id, expression: JSON.stringify(expression) } })).saveCollectionFormula.formulas.find((item) => item.name === name).id;
+  let t25Count = 0;
+  const refusedTyped = (expression) => gql(SAVE_TYPED, { id: typesCol.id, input: { name: `T25 refused ${++t25Count}`, formatId: sheetFmt.id, expression: JSON.stringify(expression) } }, token, true);
+  const inferred = async (expression) => ({ ...(await gql('query($id:String!,$formatId:String!,$expression:String!) { inferCollectionFormula(collectionId:$id,formatId:$formatId,expression:$expression) { type unit dimension unitOpen } }', { id: typesCol.id, formatId: sheetFmt.id, expression: JSON.stringify(expression) })).inferCollectionFormula });
+  const staticNumber = (unit, dimension) => ({ type: 'NUMBER', unit, dimension, unitOpen: false });
+  const staticOther = (type) => ({ type, unit: null, dimension: null, unitOpen: false });
+  const price = sheetNumber('Price'), distance = sheetNumber('Distance'), weight = sheetNumber('Weight'), quantity = sheetNumber('Quantity');
+  const abs = (value) => ({ kind: 'abs', value });
+  const iifNumber = (thenBranch, elseBranch) => iif(cmp('GT', quantity, num('0')), thenBranch, elseBranch);
+  const iifNumberOf = (condition) => iif(condition, num('1'), num('0'));
+
+  // Incompatible dimensions, however deep they are
+  assert.match(await refusedTyped(binary('ADD', price, distance)), /Cannot add incompatible units/);
+  assert.match(await refusedTyped(binary('SUBTRACT', distance, price)), /Cannot add incompatible units/);
+  assert.match(await refusedTyped(binary('ADD', price, quantity)), /Cannot add incompatible units/);
+  assert.match(await refusedTyped(binary('ADD', price, sheetNumber('Cost'))), /dated rate/);
+  assert.match(await refusedTyped(binary('ADD', binary('MULTIPLY', quantity, price), distance)), /Cannot add incompatible units/);
+  assert.match(await refusedTyped(binary('ADD', { kind: 'round', digits: 2, mode: 'HALF_UP', value: abs(price) }, distance)), /Cannot add incompatible units/);
+  assert.match(await refusedTyped(binary('ADD', { kind: 'min', args: [price, num('1', 'EUR')] }, distance)), /Cannot add incompatible units/);
+  assert.match(await refusedTyped(binary('ADD', iifNumber(price, num('0')), distance)), /Cannot add incompatible units/);
+  assert.match(await refusedTyped(binary('ADD', coalesce(price, num('0')), weight)), /Cannot add incompatible units/);
+  assert.match(await refusedTyped(iifNumber(price, distance)), /incompatible units/);
+  assert.match(await refusedTyped(iifNumber(price, num('5'))), /incompatible units/);
+  const referenced = await saveTyped('Referenced', price);
+  const secondLevel = await saveTyped('Second level', { kind: 'formula', formulaId: referenced });
+  assert.match(await refusedTyped(binary('ADD', { kind: 'formula', formulaId: secondLevel }, distance)), /Cannot add incompatible units/);
+
+  // A value of the wrong type in any slot
+  assert.match(await refusedTyped(addDays(lit('texte'), num('5'))), /Expected a date but found text/);
+  assert.match(await refusedTyped(part('YEAR', lit('2026'))), /Expected a date but found text/);
+  assert.match(await refusedTyped(diff('DAYS', sheetDate('Day'), price)), /Expected a date but found a number/);
+  assert.match(await refusedTyped({ kind: 'upper', text: sheetDate('Day') }), /Expected text but found a date/);
+  assert.match(await refusedTyped(concat(lit('a'), price)), /Expected text but found a number/);
+  assert.match(await refusedTyped(binary('ADD', lit('1'), num('1'))), /gives text, not a number/);
+  assert.match(await refusedTyped(binary('ADD', sheetDate('Day'), num('1'))), /gives a date, not a number/);
+  assert.match(await refusedTyped(binary('ADD', cmp('GT', num('1'), num('0')), num('1'))), /Expected a number but found a condition/);
+  assert.match(await refusedTyped(iif(price, num('1'), num('0'))), /Expected a condition but found a number/);
+
+  // Comparisons that can never work
+  assert.match(await refusedTyped(iifNumberOf(cmp('EQ', sheetText('Note'), sheetDate('Day')))), /Cannot compare text with a date/);
+  assert.match(await refusedTyped(iifNumberOf(cmp('LT', sheetDate('Day'), price))), /Cannot compare a date with a number/);
+  assert.match(await refusedTyped(iifNumberOf(cmp('GT', abs(price), abs(weight)))), /incompatible units/);
+  assert.match(await refusedTyped(iifNumberOf(cmp('EQ', binary('MULTIPLY', quantity, price), weight))), /incompatible units/);
+
+  // Every step of a path, checked on save
+  assert.match(await refusedShop({ ...ratePath, propertyFieldId: 'nope' }), /does not exist on the linked object/);
+  assert.match(await refusedShop({ ...cityPath, propertyFieldId: 'nope' }), /does not exist on the linked object/);
+  assert.match(await refusedShop({ ...ratePath, through: [idOf(productFormat, 'Category'), 'nope'] }), /single object reference/);
+  assert.match(await refusedShop({ ...ratePath, referenceFieldId: 'nope' }), /single object reference/);
+  assert.match(await refusedShop(binary('ADD', ratePath, productPath('Price'))), /Cannot add incompatible units/);
+
+  // Result types and combined units, known without any entry
+  assert.deepEqual(await inferred(binary('MULTIPLY', quantity, price)), staticNumber('EUR', 'CURRENCY'));
+  assert.deepEqual(await inferred(binary('MULTIPLY', price, num('0.8'))), staticNumber('EUR', 'CURRENCY'));
+  assert.deepEqual(await inferred(binary('MULTIPLY', sheetNumber('Length'), sheetNumber('Width'))), staticNumber('m²', 'DISTANCE·DISTANCE'));
+  assert.deepEqual(await inferred(binary('MULTIPLY', price, weight)), staticNumber('EUR·kg', 'CURRENCY·MASS'));
+  assert.deepEqual(await inferred(binary('DIVIDE', sheetNumber('Length'), sheetNumber('Width'))), staticNumber(null, null));
+  assert.deepEqual(await inferred(binary('DIVIDE', price, quantity)), staticNumber('EUR', 'CURRENCY'));
+  assert.deepEqual(await inferred(iifNumber(price, num('0'))), staticNumber('EUR', 'CURRENCY'));
+  assert.deepEqual(await inferred({ kind: 'formula', formulaId: secondLevel }), staticNumber('EUR', 'CURRENCY'));
+  assert.deepEqual(await inferred(quantity), staticNumber(null, null));
+  assert.deepEqual(await inferred(sheetText('Note')), staticOther('TEXT'));
+  assert.deepEqual(await inferred(sheetDate('Day')), staticOther('DATE'));
+  assert.deepEqual(await inferred(sheetDate('At')), staticOther('DATETIME'));
+  assert.deepEqual(await inferred(addDays(sheetDate('At'), num('1'))), staticOther('DATETIME'));
+  assert.deepEqual(await inferred({ kind: 'endOfMonth', date: sheetDate('At') }), staticOther('DATE'));
+  assert.match(await gql('query($id:String!,$formatId:String!,$expression:String!) { inferCollectionFormula(collectionId:$id,formatId:$formatId,expression:$expression) { type } }', { id: typesCol.id, formatId: sheetFmt.id, expression: JSON.stringify(binary('ADD', price, distance)) }, token, true), /Cannot add incompatible units/);
+
+  // km/h and m² come from the units of the collection
+  const speed = binary('DIVIDE', distance, sheetNumber('Time'));
+  assert.match(await refusedTyped(speed), /Dividing by a unit requires compatible quantities, or the unit km\/h in this collection/);
+  assert.match(await refusedTyped(binary('DIVIDE', num('1'), sheetNumber('Time'))), /Dividing by a unit/);
+  const SAVE_UNIT = 'mutation($id:String!,$input:CollectionUnitInput!) { saveCollectionUnit(collectionId:$id,input:$input) { units { id symbol } } }';
+  const unitIdOf = async (input) => (await gql(SAVE_UNIT, { id: typesCol.id, input })).saveCollectionUnit.units.find((item) => item.symbol === input.symbol).id;
+  const speedUnit = await unitIdOf({ name: 'Kilometre per hour', symbol: 'km/h', dimension: 'SPEED', factor: '1' });
+  const areaUnit = await unitIdOf({ name: 'Square metre', symbol: 'm²', dimension: 'AREA', factor: '1' });
+  assert.deepEqual(await inferred(speed), staticNumber(speedUnit, 'SPEED'));
+  assert.deepEqual(await inferred(binary('MULTIPLY', sheetNumber('Length'), sheetNumber('Width'))), staticNumber(areaUnit, 'AREA'));
+  const speedFormula = await saveTyped('Speed', speed);
+  const areaFormula = await saveTyped('Area', binary('MULTIPLY', sheetNumber('Length'), sheetNumber('Width')));
+  const totalFormula = await saveTyped('Total', binary('ADD', price, iifNumber(num('0'), price)));
+  const sheetEntry = await createEvent(typesCol.id, sheetFmt, { Label: 'One', Price: '10', Distance: '100', Time: '2', Length: '3', Width: '4', Quantity: '1' });
+  const calcTyped = async (formulaId) => ({ ...(await gql(CALCULATE_DATE, { id: typesCol.id, formulaId, entryId: sheetEntry })).calculateCollectionFormula });
+  assert.deepEqual(await calcTyped(speedFormula), quantityOf('50', speedUnit, 'SPEED'), 'the calculation gives the unit inferred on save');
+  assert.deepEqual(await calcTyped(areaFormula), quantityOf('12', areaUnit, 'AREA'));
+  assert.deepEqual(await calcTyped(totalFormula), euros2('10'), 'a chosen plain 0 takes the unit inferred for its branch');
+
+  // Cycles are named, from the formula being saved
+  const alpha = await saveTyped('Alpha', num('1'));
+  const beta = await saveTyped('Beta', { kind: 'formula', formulaId: alpha });
+  const gamma = await saveTyped('Gamma', { kind: 'formula', formulaId: beta });
+  const updateAlpha = (expression) => gql(SAVE_TYPED, { id: typesCol.id, formulaId: alpha, input: { name: 'Alpha', formatId: sheetFmt.id, expectedVersion: 1, expression: JSON.stringify(expression) } }, token, true);
+  assert.equal(await updateAlpha({ kind: 'formula', formulaId: gamma }), 'Formula cycle detected: Alpha -> Gamma -> Beta -> Alpha');
+  assert.equal(await updateAlpha({ kind: 'formula', formulaId: alpha }), 'Formula cycle detected: Alpha -> Alpha');
+  assert.equal(await updateAlpha(iif(cmp('GT', { kind: 'formula', formulaId: gamma }, num('0')), num('1'), num('0'))), 'Formula cycle detected: Alpha -> Gamma -> Beta -> Alpha', 'a cycle through a condition is found too');
+  assert.equal(await updateAlpha(binary('ADD', num('1'), abs({ kind: 'formula', formulaId: gamma }))), 'Formula cycle detected: Alpha -> Gamma -> Beta -> Alpha');
+  assert.equal((await calcTyped(gamma)).value, '1', 'a refused cycle leaves the formulas unchanged');
+  assert.equal((await calcTyped(await saveTyped('Diamond', binary('ADD', { kind: 'formula', formulaId: beta }, { kind: 'formula', formulaId: gamma })))).value, '2', 'sharing a dependency is not a cycle');
 
   console.log('analysis smoke passed: formulas, date differences, rounding, formula transfer, units, cycles, zero division, aggregate, filters, period comparison, access, book manual order, templates, links, URL duplicates, link import and 10005-entry analysis');
 } finally {

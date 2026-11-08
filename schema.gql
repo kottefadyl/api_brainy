@@ -826,6 +826,15 @@ type FormulaResult {
   value: String
 }
 
+type FormulaStaticType {
+  dimension: String
+  type: String!
+  unit: String
+
+  """True when the unit can only be known while calculating"""
+  unitOpen: Boolean!
+}
+
 type GeoDistance {
   unit: String!
   value: String!
@@ -1215,6 +1224,7 @@ type Query {
   exportGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, includeSensitive: Boolean, kind: String!): String!
   forecastCollection(collectionId: String!, input: ForecastInput!): ForecastResult!
   health: String!
+  inferCollectionFormula(collectionId: String!, expression: String!, formatId: String!): FormulaStaticType!
   largeFileDownloadLink(entryId: String!, fieldId: String!): LargeFileLink!
   largeFileUpload(uploadId: String!): LargeFileUpload!
   ledgerBalance(collectionId: String!, fieldId: String!, formatId: String!): String!

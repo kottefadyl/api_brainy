@@ -1,6 +1,6 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AuthService } from '../auth/auth.service';
-import { AnalysisInput, AnalysisOperationSpec, AnalysisResult, FormulaInput, FormulaResult } from './analysis.input';
+import { AnalysisInput, AnalysisOperationSpec, AnalysisResult, FormulaInput, FormulaResult, FormulaStaticType } from './analysis.input';
 import { ANALYSIS_REGISTRY } from './analysis_registry';
 import { AnalysisService } from './analysis.service';
 import { Collection } from './collection.schema';
@@ -15,6 +15,11 @@ export class AnalysisResolver {
   @Query(() => [AnalysisOperationSpec])
   analysisOperations(): readonly AnalysisOperationSpec[] {
     return ANALYSIS_REGISTRY;
+  }
+
+  @Query(() => FormulaStaticType)
+  async inferCollectionFormula(@Args('collectionId') collectionId: string, @Args('formatId') formatId: string, @Args('expression') expression: string, @Context('req') request: Request): Promise<FormulaStaticType> {
+    return this.service.inferFormula(collectionId, await this.owner(request), formatId, expression);
   }
 
   @Mutation(() => Collection)

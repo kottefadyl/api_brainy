@@ -10,6 +10,14 @@ export class FormulaInput {
 }
 
 @ObjectType()
+export class FormulaStaticType {
+  @Field() type!: string;
+  @Field({ nullable: true }) unit?: string;
+  @Field({ nullable: true }) dimension?: string;
+  @Field({ description: 'True when the unit can only be known while calculating' }) unitOpen!: boolean;
+}
+
+@ObjectType()
 export class FormulaResult {
   @Field() entryId!: string;
   @Field({ nullable: true }) value?: string;

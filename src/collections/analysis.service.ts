@@ -2,35 +2,27 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { AnalysisInput, AnalysisResult, AnalysisRow, FormulaInput, FormulaResult } from './analysis.input';
+import { AnalysisInput, AnalysisResult, AnalysisRow, FormulaInput, FormulaResult, FormulaStaticType } from './analysis.input';
 import { executeRegisteredOperation, getOperationSpec, ObservationRecord } from './analysis_registry';
 import { EntryFieldFilterInput, EntryFilterOperator } from './collection.input';
-import { Collection, CollectionField, CollectionFormat, CollectionFormula, FieldKind } from './collection.schema';
+import { Collection, CollectionField, CollectionFormula, FieldKind } from './collection.schema';
 import { codeAtDepth } from './classification.logic';
 import { ZoneAnalysisService } from './zone-analysis.service';
 import { CollaborationService } from './collaboration.service';
 import { assertSensitiveAnalysisRequest, enforceSensitiveAggregate } from './sensitivity.logic';
 import { Entry, EntryValue } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
-import { addDaysToDate, BooleanExpression, DateExpression, datePart, endOfMonth, Expression, formatDate, formatFormulaDate, formatNumber, FormulaDate, FormulaNode, isDateExpression, isDatePattern, isNumberPattern, isRelatedAggregate, isTextExpression, ObjectPath, parseFormulaDate, RelatedAggregate, splitCharacters, startOfMonth, TextExpression, toProperCase, wholeMonthsBetween } from './formula_nodes';
+import { assertAddable, assertComparable, divideUnits, inferStaticType, isDuration, isUnitlessZero, multiplyUnits, pathProperty, relatedTarget, UnitInfo } from './formula_inference';
+import { addDaysToDate, BooleanExpression, DateExpression, datePart, describeNode, endOfMonth, Expression, formatDate, formatFormulaDate, formatNumber, FormulaDate, FormulaNode, isDateExpression, isDatePattern, isNumberPattern, isRelatedAggregate, isTextExpression, ObjectPath, parseFormulaDate, RelatedAggregate, splitCharacters, startOfMonth, TextExpression, toProperCase, wholeMonthsBetween } from './formula_nodes';
 
-type Quantity = { value: Rational; unit?: string; dimension?: string; root?: string; factor?: Rational };
+type Quantity = UnitInfo & { value: Rational };
 const plus = (a: Rational, b: Rational): Rational => ({ n: a.n * b.d + b.n * a.d, d: a.d * b.d });
 const negate = (a: Rational): Rational => ({ n: -a.n, d: a.d });
-const assertComparable = (left: Quantity, right: Quantity): void => {
-  if (left.dimension !== right.dimension || left.root !== right.root || !!left.unit !== !!right.unit) throw new BadRequestException('Cannot compare incompatible units');
-  if (left.unit === right.unit) return;
-  if (left.dimension === 'CURRENCY') throw new BadRequestException('Convert currencies with an explicit dated rate first');
-  if (left.dimension === 'TEMPERATURE') throw new BadRequestException('Convert temperatures before comparing them');
-  // Composite units such as EUR·kg carry no conversion factor.
-  if (!left.factor || !right.factor) throw new BadRequestException('Cannot compare incompatible units');
-};
 const inLeftUnit = (left: Quantity, right: Quantity): Rational => (left.unit !== right.unit ? divide(multiply(right.value, right.factor!), left.factor!) : right.value);
 const compareRational = (a: Rational, b: Rational): number => { const gap = a.n * b.d - b.n * a.d; return gap < 0n ? -1 : gap > 0n ? 1 : 0; };
 const compareQuantities = (left: Quantity, right: Quantity): number => { assertComparable(left, right); return compareRational(left.value, inLeftUnit(left, right)); };
 type LinkedValue = { raw: string; unitSnapshot?: EntryValue['unitSnapshot']; field?: CollectionField };
 const textFieldKinds = [FieldKind.TEXT, FieldKind.TITLE, FieldKind.CODE, FieldKind.LINK];
-const isUnitlessZero = (node: Expression): boolean => node.kind === 'number' && !node.unit && /^[+-]?0+(?:\.0+)?$/.test(node.value);
 const numericOnly = (node: FormulaNode): Expression => {
   if (isDateExpression(node)) throw new BadRequestException('This formula gives a date, not a number');
   if (isTextExpression(node)) throw new BadRequestException('This formula gives text, not a number');
@@ -40,7 +32,6 @@ const wholeNumber = (quantity: Quantity, minimum: bigint): bigint => {
   if (quantity.unit || quantity.value.n % quantity.value.d !== 0n || quantity.value.n / quantity.value.d < minimum) throw new BadRequestException('Use whole numbers for the start (from 1) and the length (from 0)');
   return quantity.value.n / quantity.value.d;
 };
-const isDuration = (quantity: Quantity): boolean => quantity.dimension === 'TIME' && quantity.root === 'TIME' && !!quantity.factor;
 const wholeDays = (quantity: Quantity): bigint => {
   let days = quantity.value;
   if (quantity.unit) {
@@ -92,16 +83,17 @@ export class AnalysisService {
     } else if (node.kind === 'field') {
       if (!format.fields.some((field) => field.id === node.fieldId && field.kind === FieldKind.NUMBER)) throw new BadRequestException('Choose a numeric field in this data format');
     } else if (node.kind === 'property') {
-      if (this.pathProperty(node, collection, formatId)?.kind !== FieldKind.NUMBER) throw new BadRequestException('Choose one numeric property from a single object reference');
+      const property = pathProperty(node, collection, formatId);
+      if (!property) throw new BadRequestException('This property does not exist on the linked object');
+      if (property.kind !== FieldKind.NUMBER) throw new BadRequestException('Choose one numeric property from a single object reference');
     } else if (isRelatedAggregate(node)) {
-      if (this.relatedTarget(node.referenceFieldId, collection, formatId)?.fields.find((field) => field.id === node.propertyFieldId)?.kind !== FieldKind.NUMBER) throw new BadRequestException('Choose a numeric property from an object reference');
+      if (relatedTarget(node.referenceFieldId, collection, formatId)?.fields.find((field) => field.id === node.propertyFieldId)?.kind !== FieldKind.NUMBER) throw new BadRequestException('Choose a numeric property from an object reference');
     } else if (node.kind === 'countRelated') {
-      const target = this.relatedTarget(node.referenceFieldId, collection, formatId);
+      const target = relatedTarget(node.referenceFieldId, collection, formatId);
       if (!target || (node.propertyFieldId !== undefined && !target.fields.some((field) => field.id === node.propertyFieldId))) throw new BadRequestException('Choose an object reference and one of its properties');
     } else if (node.kind === 'coalesce') {
       if (!Array.isArray(node.args) || node.args.length < 2) throw new BadRequestException('Choose a value and at least one fallback');
       for (const argument of node.args) this.inspect(argument, collection, formatId, references, depth + 1, budget);
-      this.assertCompatibleOperands(node.args.filter((argument) => !isUnitlessZero(argument)), collection, formatId);
     } else if (node.kind === 'formula') {
       if (typeof node.formulaId !== 'string') throw new BadRequestException('Invalid formula reference');
       references.add(node.formulaId);
@@ -121,8 +113,6 @@ export class AnalysisService {
     } else if (node.kind === 'durationIn') {
       if (!['MINUTES', 'HOURS'].includes(node.unit)) throw new BadRequestException('Choose minutes or hours');
       this.inspect(node.duration, collection, formatId, references, depth + 1, budget);
-      const declared = this.declaredQuantity(node.duration, collection, formatId);
-      if (declared && !isDuration(declared)) throw new BadRequestException('Choose a duration');
     } else if (node.kind === 'dateDifference') {
       const from = format.fields.find((field) => field.id === node.fromFieldId);
       const to = format.fields.find((field) => field.id === node.toFieldId);
@@ -140,13 +130,13 @@ export class AnalysisService {
     } else if (node.kind === 'min' || node.kind === 'max') {
       if (!Array.isArray(node.args) || node.args.length < 2) throw new BadRequestException('Choose at least two values to compare');
       for (const argument of node.args) this.inspect(argument, collection, formatId, references, depth + 1, budget);
-      this.assertCompatibleOperands(node.args, collection, formatId);
     } else if (node.kind === 'abs' || node.kind === 'floor' || node.kind === 'ceil') {
       this.inspect(node.value, collection, formatId, references, depth + 1, budget);
     } else if (node.kind === 'modulo') {
       this.inspect(node.left, collection, formatId, references, depth + 1, budget);
       this.inspect(node.right, collection, formatId, references, depth + 1, budget);
-      this.assertCompatibleOperands([node.left, node.right], collection, formatId);
+    } else if (describeNode(node) === 'a condition') {
+      throw new BadRequestException('Expected a number but found a condition');
     } else throw new BadRequestException('Unknown formula operation');
   }
 
@@ -162,9 +152,8 @@ export class AnalysisService {
     } else if (node.kind === 'addDays') {
       this.inspectDate(node.date, collection, formatId, references, depth + 1, budget);
       this.inspect(node.days, collection, formatId, references, depth + 1, budget);
-      const days = node.days.kind === 'number' ? this.quantity(node.days.value, node.days.unit, collection) : this.declaredQuantity(node.days, collection, formatId);
-      if (days) wholeDays(days);
-    } else throw new BadRequestException('Unknown date operation');
+      if (node.days.kind === 'number') wholeDays(this.quantity(node.days.value, node.days.unit, collection));
+    } else throw new BadRequestException(describeNode(node) ? `Expected a date but found ${describeNode(node)}` : 'Unknown date operation');
   }
 
   private inspectText(node: TextExpression, collection: Collection, formatId: string, references: Set<string>, depth: number, budget: { count: number }): void {
@@ -173,8 +162,9 @@ export class AnalysisService {
       const format = collection.formats.find((item) => item.id === formatId);
       if (!format?.fields.some((field) => field.id === node.fieldId && textFieldKinds.includes(field.kind))) throw new BadRequestException('Choose a text, title, code or link field in this data format');
     } else if (node.kind === 'textProperty') {
-      const property = this.pathProperty(node, collection, formatId);
-      if (!property || !textFieldKinds.includes(property.kind)) throw new BadRequestException('Choose a text, title, code or link property');
+      const property = pathProperty(node, collection, formatId);
+      if (!property) throw new BadRequestException('This property does not exist on the linked object');
+      if (!textFieldKinds.includes(property.kind)) throw new BadRequestException('Choose a text, title, code or link property');
     } else if (node.kind === 'unitOf') {
       this.inspect(node.value, collection, formatId, references, depth + 1, budget);
     } else if (node.kind === 'coalesceText') {
@@ -192,7 +182,6 @@ export class AnalysisService {
       for (const [position, minimum] of [[node.start, 1n], [node.length, 0n]] as const) {
         this.inspect(position, collection, formatId, references, depth + 1, budget);
         if (position.kind === 'number') wholeNumber(this.quantity(position.value, position.unit, collection), minimum);
-        else if (this.declaredQuantity(position, collection, formatId)?.unit) throw new BadRequestException('Use whole numbers for the start (from 1) and the length (from 0)');
       }
     } else if (node.kind === 'formatText') {
       if (!node.value || typeof node.value !== 'object') throw new BadRequestException('Choose a number or a date to format');
@@ -204,7 +193,7 @@ export class AnalysisService {
         if (!isNumberPattern(node.pattern)) throw new BadRequestException('Use a number format such as 0.00 or #,##0.00');
         this.inspect(node.value, collection, formatId, references, depth + 1, budget);
       }
-    } else throw new BadRequestException('Unknown text operation');
+    } else throw new BadRequestException(describeNode(node) ? `Expected text but found ${describeNode(node)}` : 'Unknown text operation');
   }
 
   private inspectBoolean(node: BooleanExpression, collection: Collection, formatId: string, references: Set<string>, depth: number, budget: { count: number }): void {
@@ -213,62 +202,32 @@ export class AnalysisService {
       if (typeof node.value !== 'boolean') throw new BadRequestException('Invalid formula condition');
     } else if (node.kind === 'comparison') {
       if (!['EQ', 'NEQ', 'LT', 'LTE', 'GT', 'GTE'].includes(node.operator)) throw new BadRequestException('Choose a comparison operator');
+      const [left, right] = [describeNode(node.left), describeNode(node.right)];
+      if (left && right && (left !== 'a number' || right !== 'a number')) throw new BadRequestException(left === right ? 'Only numbers can be compared' : `Cannot compare ${left} with ${right}`);
       this.inspect(node.left, collection, formatId, references, depth + 1, budget);
       this.inspect(node.right, collection, formatId, references, depth + 1, budget);
-      this.assertCompatibleOperands([node.left, node.right], collection, formatId);
     } else if (node.kind === 'logical') {
       if (!['AND', 'OR'].includes(node.operator) || !Array.isArray(node.args) || node.args.length < 1) throw new BadRequestException('Choose a logical operator and its conditions');
       for (const argument of node.args) this.inspectBoolean(argument, collection, formatId, references, depth + 1, budget);
     } else if (node.kind === 'not') {
       this.inspectBoolean(node.arg, collection, formatId, references, depth + 1, budget);
-    } else throw new BadRequestException('Invalid formula condition');
+    } else throw new BadRequestException(describeNode(node) ? `Expected a condition but found ${describeNode(node)}` : 'Invalid formula condition');
   }
 
-  /** Refuses at save time what is certain to fail. Operands whose unit depends on the entry are checked during evaluation. */
-  private assertCompatibleOperands(nodes: Expression[], collection: Collection, formatId: string): void {
-    const known = nodes.map((node) => this.declaredQuantity(node, collection, formatId)).filter((item): item is Quantity => !!item);
-    for (const other of known.slice(1)) assertComparable(known[0], other);
+  private inspectRoot(parsed: FormulaNode, collection: Collection, formatId: string, dependencies: Set<string>): void {
+    if (isDateExpression(parsed)) this.inspectDate(parsed, collection, formatId, dependencies, 0, { count: 0 });
+    else if (isTextExpression(parsed)) this.inspectText(parsed, collection, formatId, dependencies, 0, { count: 0 });
+    else this.inspect(parsed, collection, formatId, dependencies);
   }
 
-  private pathProperty(node: ObjectPath, collection: Collection, formatId: string): CollectionField | undefined {
-    if (node.through !== undefined && (!Array.isArray(node.through) || node.through.length > 4 || node.through.some((id) => typeof id !== 'string'))) throw new BadRequestException('Follow at most five linked objects');
-    const hops = [node.referenceFieldId, ...(node.through ?? [])];
-    let format = collection.formats.find((item) => item.id === formatId);
-    for (const [index, fieldId] of hops.entries()) {
-      const reference = format?.fields.find((field) => field.id === fieldId && field.kind === FieldKind.OBJECT_REF && !field.multiple);
-      if (!reference) throw new BadRequestException('Choose one numeric property from a single object reference');
-      // A snapshot keeps only the referenced object's own values: anything further would be today's data.
-      if (reference.referenceMode === 'SNAPSHOT' && index < hops.length - 1) throw new BadRequestException('A snapshot reference cannot be followed further');
-      format = collection.formats.find((item) => item.id === reference.targetObjectFormatId);
-    }
-    return format?.fields.find((field) => field.id === node.propertyFieldId);
-  }
-
-  private relatedTarget(referenceFieldId: string, collection: Collection, formatId: string): CollectionFormat | undefined {
-    const reference = collection.formats.find((item) => item.id === formatId)?.fields.find((field) => field.id === referenceFieldId && field.kind === FieldKind.OBJECT_REF);
-    return collection.formats.find((item) => item.id === reference?.targetObjectFormatId);
-  }
-
-  private declaredQuantity(node: Expression, collection: Collection, formatId: string): Quantity | undefined {
-    const format = collection.formats.find((item) => item.id === formatId);
-    let unit: string | undefined;
-    if (node.kind === 'number') unit = node.unit;
-    else if (node.kind === 'field') unit = format?.fields.find((field) => field.id === node.fieldId)?.unit;
-    else if (node.kind === 'property' || isRelatedAggregate(node)) {
-      try {
-        unit = (node.kind === 'property' ? this.pathProperty(node, collection, formatId) : this.relatedTarget(node.referenceFieldId, collection, formatId)?.fields.find((field) => field.id === node.propertyFieldId))?.unit;
-      } catch {
-        return undefined;
-      }
-    } else return undefined;
-    const value = { n: 0n, d: 1n };
-    if (!unit) return { value };
-    try {
-      const resolved = resolveUnit(unit, collection.units ?? []);
-      return { value, unit, dimension: resolved.dimension, root: resolved.root, factor: resolved.factor };
-    } catch {
-      return undefined;
-    }
+  /** Reports what a formula would give, with the same refusals as saving it. */
+  async inferFormula(collectionId: string, ownerId: string, formatId: string, expression: string): Promise<FormulaStaticType> {
+    const collection = await this.collection(collectionId, ownerId);
+    if (!collection.formats.some((item) => item.id === formatId)) throw new BadRequestException('Data format not found');
+    const parsed = this.parse(expression);
+    this.inspectRoot(parsed, collection, formatId, new Set<string>());
+    const inferred = inferStaticType(parsed, collection, formatId);
+    return inferred.type === 'NUMBER' ? { type: 'NUMBER', unit: inferred.unit, dimension: inferred.dimension, unitOpen: !!inferred.unknownUnit } : { type: inferred.type, unitOpen: false };
   }
 
   async saveFormula(collectionId: string, ownerId: string, input: FormulaInput, formulaId?: string): Promise<Collection> {
@@ -281,27 +240,30 @@ export class AnalysisService {
     if ((collection.formulas ?? []).some((item) => item.id !== formulaId && item.name.toLocaleLowerCase() === name.toLocaleLowerCase() && item.formatId === input.formatId)) throw new BadRequestException('Formula names must be unique in a data format');
     const dependencies = new Set<string>();
     const parsed = this.parse(input.expression);
-    if (isDateExpression(parsed)) this.inspectDate(parsed, collection, input.formatId, dependencies, 0, { count: 0 });
-    else if (isTextExpression(parsed)) this.inspectText(parsed, collection, input.formatId, dependencies, 0, { count: 0 });
-    else this.inspect(parsed, collection, input.formatId, dependencies);
+    this.inspectRoot(parsed, collection, input.formatId, dependencies);
     const id = formulaId ?? randomUUID();
-    if (dependencies.has(id)) throw new BadRequestException('Formula cannot refer to itself');
-    const formulas = [...(collection.formulas ?? []).filter((item) => item.id !== id), { id, name, formatId: input.formatId, expression: input.expression, version: (existing?.version ?? 0) + 1, dependencies: [...dependencies] }];
+    const draft: CollectionFormula = { id, name, formatId: input.formatId, expression: input.expression, version: (existing?.version ?? 0) + 1, dependencies: [...dependencies] };
+    const formulas = [...(collection.formulas ?? []).filter((item) => item.id !== id), draft];
     if (formulas.length > 100) throw new BadRequestException('This collection has 100 formulas');
-    for (const item of formulas) {
-      const visited = new Set<string>();
-      const visit = (formula: CollectionFormula): void => {
-        if (visited.has(formula.id)) throw new BadRequestException('Formula cycle detected');
-        visited.add(formula.id);
-        for (const dependencyId of formula.dependencies) {
-          const dependency = formulas.find((candidate) => candidate.id === dependencyId && candidate.formatId === formula.formatId);
-          if (!dependency) throw new BadRequestException('Formula dependency is missing or belongs to another data format');
-          visit(dependency);
-        }
-        visited.delete(formula.id);
-      };
-      visit(item);
-    }
+    const settled = new Set<string>();
+    const path: CollectionFormula[] = [];
+    const visit = (formula: CollectionFormula): void => {
+      const repeated = path.findIndex((item) => item.id === formula.id);
+      if (repeated >= 0) throw new BadRequestException(`Formula cycle detected: ${[...path.slice(repeated), formula].map((item) => item.name).join(' -> ')}`);
+      if (settled.has(formula.id)) return;
+      path.push(formula);
+      for (const dependencyId of formula.dependencies) {
+        const dependency = formulas.find((candidate) => candidate.id === dependencyId && candidate.formatId === formula.formatId);
+        if (!dependency) throw new BadRequestException('Formula dependency is missing or belongs to another data format');
+        visit(dependency);
+      }
+      path.pop();
+      settled.add(formula.id);
+    };
+    // Starting from the saved formula makes the reported cycle read from the one being edited.
+    for (const item of [draft, ...formulas]) visit(item);
+    // Runs after the cycle check, so that inference only ever walks an acyclic graph.
+    inferStaticType(parsed, collection, input.formatId);
     const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId, ...(formulaId ? { formulas: { $elemMatch: { id: formulaId, version: input.expectedVersion } } } : {}) }, { $set: { formulas } }, { new: true }).exec();
     if (!updated) throw new BadRequestException('Formula changed. Refresh and try again');
     return updated;
@@ -372,10 +334,7 @@ export class AnalysisService {
     if (node.kind === 'coalesce') {
       for (const argument of node.args) {
         const value = await this.evaluateNode(argument, collection, entry, ownerId, depth + 1);
-        if (!value) continue;
-        // A plain 0 means "zero of whatever this is", so that it can still be added to the other operands.
-        const declared = isUnitlessZero(argument) ? node.args.map((item) => this.declaredQuantity(item, collection, entry.formatId!)).find((item) => item?.unit) : undefined;
-        return declared ? { ...declared, value: value.value } : value;
+        if (value) return isUnitlessZero(argument) ? this.withInferredUnit(value, node, collection, format.id) : value;
       }
       return undefined;
     }
@@ -418,7 +377,9 @@ export class AnalysisService {
     if (node.kind === 'conditional') {
       const condition = await this.evaluateBoolean(node.condition, collection, entry, ownerId, depth + 1);
       if (condition === undefined) return undefined;
-      return this.evaluateNode(condition ? node.then : node.else, collection, entry, ownerId, depth + 1);
+      const branch = condition ? node.then : node.else;
+      const value = await this.evaluateNode(branch, collection, entry, ownerId, depth + 1);
+      return value && isUnitlessZero(branch) ? this.withInferredUnit(value, node, collection, format.id) : value;
     }
     if (node.kind === 'min' || node.kind === 'max') {
       const values: Quantity[] = [];
@@ -451,22 +412,21 @@ export class AnalysisService {
     const right = await this.evaluateNode(node.args[1], collection, entry, ownerId, depth + 1);
     if (!left || !right) return undefined;
     if (node.operator === 'ADD' || node.operator === 'SUBTRACT') {
-      if (left.dimension !== right.dimension || left.root !== right.root || (!!left.unit !== !!right.unit)) throw new BadRequestException('Cannot add incompatible units');
-      if (left.unit !== right.unit && left.dimension === 'CURRENCY') throw new BadRequestException('Convert currencies with an explicit dated rate first');
-      if (left.unit !== right.unit && left.dimension === 'TEMPERATURE') throw new BadRequestException('Convert temperatures before adding them');
+      assertAddable(left, right);
       const adjusted = left.unit && right.unit && left.unit !== right.unit ? divide(multiply(right.value, right.factor!), left.factor!) : right.value;
       return { ...left, value: plus(left.value, node.operator === 'SUBTRACT' ? negate(adjusted) : adjusted) };
     }
-    if (node.operator === 'MULTIPLY') {
-      if (left.unit && right.unit) return { value: multiply(left.value, right.value), unit: `${left.unit}·${right.unit}`, dimension: `${left.dimension}·${right.dimension}` };
-      return { ...(left.unit ? left : right), value: multiply(left.value, right.value) };
-    }
-    const value = divide(left.value, right.value);
-    if (right.unit) {
-      if (!left.unit || left.dimension !== right.dimension || left.root !== right.root) throw new BadRequestException('Dividing by a unit requires compatible quantities');
-      return { value: divide(multiply(left.value, left.factor!), multiply(right.value, right.factor!)) };
-    }
-    return { ...left, value };
+    if (node.operator === 'MULTIPLY') return { ...multiplyUnits(left, right, collection), value: multiply(left.value, right.value) };
+    const units = divideUnits(left, right, collection);
+    // Only a plain ratio of different units needs converting; a combined unit such as km/h keeps the values as given.
+    const converted = right.unit && !units.unit && left.unit !== right.unit;
+    return { ...units, value: converted ? divide(multiply(left.value, left.factor!), multiply(right.value, right.factor!)) : divide(left.value, right.value) };
+  }
+
+  /** A plain 0 means "zero of whatever this is", so that it can still be added to the other operands. */
+  private withInferredUnit(value: Quantity, node: Expression, collection: Collection, formatId: string): Quantity {
+    const inferred = inferStaticType(node, collection, formatId);
+    return inferred.type === 'NUMBER' && inferred.unit ? { value: value.value, unit: inferred.unit, dimension: inferred.dimension, root: inferred.root, factor: inferred.factor } : value;
   }
 
   private linkedQuantity(found: LinkedValue, collection: Collection): Quantity {
