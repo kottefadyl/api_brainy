@@ -12,7 +12,7 @@ import { CollaborationService } from './collaboration.service';
 import { assertSensitiveAnalysisRequest, enforceSensitiveAggregate } from './sensitivity.logic';
 import { Entry } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
-import { addDaysToDate, BooleanExpression, DateExpression, datePart, endOfMonth, Expression, formatFormulaDate, FormulaDate, FormulaNode, isDateExpression, parseFormulaDate, startOfMonth, wholeMonthsBetween } from './formula_nodes';
+import { addDaysToDate, BooleanExpression, DateExpression, datePart, endOfMonth, Expression, formatDate, formatFormulaDate, formatNumber, FormulaDate, FormulaNode, isDateExpression, isDatePattern, isNumberPattern, isTextExpression, parseFormulaDate, splitCharacters, startOfMonth, TextExpression, toProperCase, wholeMonthsBetween } from './formula_nodes';
 
 type Quantity = { value: Rational; unit?: string; dimension?: string; root?: string; factor?: Rational };
 const plus = (a: Rational, b: Rational): Rational => ({ n: a.n * b.d + b.n * a.d, d: a.d * b.d });
@@ -28,6 +28,16 @@ const assertComparable = (left: Quantity, right: Quantity): void => {
 const inLeftUnit = (left: Quantity, right: Quantity): Rational => (left.unit !== right.unit ? divide(multiply(right.value, right.factor!), left.factor!) : right.value);
 const compareRational = (a: Rational, b: Rational): number => { const gap = a.n * b.d - b.n * a.d; return gap < 0n ? -1 : gap > 0n ? 1 : 0; };
 const compareQuantities = (left: Quantity, right: Quantity): number => { assertComparable(left, right); return compareRational(left.value, inLeftUnit(left, right)); };
+const textFieldKinds = [FieldKind.TEXT, FieldKind.TITLE, FieldKind.CODE, FieldKind.LINK];
+const numericOnly = (node: FormulaNode): Expression => {
+  if (isDateExpression(node)) throw new BadRequestException('This formula gives a date, not a number');
+  if (isTextExpression(node)) throw new BadRequestException('This formula gives text, not a number');
+  return node;
+};
+const wholeNumber = (quantity: Quantity, minimum: bigint): bigint => {
+  if (quantity.unit || quantity.value.n % quantity.value.d !== 0n || quantity.value.n / quantity.value.d < minimum) throw new BadRequestException('Use whole numbers for the start (from 1) and the length (from 0)');
+  return quantity.value.n / quantity.value.d;
+};
 const isDuration = (quantity: Quantity): boolean => quantity.dimension === 'TIME' && quantity.root === 'TIME' && !!quantity.factor;
 const wholeDays = (quantity: Quantity): bigint => {
   let days = quantity.value;
@@ -66,16 +76,14 @@ export class AnalysisService {
   }
 
   private parseNumeric(text: string): Expression {
-    const node = this.parse(text);
-    if (isDateExpression(node)) throw new BadRequestException('This formula gives a date, not a number');
-    return node;
+    return numericOnly(this.parse(text));
   }
 
   private inspect(node: Expression, collection: Collection, formatId: string, references: Set<string>, depth = 0, budget = { count: 0 }): void {
     if (++budget.count > 64 || depth > 12 || !node || typeof node !== 'object') throw new BadRequestException('Formula is too complex');
     const format = collection.formats.find((item) => item.id === formatId);
     if (!format) throw new BadRequestException('Data format not found');
-    if (isDateExpression(node)) throw new BadRequestException('This formula gives a date, not a number');
+    numericOnly(node);
     if (node.kind === 'number') {
       decimal(node.value);
       if (node.unit) resolveUnit(node.unit, collection.units ?? []);
@@ -90,6 +98,8 @@ export class AnalysisService {
       references.add(node.formulaId);
       const target = (collection.formulas ?? []).find((item) => item.id === node.formulaId);
       if (target) this.parseNumeric(target.expression);
+    } else if (node.kind === 'textLength') {
+      this.inspectText(node.text, collection, formatId, references, depth + 1, budget);
     } else if (node.kind === 'dateDiff') {
       if (!['DAYS', 'HOURS', 'MONTHS'].includes(node.unit)) throw new BadRequestException('Choose days, hours or months');
       this.inspectDate(node.end, collection, formatId, references, depth + 1, budget);
@@ -148,6 +158,38 @@ export class AnalysisService {
     } else throw new BadRequestException('Unknown date operation');
   }
 
+  private inspectText(node: TextExpression, collection: Collection, formatId: string, references: Set<string>, depth: number, budget: { count: number }): void {
+    if (++budget.count > 64 || depth > 12 || !node || typeof node !== 'object') throw new BadRequestException('Formula is too complex');
+    if (node.kind === 'textField') {
+      const format = collection.formats.find((item) => item.id === formatId);
+      if (!format?.fields.some((field) => field.id === node.fieldId && textFieldKinds.includes(field.kind))) throw new BadRequestException('Choose a text, title, code or link field in this data format');
+    } else if (node.kind === 'textLiteral') {
+      if (typeof node.value !== 'string' || node.value.length > 1000) throw new BadRequestException('Use a text of at most 1000 characters');
+    } else if (node.kind === 'upper' || node.kind === 'lower' || node.kind === 'proper') {
+      this.inspectText(node.text, collection, formatId, references, depth + 1, budget);
+    } else if (node.kind === 'concat') {
+      if (!Array.isArray(node.args) || node.args.length < 2) throw new BadRequestException('Choose at least two texts to join');
+      for (const argument of node.args) this.inspectText(argument, collection, formatId, references, depth + 1, budget);
+    } else if (node.kind === 'substring') {
+      this.inspectText(node.text, collection, formatId, references, depth + 1, budget);
+      for (const [position, minimum] of [[node.start, 1n], [node.length, 0n]] as const) {
+        this.inspect(position, collection, formatId, references, depth + 1, budget);
+        if (position.kind === 'number') wholeNumber(this.quantity(position.value, position.unit, collection), minimum);
+        else if (this.declaredQuantity(position, collection, formatId)?.unit) throw new BadRequestException('Use whole numbers for the start (from 1) and the length (from 0)');
+      }
+    } else if (node.kind === 'formatText') {
+      if (!node.value || typeof node.value !== 'object') throw new BadRequestException('Choose a number or a date to format');
+      if (node.locale !== undefined && !['en', 'fr'].includes(node.locale)) throw new BadRequestException('Choose English or French formatting');
+      if (isDateExpression(node.value)) {
+        if (!isDatePattern(node.pattern)) throw new BadRequestException('Use a date format such as DD/MM/YYYY');
+        this.inspectDate(node.value, collection, formatId, references, depth + 1, budget);
+      } else {
+        if (!isNumberPattern(node.pattern)) throw new BadRequestException('Use a number format such as 0.00 or #,##0.00');
+        this.inspect(node.value, collection, formatId, references, depth + 1, budget);
+      }
+    } else throw new BadRequestException('Unknown text operation');
+  }
+
   private inspectBoolean(node: BooleanExpression, collection: Collection, formatId: string, references: Set<string>, depth: number, budget: { count: number }): void {
     if (++budget.count > 64 || depth > 12 || !node || typeof node !== 'object') throw new BadRequestException('Formula is too complex');
     if (node.kind === 'boolean') {
@@ -201,6 +243,7 @@ export class AnalysisService {
     const dependencies = new Set<string>();
     const parsed = this.parse(input.expression);
     if (isDateExpression(parsed)) this.inspectDate(parsed, collection, input.formatId, dependencies, 0, { count: 0 });
+    else if (isTextExpression(parsed)) this.inspectText(parsed, collection, input.formatId, dependencies, 0, { count: 0 });
     else this.inspect(parsed, collection, input.formatId, dependencies);
     const id = formulaId ?? randomUUID();
     if (dependencies.has(id)) throw new BadRequestException('Formula cannot refer to itself');
@@ -303,6 +346,10 @@ export class AnalysisService {
       if (!formula) throw new BadRequestException('Formula dependency is missing');
       return this.evaluateNode(this.parseNumeric(formula.expression), collection, entry, ownerId, depth + 1);
     }
+    if (node.kind === 'textLength') {
+      const text = await this.evaluateText(node.text, collection, entry, ownerId, depth + 1);
+      return text === undefined ? undefined : { value: { n: BigInt(splitCharacters(text).length), d: 1n } };
+    }
     if (node.kind === 'dateDiff') {
       const end = await this.evaluateDate(node.end, collection, entry, ownerId, depth + 1);
       const start = await this.evaluateDate(node.start, collection, entry, ownerId, depth + 1);
@@ -384,6 +431,45 @@ export class AnalysisService {
     return { ...left, value };
   }
 
+  /** `undefined` means a source value is missing; an empty literal stays a real, empty text. */
+  private async evaluateText(node: TextExpression, collection: Collection, entry: Entry, ownerId: string, depth: number): Promise<string | undefined> {
+    if (depth > 16) throw new BadRequestException('Formula is too deep');
+    if (node.kind === 'textLiteral') return node.value;
+    if (node.kind === 'textField') return entry.values.find((item) => item.fieldId === node.fieldId)?.value || undefined;
+    if (node.kind === 'concat') {
+      let joined = '';
+      for (const argument of node.args) {
+        const part = await this.evaluateText(argument, collection, entry, ownerId, depth + 1);
+        if (part === undefined) return undefined;
+        joined += part;
+      }
+      return joined;
+    }
+    if (node.kind === 'formatText') {
+      if (isDateExpression(node.value)) {
+        const date = await this.evaluateDate(node.value, collection, entry, ownerId, depth + 1);
+        return date && formatDate(date, node.pattern);
+      }
+      const quantity = await this.evaluateNode(node.value, collection, entry, ownerId, depth + 1);
+      if (!quantity) return undefined;
+      const number = formatNumber(quantity.value, node.pattern, node.locale);
+      return quantity.unit ? `${number} ${quantity.unit}` : number;
+    }
+    const text = await this.evaluateText(node.text, collection, entry, ownerId, depth + 1);
+    if (text === undefined) return undefined;
+    if (node.kind === 'upper') return text.toUpperCase();
+    if (node.kind === 'lower') return text.toLowerCase();
+    if (node.kind === 'proper') return toProperCase(text);
+    const start = await this.evaluateNode(node.start, collection, entry, ownerId, depth + 1);
+    const length = await this.evaluateNode(node.length, collection, entry, ownerId, depth + 1);
+    if (!start || !length) return undefined;
+    const first = wholeNumber(start, 1n) - 1n;
+    const count = wholeNumber(length, 0n);
+    const characters = splitCharacters(text);
+    if (first >= BigInt(characters.length)) return '';
+    return characters.slice(Number(first), first + count >= BigInt(characters.length) ? undefined : Number(first + count)).join('');
+  }
+
   /** `undefined` means the date is missing, unreadable in the entry, or out of range. */
   private async evaluateDate(node: DateExpression, collection: Collection, entry: Entry, ownerId: string, depth: number): Promise<FormulaDate | undefined> {
     if (depth > 16) throw new BadRequestException('Formula is too deep');
@@ -432,6 +518,10 @@ export class AnalysisService {
     if (isDateExpression(parsed)) {
       const date = await this.evaluateDate(parsed, collection, entry, ownerId, 0);
       return { entryId, ...(date ? { value: formatFormulaDate(date), dimension: 'DATE' } : { missing: 'A source value is missing' }) };
+    }
+    if (isTextExpression(parsed)) {
+      const text = await this.evaluateText(parsed, collection, entry, ownerId, 0);
+      return { entryId, ...(text === undefined ? { missing: 'A source value is missing' } : { value: text, dimension: 'TEXT' }) };
     }
     const result = await this.evaluateNode(parsed, collection, entry, ownerId);
     return { entryId, ...(result ? { value: fractionText(result.value), unit: result.unit, dimension: result.dimension } : { missing: 'A source value is missing' }) };

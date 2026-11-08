@@ -114,11 +114,13 @@ export function signatureStatus(source: string): { status: 'NONE' | 'VALID' | 'I
 
 function expression(node: unknown, path: string, depth = 0, budget = { count: 0 }): Record<string, unknown> {
   if (++budget.count > 64 || depth > 12) fail('Formula is too complex');
-  const item = record(node, path, ['kind', 'value', 'unit', 'fieldId', 'referenceFieldId', 'propertyFieldId', 'formulaId', 'fromFieldId', 'toFieldId', 'digits', 'mode', 'operator', 'args', 'condition', 'then', 'else', 'left', 'right', 'arg', 'date', 'days', 'end', 'start', 'duration', 'part'], ['kind']);
+  const item = record(node, path, ['kind', 'value', 'unit', 'fieldId', 'referenceFieldId', 'propertyFieldId', 'formulaId', 'fromFieldId', 'toFieldId', 'digits', 'mode', 'operator', 'args', 'condition', 'then', 'else', 'left', 'right', 'arg', 'date', 'days', 'end', 'start', 'duration', 'part', 'text', 'length', 'pattern', 'locale'], ['kind']);
   for (const [name, value] of Object.entries(item)) {
     if (name === 'args') list(value, `${path}.args`, 64).forEach((child, index) => expression(child, `${path}.args[${index}]`, depth + 1, budget));
     else if (formulaChildKeys.includes(name) && typeof value === 'object') expression(value, `${path}.${name}`, depth + 1, budget);
     else if (name === 'value' && typeof value === 'boolean') continue;
+    // A literal may legitimately be empty or a single space, such as a separator.
+    else if (name === 'value' && item.kind === 'textLiteral') { if (typeof value !== 'string' || value.length > 1000) fail(`${path}.value must be a text of at most 1000 characters`); }
     else if (name === 'digits') { if (!Number.isInteger(value)) fail(`${path}.digits must be an integer`); }
     else text(value, `${path}.${name}`, 64);
   }

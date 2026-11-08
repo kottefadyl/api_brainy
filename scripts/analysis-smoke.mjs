@@ -683,6 +683,133 @@ try {
   ids.push(datesInstall.collectionId);
   await assertDateFormulasIn(datesInstall.collectionId);
 
+  // T21/3 — Text functions
+  const noteFormats = [{ name: 'Note', color: '#EDF9F3', fields: [{ name: 'Label', kind: 'TITLE' }, { name: 'Body', kind: 'TEXT' }, { name: 'Other', kind: 'TEXT' }, { name: 'Site', kind: 'LINK' }, { name: 'Count', kind: 'NUMBER' }, { name: 'Amount', kind: 'NUMBER', unit: 'EUR' }, { name: 'When', kind: 'DATE' }] }];
+  const textCol = (await gql(CREATE_COLLECTION, { input: { name: 'T21 Texts', formats: noteFormats } })).createCollection;
+  ids.push(textCol.id);
+  const noteFmt = textCol.formats[0];
+  const fullNote = await createEvent(textCol.id, noteFmt, { Label: 'Bonjour', Body: 'jean-pierre', Other: 'Martin', Site: 'https://example.com/page', Count: '3', Amount: '19.9', When: '2026-03-01' });
+  const blankNote = await createEvent(textCol.id, noteFmt, { Label: 'Only a label' });
+  const textField = (name) => ({ kind: 'textField', fieldId: idOf(noteFmt, name) });
+  const lit = (value) => ({ kind: 'textLiteral', value });
+  const concat = (...args) => ({ kind: 'concat', args });
+  const substring = (text, start, length) => ({ kind: 'substring', text, start, length });
+  const formatted = (value, pattern, locale) => ({ kind: 'formatText', value, pattern, ...(locale ? { locale } : {}) });
+  const noteNumber = (name) => ({ kind: 'field', fieldId: idOf(noteFmt, name) });
+  const noteDate = (name) => ({ kind: 'dateField', fieldId: idOf(noteFmt, name) });
+  let t23Count = 0;
+  const saveText = async (expression) => { const name = `T23 ${++t23Count}`; return (await gql(SAVE_FORMULA, { id: textCol.id, input: { name, formatId: noteFmt.id, expression: JSON.stringify(expression) } })).saveCollectionFormula.formulas.find((item) => item.name === name).id; };
+  const refusedText = (expression) => gql(SAVE_FORMULA, { id: textCol.id, input: { name: `T23 refused ${++t23Count}`, formatId: noteFmt.id, expression: JSON.stringify(expression) } }, token, true);
+  const evalText = async (expression, entryId = fullNote) => ({ ...(await gql(CALCULATE_DATE, { id: textCol.id, formulaId: await saveText(expression), entryId })).calculateCollectionFormula });
+  const textOf = (value) => ({ value, unit: null, dimension: 'TEXT', missing: null });
+  const plainNumber = (value) => ({ value, unit: null, dimension: null, missing: null });
+
+  // MAJUSCULE, MINUSCULE, PROPRE, on every accepted source
+  assert.deepEqual(await evalText({ kind: 'upper', text: lit('hello école') }), textOf('HELLO ÉCOLE'));
+  assert.deepEqual(await evalText({ kind: 'lower', text: lit('HELLO ÉCOLE') }), textOf('hello école'));
+  assert.deepEqual(await evalText({ kind: 'upper', text: textField('Label') }), textOf('BONJOUR'));
+  assert.deepEqual(await evalText({ kind: 'upper', text: textField('Site') }), textOf('HTTPS://EXAMPLE.COM/PAGE'));
+  for (const [input, expected] of [['hELLO wORLD', 'Hello World'], ['jean-pierre', 'Jean-Pierre'], ["l'école don't", "L'école Don't"], ['été à paris', 'Été À Paris'], ['3 petits chats', '3 Petits Chats'], ['', '']]) {
+    assert.deepEqual(await evalText({ kind: 'proper', text: lit(input) }), textOf(expected), `proper ${input}`);
+  }
+
+  // CONCATENER, keeping separators and propagating a missing part
+  assert.deepEqual(await evalText(concat(textField('Body'), lit(' '), textField('Other'))), textOf('jean-pierre Martin'));
+  assert.deepEqual(await evalText(concat(lit(''), lit(''))), textOf(''));
+  const missingJoin = await evalText(concat(textField('Label'), textField('Body')), blankNote);
+  assert.equal(missingJoin.value, null);
+  assert.ok(missingJoin.missing);
+  assert.match(await refusedText(concat(lit('alone'))), /at least two/);
+
+  // LONGUEUR is a plain integer counted in visible characters
+  for (const [input, expected] of [['École', '5'], ['', '0'], ['a b', '3'], ['👍🏽a', '2'], ['é', '1']]) {
+    assert.deepEqual(await evalText({ kind: 'textLength', text: lit(input) }), plainNumber(expected), `length ${input}`);
+  }
+  assert.ok((await evalText({ kind: 'textLength', text: textField('Body') }, blankNote)).missing);
+  assert.equal((await evalText(iif(cmp('GT', { kind: 'textLength', text: textField('Body') }, num('5')), num('1'), num('0')))).value, '1');
+  const lengthAnalysis = await gql('query($id:String!,$input:AnalysisInput!) { analyseCollection(collectionId:$id,input:$input) { unit skippedMissingCount rows { value } } }', { id: textCol.id, input: { formatId: noteFmt.id, formulaId: await saveText({ kind: 'textLength', text: textField('Body') }), groupBy: 'NONE', operation: 'SUM', measureKind: 'EVENT' } });
+  assert.equal(lengthAnalysis.analyseCollection.rows[0].value, '11');
+
+  // SOUS_CHAINE counts from 1 and never splits a character
+  for (const [text, start, length, expected] of [['Bonjour', '1', '3', 'Bon'], ['Bonjour', '4', '100', 'jour'], ['Bonjour', '7', '1', 'r'], ['Bonjour', '8', '2', ''], ['Bonjour', '99999999999', '1', ''], ['Bonjour', '2', '0', ''], ['Bonjour', '1', '99999999999999', 'Bonjour'], ['👍🏽ab', '1', '1', '👍🏽'], ['éa', '2', '1', 'a']]) {
+    assert.deepEqual(await evalText(substring(lit(text), num(start), num(length))), textOf(expected), `substring ${text} ${start} ${length}`);
+  }
+  assert.deepEqual(await evalText(substring(textField('Label'), noteNumber('Count'), num('2'))), textOf('nj'));
+  assert.ok((await evalText(substring(textField('Label'), noteNumber('Count'), num('2')), blankNote)).missing);
+  assert.ok((await evalText(substring(textField('Body'), num('1'), num('2')), blankNote)).missing);
+  for (const [start, length] of [[num('0'), num('1')], [num('1'), num('-1')], [num('1.5'), num('1')], [num('1', 'kg'), num('1')], [noteNumber('Amount'), num('1')]]) {
+    assert.match(await refusedText(substring(lit('abc'), start, length)), /whole numbers/);
+  }
+  const zeroStart = await createEvent(textCol.id, noteFmt, { Label: 'Bonjour', Count: '0' });
+  assert.match(await gql(CALCULATE_DATE, { id: textCol.id, formulaId: await saveText(substring(textField('Label'), noteNumber('Count'), num('1'))), entryId: zeroStart }, token, true), /whole numbers/);
+
+  // TEXTE formats numbers and dates without running any user-supplied format code
+  for (const [value, pattern, locale, expected] of [['1234.5', '#,##0.00', undefined, '1,234.50'], ['1234.5', '#,##0.00', 'fr', '1 234,50'], ['1234.5', '0.00', 'fr', '1234,50'], ['1234567', '#,##0', undefined, '1,234,567'], ['2.5', '0', undefined, '3'], ['-2.5', '0', undefined, '-3'], ['-0.004', '0.00', undefined, '0.00'], ['0.125', '0.00', undefined, '0.13'], ['7', '0.000', undefined, '7.000']]) {
+    assert.deepEqual(await evalText(formatted(num(value), pattern, locale)), textOf(expected), `format ${value} ${pattern}`);
+  }
+  assert.deepEqual(await evalText(formatted(noteNumber('Amount'), '0.00')), textOf('19.90 EUR'));
+  assert.deepEqual(await evalText(formatted(noteDate('When'), 'DD/MM/YYYY')), textOf('01/03/2026'));
+  assert.deepEqual(await evalText(formatted({ kind: 'dateLiteral', value: '2026-03-15T10:30:05Z' }, 'YYYY-MM-DD HH:mm:ss')), textOf('2026-03-15 10:30:05'));
+  assert.deepEqual(await evalText(formatted({ kind: 'endOfMonth', date: noteDate('When') }, 'DD.MM')), textOf('31.03'));
+  assert.ok((await evalText(formatted(noteNumber('Amount'), '0.00'), blankNote)).missing);
+  assert.ok((await evalText(formatted(noteDate('When'), 'YYYY'), blankNote)).missing);
+  assert.match(await refusedText(formatted(num('1'), 'DD/MM/YYYY')), /number format/);
+  assert.match(await refusedText(formatted(noteDate('When'), '0.00')), /date format/);
+  assert.match(await refusedText(formatted(noteDate('When'), '<YYYY>')), /date format/);
+  assert.match(await refusedText(formatted(noteDate('When'), '--')), /date format/);
+  assert.match(await refusedText(formatted(num('1'), '0.00', 'de')), /English or French/);
+
+  // A classification code is readable as text
+  const expensesPilot = (await gql('query { domainPackagePilots(language:"en") { id packageJson } }')).domainPackagePilots.find((item) => item.id === 'brainy.expenses');
+  const codedId = (await gql('mutation($json:String!) { installDomainPackage(packageJson:$json,collectionName:"T23 Codes",language:"en") { collectionId } }', { json: expensesPilot.packageJson })).installDomainPackage.collectionId;
+  ids.push(codedId);
+  const coded = (await gql('query { collectionsList { id formats { id fields { id kind } } codeLists { id codes { code active } } } }')).collectionsList.find((item) => item.id === codedId);
+  const codedFormat = coded.formats.find((item) => item.fields.some((field) => field.kind === 'CODE'));
+  const codeField = codedFormat.fields.find((field) => field.kind === 'CODE');
+  const codeValue = coded.codeLists[0].codes.find((item) => item.active).code;
+  const codedEntry = (await gql('mutation($id:String!,$input:SaveEntryInput!) { createEntry(collectionId:$id,input:$input) { id } }', { id: codedId, input: { formatId: codedFormat.id, values: [{ fieldId: codeField.id, value: codeValue }] } })).createEntry.id;
+  const codedFormula = (await gql(SAVE_FORMULA, { id: codedId, input: { name: 'Code label', formatId: codedFormat.id, expression: JSON.stringify(concat(lit('#'), { kind: 'textField', fieldId: codeField.id })) } })).saveCollectionFormula.formulas.find((item) => item.name === 'Code label').id;
+  assert.deepEqual({ ...(await gql(CALCULATE_DATE, { id: codedId, formulaId: codedFormula, entryId: codedEntry })).calculateCollectionFormula }, textOf(`#${codeValue}`));
+
+  // Functions compose and types stay separate
+  assert.deepEqual(await evalText({ kind: 'upper', text: concat(lit('total: '), formatted(num('2'), '0.0')) }), textOf('TOTAL: 2.0'));
+  assert.deepEqual(await evalText({ kind: 'proper', text: substring(textField('Body'), num('1'), num('4')) }), textOf('Jean'));
+  assert.match(await refusedText({ kind: 'upper', text: { kind: 'textField', fieldId: idOf(noteFmt, 'Count') } }), /text, title, code or link/);
+  assert.match(await refusedText({ kind: 'upper', text: num('1') }), /Unknown text operation/);
+  assert.match(await refusedText({ kind: 'operation', operator: 'ADD', args: [lit('1'), num('1')] }), /gives text/);
+  assert.match(await refusedText(lit('x'.repeat(1001))), /at most 1000/);
+  const textFormula = await saveText(lit('x'));
+  assert.match(await refusedText({ kind: 'formula', formulaId: textFormula }), /gives text/);
+  assert.match(await gql('query($id:String!,$input:AnalysisInput!) { analyseCollection(collectionId:$id,input:$input) { rows { value } } }', { id: textCol.id, input: { formatId: noteFmt.id, formulaId: textFormula, groupBy: 'NONE', operation: 'SUM', measureKind: 'EVENT' } }, token, true), /gives text/);
+
+  // Copies and domain packages rewrite identifiers nested in text expressions and keep separators
+  const textSource = (await gql(CREATE_COLLECTION, { input: { name: 'T23 Source', formats: noteFormats } })).createCollection;
+  ids.push(textSource.id);
+  const textSourceFmt = textSource.formats[0];
+  const sourceText = (name) => ({ kind: 'textField', fieldId: idOf(textSourceFmt, name) });
+  for (const [name, expression] of [['Full name', { kind: 'upper', text: concat(sourceText('Body'), lit(' '), sourceText('Other')) }], ['Slice', substring(sourceText('Label'), { kind: 'field', fieldId: idOf(textSourceFmt, 'Count') }, num('2'))], ['Stamp', formatted({ kind: 'dateField', fieldId: idOf(textSourceFmt, 'When') }, 'DD/MM/YYYY')], ['Size', { kind: 'textLength', text: sourceText('Other') }]]) {
+    await gql(SAVE_FORMULA, { id: textSource.id, input: { name, formatId: textSourceFmt.id, expression: JSON.stringify(expression) } });
+  }
+  const assertTextFormulasIn = async (collectionId) => {
+    const target = (await gql('query { collectionsList { id formulas { id name formatId } formats { id name fields { id name } } } }')).collectionsList.find((item) => item.id === collectionId);
+    const format = target.formats.find((item) => item.name === 'Note');
+    const entryId = await createEvent(collectionId, format, { Label: 'Bonjour', Body: 'ada', Other: 'lovelace', Count: '2', When: '2026-03-01' });
+    const resultOf = async (name) => ({ ...(await gql(CALCULATE_DATE, { id: collectionId, formulaId: target.formulas.find((item) => item.name === name && item.formatId === format.id).id, entryId })).calculateCollectionFormula });
+    assert.deepEqual(await resultOf('Full name'), textOf('ADA LOVELACE'));
+    assert.deepEqual(await resultOf('Slice'), textOf('on'));
+    assert.deepEqual(await resultOf('Stamp'), textOf('01/03/2026'));
+    assert.deepEqual(await resultOf('Size'), plainNumber('8'));
+  };
+  const textCopy = (await gql(CREATE_COLLECTION, { input: { name: 'T23 Copy', formats: [{ name: 'General', color: '#F4F0FF', fields: [{ name: 'Title', kind: 'TITLE' }] }] } })).createCollection;
+  ids.push(textCopy.id);
+  await gql('mutation($formatId:String!,$targetCollectionId:String!) { copyCollectionDataFormat(formatId:$formatId,targetCollectionId:$targetCollectionId,withEntries:false) { copiedEntries } }', { formatId: textSourceFmt.id, targetCollectionId: textCopy.id });
+  await assertTextFormulasIn(textCopy.id);
+  const textPackage = (await gql('query($id:String!,$input:DomainPackageExportInput!) { exportDomainPackage(collectionId:$id,input:$input,language:"en") { packageJson warnings } }', { id: textSource.id, input: { packageId: 'smoke.t23', version: '1.0.0', name: 'T23', author: 'Smoke', license: 'CC-BY-4.0' } })).exportDomainPackage;
+  assert.deepEqual(textPackage.warnings, []);
+  const textInstall = (await gql('mutation($json:String!) { installDomainPackage(packageJson:$json,collectionName:"T23 Installed",language:"en") { collectionId } }', { json: textPackage.packageJson })).installDomainPackage;
+  ids.push(textInstall.collectionId);
+  await assertTextFormulasIn(textInstall.collectionId);
+
   console.log('analysis smoke passed: formulas, date differences, rounding, formula transfer, units, cycles, zero division, aggregate, filters, period comparison, access, book manual order, templates, links, URL duplicates, link import and 10005-entry analysis');
 } finally {
   if (ownerId) {
