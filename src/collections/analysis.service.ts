@@ -3,7 +3,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
 import { AnalysisInput, AnalysisResult, AnalysisRow, FormulaInput, FormulaPreview, FormulaResult, FormulaStaticType } from './analysis.input';
+import { runNativeAnalysis } from './analysis_native';
 import { executeRegisteredOperation, getOperationSpec, ObservationRecord } from './analysis_registry';
+import { ObservationAccumulator } from './analysis_stats';
 import { EntryFieldFilterInput, EntryFilterOperator } from './collection.input';
 import { Collection, CollectionField, CollectionFormula, FieldKind } from './collection.schema';
 import { codeAtDepth } from './classification.logic';
@@ -679,7 +681,7 @@ export class AnalysisService {
 
     const filters = input.filters ?? [];
     if (input.sourceGroup !== undefined && (typeof input.sourceGroup !== 'string' || input.sourceGroup.length > 200)) throw new BadRequestException('Invalid source group');
-    if (input.sourceOffset !== undefined && (!Number.isInteger(input.sourceOffset) || input.sourceOffset < 0 || input.sourceOffset > 100000 || !input.sourceGroup)) throw new BadRequestException('Invalid source offset');
+    if (input.sourceOffset !== undefined && (!Number.isInteger(input.sourceOffset) || input.sourceOffset < 0 || input.sourceOffset > 10_000_000 || !input.sourceGroup)) throw new BadRequestException('Invalid source offset');
     if (filters.length > 8) throw new BadRequestException('Choose at most 8 analysis filters');
     const prepared = filters.map((filter) => {
       const selected = format.fields.find((item) => item.id === filter.fieldId);
@@ -719,16 +721,22 @@ export class AnalysisService {
       return 'All';
     };
     const build = async (from?: string, to?: string, isComparison = false) => {
+      // Only operations that depend on chronological order keep one record per entry, to sort them.
       const observations: ObservationRecord[] = [];
+      const accumulator = spec.requiresDateOrder ? undefined : new ObservationAccumulator(spec, input);
       const distinctGroups = new Set<string>();
-      let scanned = 0;
       let skippedMissingCount = 0;
       const dateBounds = { ...(from ? { $gte: from } : {}), ...(to ? { $lt: `${to}\uffff` } : {}) };
       const query = date && (from || to)
         ? { ownerId, collectionId, formatId: format.id, values: { $elemMatch: { fieldId: date.id, value: dateBounds } } }
         : { ownerId, collectionId, formatId: format.id };
-      for await (const entry of this.entries.find(query).select('-values.attachmentData').sort({ _id: 1 }).cursor()) {
-        if (++scanned > 100000) throw new BadRequestException('Narrow the analysis to at most 100000 entries');
+      const native = await runNativeAnalysis(this.entries, { collection, format, spec, input, field, formulaExpression: formula?.expression, date, groupField, filters: prepared }, query, isComparison);
+      if (native) {
+        if (native.unit !== undefined || native.dimension !== undefined) { unit = native.unit; dimension = native.dimension; unitKnown = true; }
+        return native;
+      }
+      for await (const stored of this.entries.find(query).select('-values.attachmentData').sort({ _id: 1 }).lean().cursor({ batchSize: 1000 })) {
+        const entry = { ...stored, id: String(stored._id) } as unknown as Entry;
         if (!matches(entry)) continue;
         const rawDate = date ? entry.values.find((item) => item.fieldId === date.id)?.value : undefined;
         const dateValue = rawDate?.slice(0, 10);
@@ -784,8 +792,8 @@ export class AnalysisService {
           : false;
         distinctGroups.add(secondaryKey ? `${primaryKey} × ${secondaryKey}` : primaryKey);
         if (distinctGroups.size > 1000) throw new BadRequestException('Narrow the analysis to at most 1000 groups');
-        observations.push({
-          entryId: entry.id,
+        const observation: ObservationRecord = {
+          entryId: entry.id as string,
           dateValue: rawDate ?? dateValue,
           primaryKey,
           secondaryKey,
@@ -796,10 +804,12 @@ export class AnalysisService {
           status: field?.kind === FieldKind.MEASURE ? (entry.values.find((item) => item.fieldId === field.id)?.measureValue?.status || 'MEASURED') : undefined,
           uncertainty: field?.kind === FieldKind.MEASURE ? entry.values.find((item) => item.fieldId === field.id)?.measureValue?.uncertainty : undefined,
           uncertaintyType: field?.kind === FieldKind.MEASURE ? entry.values.find((item) => item.fieldId === field.id)?.measureValue?.uncertaintyType : undefined,
-        });
+        };
+        if (accumulator) accumulator.add(observation);
+        else observations.push(observation);
       }
       return {
-        ...executeRegisteredOperation(spec, observations, input, unit, skippedMissingCount, isComparison),
+        ...(accumulator ? accumulator.finish(unit, skippedMissingCount, isComparison) : executeRegisteredOperation(spec, observations, input, unit, skippedMissingCount, isComparison)),
         skippedMissingCount,
       };
     };

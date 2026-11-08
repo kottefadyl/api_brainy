@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 
-const url = process.env.API_URL || 'http://localhost:4000/graphql';
+const url = process.env.API_URL || `http://localhost:${process.env.PORT || 3000}/graphql`;
 
 async function gql(query, variables, token) {
   const response = await fetch(url, {

@@ -53,6 +53,17 @@ async function timed(run, samples, allowError = false) {
   return { p95Ms: p95(values), minMs: Math.round(Math.min(...values) * 10) / 10, maxMs: Math.round(Math.max(...values) * 10) / 10, samples, ...(error ? { error } : {}) };
 }
 
+// The API runs in the same container: its resident memory shows what a large analysis costs.
+async function apiHeapHint() {
+  const { readdir } = await import('node:fs/promises');
+  let biggest = 0;
+  for (const pid of (await readdir('/proc')).filter((item) => /^\d+$/.test(item))) {
+    const status = await readFile(`/proc/${pid}/status`, 'utf8').catch(() => '');
+    biggest = Math.max(biggest, Number(/VmRSS:\s+(\d+)/.exec(status)?.[1] ?? 0));
+  }
+  return `${Math.round(biggest / 1024)} MiB`;
+}
+
 const startDate = Date.parse('2024-01-01T00:00:00.000Z');
 const runId = randomUUID();
 let token;
@@ -104,7 +115,20 @@ try {
     const vars = { id: state.collectionId };
     const result = { entries: target, seededMs, consultation: await timed(() => graphql(pageQuery, vars, token), 20), deepPage: await timed(() => graphql(pageQuery, { ...vars, after }, token), 20), search: await timed(() => graphql(pageQuery, { ...vars, search: 'needle' }, token), 20), migrationPreview: await timed(() => graphql(impactQuery, { ...vars, formatId: format.id }, token), 5) };
     const range = focused ? { from: '2026-01-01', to: '2026-11-30' } : {};
-    result.aggregation = await timed(() => graphql(analysisQuery, { ...vars, input: { formatId: format.id, fieldId: field.Value, dateFieldId: field['Occurred at'], operation: 'SUM', groupBy: 'MONTH', measureKind: 'EVENT', ...range } }, token), focused || target <= 100_000 ? 5 : 1, !focused);
+    // T22: stored fields are aggregated by MongoDB, so no volume may be refused any more.
+    result.aggregation = await timed(() => graphql(analysisQuery, { ...vars, input: { formatId: format.id, fieldId: field.Value, dateFieldId: field['Occurred at'], operation: 'SUM', groupBy: 'MONTH', measureKind: 'EVENT', ...range } }, token), focused || target <= 100_000 ? 5 : 1);
+    result.statistics = {};
+    for (const operation of ['COUNT', 'AVERAGE', 'STDDEV', 'MEDIAN', 'PERCENTILE_95', 'MODE']) {
+      result.statistics[operation] = await timed(() => graphql(analysisQuery, { ...vars, input: { formatId: format.id, fieldId: field.Value, dateFieldId: field['Occurred at'], operation, groupBy: 'MONTH', measureKind: 'SNAPSHOT', ...range } }, token), focused || target <= 100_000 ? 3 : 1);
+    }
+    result.sampleDeviation = await timed(() => graphql(analysisQuery, { ...vars, input: { formatId: format.id, fieldId: field.Value, dateFieldId: field['Occurred at'], operation: 'STDDEV_SAMPLE', groupBy: 'MONTH', measureKind: 'SNAPSHOT', ...range } }, token), 1);
+    // A formula the database cannot translate, read entry by entry through a cursor.
+    const dynamicFormula = data(await graphql('mutation($id:String!,$input:FormulaInput!){saveCollectionFormula(collectionId:$id,input:$input){formulas{id name}}}', { ...vars, input: { name: `Rounded ${target}`, formatId: format.id, expression: JSON.stringify({ kind: 'round', digits: 2, mode: 'HALF_UP', value: { kind: 'field', fieldId: field.Value } }) } }, token)).saveCollectionFormula.formulas.find((item) => item.name === `Rounded ${target}`).id;
+    const memoryBefore = await apiHeapHint();
+    result.streamedFormula = await timed(() => graphql(analysisQuery, { ...vars, input: { formatId: format.id, formulaId: dynamicFormula, dateFieldId: field['Occurred at'], operation: 'SUM', groupBy: 'MONTH', measureKind: 'EVENT', ...range } }, token), 1);
+    result.streamedMedian = await timed(() => graphql(analysisQuery, { ...vars, input: { formatId: format.id, formulaId: dynamicFormula, dateFieldId: field['Occurred at'], operation: 'MEDIAN', groupBy: 'MONTH', measureKind: 'SNAPSHOT', ...range } }, token), 1);
+    result.orderedSeries = await timed(() => graphql(analysisQuery, { ...vars, input: { formatId: format.id, fieldId: field.Value, dateFieldId: field['Occurred at'], operation: 'CUMULATIVE', groupBy: 'MONTH', measureKind: 'EVENT', ...range } }, token), 1);
+    result.apiMemory = { before: memoryBefore, after: await apiHeapHint() };
     result.forecast = await timed(() => graphql(forecastQuery, { ...vars, input: { formatId: format.id, fieldId: field.Value, dateFieldId: field['Occurred at'], frequency: 'MONTH', method: 'LINEAR', measureKind: 'SNAPSHOT', horizon: 2, holdout: 2, ...range } }, token), focused || target <= 100_000 ? 5 : 1, !focused);
     result.write = await timed((index) => graphql(writeQuery, { ...vars, input: { formatId: format.id, values: [{ fieldId: field.Title, value: `write-${randomUUID()}` }, { fieldId: field.Value, value: String(index + 1) }, { fieldId: field['Occurred at'], value: '2026-12-15T12:00:00Z' }] } }, token), 20);
     const migrationTimes = [];

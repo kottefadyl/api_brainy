@@ -1107,6 +1107,103 @@ try {
   assert.equal((await gql('query($id:String!,$formatId:String!,$expression:String!) { previewCollectionFormula(collectionId:$id,formatId:$formatId,expression:$expression) { value } }', { id: datesCol.id, formatId: emptyFormat.id, expression: JSON.stringify(num('1')) })).previewCollectionFormula, null);
   await gql('query($id:String!,$formatId:String!,$expression:String!) { previewCollectionFormula(collectionId:$id,formatId:$formatId,expression:$expression) { value } }', { id: datesCol.id, formatId: eventFmt.id, expression: JSON.stringify(num('1')) }, (await gql('mutation($input:RegisterInput!) { register(input:$input) { token user { id } } }', { input: { name: 'Preview outsider', email: `preview-${randomUUID()}@example.test`, password: 'temporary-test-password' } }, undefined)).register.token, true);
 
+  // T22 — Native aggregation gives the same answers as the entry-by-entry calculation, beyond the former limit
+  const statsCol = (await gql(CREATE_COLLECTION, { input: { name: 'T22 Stats', formats: [{ name: 'Reading', color: '#EEF5FF', fields: [{ name: 'Label', kind: 'TITLE' }, { name: 'Amount', kind: 'NUMBER', unit: 'EUR' }, { name: 'Plain', kind: 'NUMBER' }, { name: 'Day', kind: 'DATE' }, { name: 'Team', kind: 'TEXT' }, { name: 'Note', kind: 'TEXT' }] }] } })).createCollection;
+  ids.push(statsCol.id);
+  const readingFmt = statsCol.formats[0];
+  const statsField = (name) => idOf(readingFmt, name);
+  const readings = [['r1', '10', '1', '2026-01-05', 'North', 'alpha $x'], ['r2', '20', '2', '2026-01-20', 'North', 'beta'], ['r3', '20', '2', '2026-02-02', 'South', 'ALPHA'], ['r4', '40.5', '4', '2026-02-10', 'South', 'gamma'], ['r5', '1000', '8', '2026-02-11', 'South', 'delta'], ['r6', '0.125', '16', '2026-03-01', 'East', 'alpha'], ['r7', '7', '32', '2026-03-02', 'East', 'x.y'], ['r8', '7', '64', '2026-03-03', 'East', 'xzy']];
+  for (const [Label, Amount, Plain, Day, Team, Note] of readings) await createEvent(statsCol.id, readingFmt, { Label, Amount, Plain, Day, Team, Note });
+  await createEvent(statsCol.id, readingFmt, { Label: 'no amount', Plain: '128', Day: '2026-03-04', Team: 'East', Note: 'empty' });
+  await createEvent(statsCol.id, readingFmt, { Label: 'no team', Amount: '3', Plain: '256', Day: '2026-03-05', Note: 'loner' });
+  const ANALYSE = 'query($id:String!,$input:AnalysisInput!) { analyseCollection(collectionId:$id,input:$input) { unit dimension skippedMissingCount explanation rows { group label value count sourcesHasMore sources { entryId value } } comparisonRows { group value count } } }';
+  const analyseStats = async (input) => JSON.parse(JSON.stringify((await gql(ANALYSE, { id: statsCol.id, input: { formatId: readingFmt.id, measureKind: 'EVENT', ...input } })).analyseCollection));
+  // A formula the database cannot translate takes the entry-by-entry path over the same values.
+  const entryByEntry = (await gql(SAVE_FORMULA, { id: statsCol.id, input: { name: 'Same amount', formatId: readingFmt.id, expression: JSON.stringify({ kind: 'round', digits: 6, mode: 'HALF_UP', value: { kind: 'field', fieldId: statsField('Amount') } }) } })).saveCollectionFormula.formulas.find((item) => item.name === 'Same amount').id;
+  const groupings = [{ groupBy: 'NONE' }, { groupBy: 'MONTH', dateFieldId: statsField('Day') }, { groupBy: 'DAY', dateFieldId: statsField('Day') }, { groupBy: 'CATEGORY', groupFieldId: statsField('Team') }];
+  const filtersets = [[], [{ fieldId: statsField('Amount'), operator: 'GTE', value: '7' }], [{ fieldId: statsField('Note'), operator: 'CONTAINS', value: 'alpha' }], [{ fieldId: statsField('Team'), operator: 'EQ', value: 'East' }, { fieldId: statsField('Amount'), operator: 'LT', value: '10' }]];
+  const nativeOperations = ['SUM', 'AVERAGE', 'MIN', 'MAX', 'RANGE', 'MEDIAN', 'PERCENTILE', 'PERCENTILE_25', 'PERCENTILE_75', 'PERCENTILE_95', 'MODE', 'VARIANCE', 'STDDEV', 'STDDEV_SAMPLE'];
+  const comparableRows = (result) => result.rows.map((row) => ({ ...row, sources: [...row.sources].sort((a, b) => a.entryId.localeCompare(b.entryId)) }));
+  let compared = 0;
+  for (const operation of nativeOperations) for (const grouping of groupings) for (const filters of filtersets) {
+    const shared = { operation, ...grouping, filters, ...(operation === 'PERCENTILE' ? { percentile: 90 } : {}) };
+    const run = async (extra) => { try { return await analyseStats({ ...shared, ...extra }); } catch (error) { return { refused: error.message.match(/"message":"([^"]*)"/)?.[1] }; } };
+    const [native, row] = [await run({ fieldId: statsField('Amount') }), await run({ formulaId: entryByEntry })];
+    if (native.refused || row.refused) { assert.equal(native.refused, row.refused, JSON.stringify(shared)); compared += 1; continue; }
+    assert.deepEqual(comparableRows(native), comparableRows(row), JSON.stringify(shared));
+    assert.equal(native.unit, row.unit, operation);
+    assert.equal(native.skippedMissingCount, row.skippedMissingCount, JSON.stringify(shared));
+    compared += 1;
+  }
+  assert.equal(compared, nativeOperations.length * groupings.length * filtersets.length);
+
+  // Exact values of the new statistics
+  const statValue = async (operation, extra = {}) => (await analyseStats({ operation, fieldId: statsField('Amount'), groupBy: 'NONE', ...extra })).rows[0].value;
+  for (const [operation, expected] of [['MEDIAN', '10'], ['PERCENTILE_25', '7'], ['PERCENTILE_75', '20'], ['PERCENTILE_95', '1000'], ['MODE', '7'], ['MIN', '0.125'], ['MAX', '1000'], ['SUM', '1107.625'], ['COUNT', '10']]) {
+    assert.equal(await statValue(operation), expected, operation);
+  }
+  const pairStats = (await analyseStats({ operation: 'VARIANCE', fieldId: statsField('Plain'), groupBy: 'NONE', filters: [{ fieldId: statsField('Plain'), operator: 'LTE', value: '2' }] })).rows[0];
+  assert.deepEqual([pairStats.value, pairStats.count], ['0.222222222222', 3]);
+  const lowPlain = [{ fieldId: statsField('Plain'), operator: 'LTE', value: '2' }];
+  assert.equal(await statValue('STDDEV', { fieldId: statsField('Plain'), filters: lowPlain }), '0.471405', 'population deviation');
+  assert.equal(await statValue('STDDEV_SAMPLE', { fieldId: statsField('Plain'), filters: lowPlain }), '0.57735', 'sample deviation');
+  const operationIds = (await gql('query { analysisOperations { id version requiresNumeric minObservations } }')).analysisOperations.map((item) => item.id);
+  for (const id of ['MEDIAN', 'STDDEV', 'STDDEV_SAMPLE', 'PERCENTILE_25', 'PERCENTILE_75', 'PERCENTILE_95', 'MODE']) assert.ok(operationIds.includes(id), id);
+
+  // Details kept by the native path: units, missing values, sources, comparison, formulas and text that looks like an operator
+  const median = await analyseStats({ operation: 'MEDIAN', fieldId: statsField('Amount'), groupBy: 'NONE' });
+  assert.equal(median.unit, 'EUR');
+  assert.equal(median.dimension, 'CURRENCY');
+  assert.equal(median.skippedMissingCount, 1);
+  assert.equal((await analyseStats({ operation: 'VARIANCE', fieldId: statsField('Amount'), groupBy: 'NONE' })).unit, 'EUR²');
+  const sparse = await analyseStats({ operation: 'COUNT', groupBy: 'CATEGORY', groupFieldId: statsField('Team') });
+  assert.deepEqual(sparse.rows.map((row) => [row.group, row.count]), [['East', 4], ['Missing category', 1], ['North', 2], ['South', 3]]);
+  assert.equal(sparse.rows[0].sources[0].value, '1');
+  assert.equal((await analyseStats({ operation: 'SUM', fieldId: statsField('Amount'), groupBy: 'NONE', filters: [{ fieldId: statsField('Note'), operator: 'CONTAINS', value: '$x' }] })).rows[0].value, '10', 'a filter value is never read as a database operator');
+  assert.deepEqual((await analyseStats({ operation: 'COUNT', groupBy: 'NONE', filters: [{ fieldId: statsField('Note'), operator: 'CONTAINS', value: 'x.y' }] })).rows.map((row) => row.count), [1], 'a dot in a filter is a dot');
+  assert.equal((await analyseStats({ operation: 'SUM', fieldId: statsField('Amount'), groupBy: 'NONE', filters: [{ fieldId: statsField('Team'), operator: 'EQ', value: '$Team' }] })).rows.length, 0);
+  const periods = await analyseStats({ operation: 'SUM', fieldId: statsField('Amount'), groupBy: 'NONE', dateFieldId: statsField('Day'), from: '2026-02-01', to: '2026-02-28', comparisonFrom: '2026-01-01', comparisonTo: '2026-01-31' });
+  assert.deepEqual([periods.rows[0].value, periods.comparisonRows[0].value], ['1060.5', '30']);
+  assert.match(await gql(ANALYSE, { id: statsCol.id, input: { formatId: readingFmt.id, measureKind: 'EVENT', operation: 'STDDEV', fieldId: statsField('Amount'), groupBy: 'NONE', filters: [{ fieldId: statsField('Label'), operator: 'EQ', value: 'r1' }] } }, token, true), /at least 2|Not enough/);
+  const vectorFormula = (await gql(SAVE_FORMULA, { id: statsCol.id, input: { name: 'Doubled', formatId: readingFmt.id, expression: JSON.stringify(binary('MULTIPLY', { kind: 'field', fieldId: statsField('Amount') }, num('2'))) } })).saveCollectionFormula.formulas.find((item) => item.name === 'Doubled').id;
+  const doubled = await analyseStats({ operation: 'SUM', formulaId: vectorFormula, groupBy: 'NONE' });
+  assert.deepEqual([doubled.rows[0].value, doubled.unit, doubled.skippedMissingCount], ['2215.25', 'EUR', 1]);
+  const zeroFormula = (await gql(SAVE_FORMULA, { id: statsCol.id, input: { name: 'Over zero', formatId: readingFmt.id, expression: JSON.stringify(binary('DIVIDE', { kind: 'field', fieldId: statsField('Plain') }, num('0'))) } })).saveCollectionFormula.formulas.find((item) => item.name === 'Over zero').id;
+  assert.match(await gql(ANALYSE, { id: statsCol.id, input: { formatId: readingFmt.id, measureKind: 'EVENT', operation: 'SUM', formulaId: zeroFormula, groupBy: 'NONE' } }, token, true), /Cannot divide by zero/);
+  const mixedEntry = await createEvent(statsCol.id, readingFmt, { Label: 'odd unit', Amount: '1', Day: '2026-03-06', Team: 'East', Note: 'odd' });
+  await mongoose.connection.collection('entries').updateOne({ _id: new mongoose.Types.ObjectId(mixedEntry), 'values.fieldId': statsField('Amount') }, { $set: { 'values.$.unitSnapshot': { id: 'USD', version: 1, symbol: '$', dimension: 'CURRENCY', factor: '1', root: 'CURRENCY' } } });
+  assert.match(await gql(ANALYSE, { id: statsCol.id, input: { formatId: readingFmt.id, measureKind: 'EVENT', operation: 'SUM', fieldId: statsField('Amount'), groupBy: 'NONE' } }, token, true), /mixed units/);
+  await mongoose.connection.collection('entries').deleteOne({ _id: new mongoose.Types.ObjectId(mixedEntry) });
+
+  // Another account still cannot read these figures
+  const statsOutsider = (await gql('mutation($input:RegisterInput!) { register(input:$input) { token user { id } } }', { input: { name: 'Stats outsider', email: `stats-${randomUUID()}@example.test`, password: 'temporary-test-password' } }, undefined)).register;
+  await gql(ANALYSE, { id: statsCol.id, input: { formatId: readingFmt.id, measureKind: 'EVENT', operation: 'SUM', fieldId: statsField('Amount'), groupBy: 'NONE' } }, statsOutsider.token, true);
+  await mongoose.connection.collection('users').deleteOne({ _id: new mongoose.Types.ObjectId(statsOutsider.user.id) });
+
+  // Above 100 000 entries: neither the database path nor the entry-by-entry stream refuses the volume
+  const massive = Array.from({ length: 100100 }, (_, index) => ({ _id: new mongoose.Types.ObjectId(), ownerId, collectionId: statsCol.id, formatId: readingFmt.id, formatVersion: 1, values: [{ fieldId: statsField('Label'), value: `Massive ${index}` }, { fieldId: statsField('Plain'), value: String(index % 7), numberValue: String(index % 7) }, { fieldId: statsField('Day'), value: '2026-05-01' }], createdAt: new Date(), updatedAt: new Date() }));
+  await mongoose.connection.collection('entries').insertMany(massive, { ordered: false });
+  const massiveFormula = (await gql(SAVE_FORMULA, { id: statsCol.id, input: { name: 'Plain by entry', formatId: readingFmt.id, expression: JSON.stringify({ kind: 'round', digits: 2, mode: 'HALF_UP', value: { kind: 'field', fieldId: statsField('Plain') } }) } })).saveCollectionFormula.formulas.find((item) => item.name === 'Plain by entry').id;
+  const massiveCount = await analyseStats({ operation: 'COUNT', groupBy: 'NONE' });
+  assert.equal(massiveCount.rows[0].count, 100110);
+  assert.equal(massiveCount.rows[0].sources.length, 100);
+  assert.equal(massiveCount.rows[0].sourcesHasMore, true);
+  assert.equal((await analyseStats({ operation: 'COUNT', groupBy: 'NONE', sourceGroup: 'All', sourceOffset: 100050 })).rows[0].sources.length, 60);
+  assert.equal(await statValue('MEDIAN', { fieldId: statsField('Plain') }), '3');
+  assert.equal(await statValue('MODE', { fieldId: statsField('Plain') }), '2');
+  for (const operation of ['SUM', 'MEDIAN', 'MODE', 'STDDEV']) {
+    const [byDatabase, byStream] = [await analyseStats({ operation, fieldId: statsField('Plain'), groupBy: 'NONE' }), await analyseStats({ operation, formulaId: massiveFormula, groupBy: 'NONE' })];
+    assert.equal(byStream.rows[0].value, byDatabase.rows[0].value, `${operation} above the former limit`);
+    assert.equal(byStream.rows[0].count, byDatabase.rows[0].count, operation);
+    assert.equal(byStream.rows[0].sources.length, 100, operation);
+  }
+  const streamPage = (await analyseStats({ operation: 'SUM', formulaId: massiveFormula, groupBy: 'NONE', sourceGroup: 'All', sourceOffset: 100050 })).rows[0];
+  assert.deepEqual([streamPage.sources.length, streamPage.sourcesHasMore], [streamPage.count - 100050, false], 'the last page of sources is reachable in a stream');
+  assert.match(await gql(ANALYSE, { id: statsCol.id, input: { formatId: readingFmt.id, measureKind: 'EVENT', operation: 'CUMULATIVE', fieldId: statsField('Plain'), dateFieldId: statsField('Day'), groupBy: 'NONE' } }, token, true), /Group this series by day or month/);
+  const orderedSeries = await analyseStats({ operation: 'CUMULATIVE', fieldId: statsField('Plain'), dateFieldId: statsField('Day'), groupBy: 'MONTH' });
+  assert.equal(orderedSeries.rows.at(-1).value, await statValue('SUM', { fieldId: statsField('Plain'), filters: [{ fieldId: statsField('Day'), operator: 'LTE', value: '2026-12-31' }] }), 'an ordered series reads every entry');
+  assert.equal(orderedSeries.rows.at(-1).sources.length, 100);
+
   console.log('analysis smoke passed: formulas, date differences, rounding, formula transfer, units, cycles, zero division, aggregate, filters, period comparison, access, book manual order, templates, links, URL duplicates, link import and 10005-entry analysis');
 } finally {
   if (ownerId) {
