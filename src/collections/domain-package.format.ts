@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { FieldKind, SensitivityLevel } from './collection.schema';
+import { formulaChildKeys } from './formula_nodes';
 import { builtInUnits } from './unit_math';
 
 export const PACKAGE_FORMAT = 'brainy.domain-package';
@@ -113,10 +114,11 @@ export function signatureStatus(source: string): { status: 'NONE' | 'VALID' | 'I
 
 function expression(node: unknown, path: string, depth = 0, budget = { count: 0 }): Record<string, unknown> {
   if (++budget.count > 64 || depth > 12) fail('Formula is too complex');
-  const item = record(node, path, ['kind', 'value', 'unit', 'fieldId', 'referenceFieldId', 'propertyFieldId', 'formulaId', 'fromFieldId', 'toFieldId', 'digits', 'mode', 'operator', 'args'], ['kind']);
+  const item = record(node, path, ['kind', 'value', 'unit', 'fieldId', 'referenceFieldId', 'propertyFieldId', 'formulaId', 'fromFieldId', 'toFieldId', 'digits', 'mode', 'operator', 'args', 'condition', 'then', 'else', 'left', 'right', 'arg'], ['kind']);
   for (const [name, value] of Object.entries(item)) {
-    if (name === 'args') list(value, `${path}.args`, 2).forEach((child, index) => expression(child, `${path}.args[${index}]`, depth + 1, budget));
-    else if (name === 'value' && typeof value === 'object') expression(value, `${path}.value`, depth + 1, budget);
+    if (name === 'args') list(value, `${path}.args`, 64).forEach((child, index) => expression(child, `${path}.args[${index}]`, depth + 1, budget));
+    else if (formulaChildKeys.includes(name) && typeof value === 'object') expression(value, `${path}.${name}`, depth + 1, budget);
+    else if (name === 'value' && typeof value === 'boolean') continue;
     else if (name === 'digits') { if (!Number.isInteger(value)) fail(`${path}.digits must be an integer`); }
     else text(value, `${path}.${name}`, 64);
   }

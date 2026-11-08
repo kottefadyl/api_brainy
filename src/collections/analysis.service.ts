@@ -13,10 +13,29 @@ import { assertSensitiveAnalysisRequest, enforceSensitiveAggregate } from './sen
 import { Entry } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
 
-type Expression = { kind: 'number'; value: string; unit?: string } | { kind: 'field'; fieldId: string } | { kind: 'property'; referenceFieldId: string; propertyFieldId: string } | { kind: 'formula'; formulaId: string } | { kind: 'dateDifference'; fromFieldId: string; toFieldId: string; unit: 'd' | 'h' } | { kind: 'round'; digits: number; mode: 'HALF_UP' | 'HALF_EVEN'; value: Expression } | { kind: 'operation'; operator: 'ADD' | 'SUBTRACT' | 'MULTIPLY' | 'DIVIDE'; args: Expression[] };
+type BooleanExpression = { kind: 'boolean'; value: boolean } | { kind: 'comparison'; operator: 'EQ' | 'NEQ' | 'LT' | 'LTE' | 'GT' | 'GTE'; left: Expression; right: Expression } | { kind: 'logical'; operator: 'AND' | 'OR'; args: BooleanExpression[] } | { kind: 'not'; arg: BooleanExpression };
+type Expression = { kind: 'number'; value: string; unit?: string } | { kind: 'field'; fieldId: string } | { kind: 'property'; referenceFieldId: string; propertyFieldId: string } | { kind: 'formula'; formulaId: string } | { kind: 'dateDifference'; fromFieldId: string; toFieldId: string; unit: 'd' | 'h' } | { kind: 'round'; digits: number; mode: 'HALF_UP' | 'HALF_EVEN'; value: Expression } | { kind: 'operation'; operator: 'ADD' | 'SUBTRACT' | 'MULTIPLY' | 'DIVIDE'; args: Expression[] } | { kind: 'conditional'; condition: BooleanExpression; then: Expression; else: Expression } | { kind: 'min'; args: Expression[] } | { kind: 'max'; args: Expression[] } | { kind: 'abs'; value: Expression } | { kind: 'floor'; value: Expression } | { kind: 'ceil'; value: Expression } | { kind: 'modulo'; left: Expression; right: Expression };
 type Quantity = { value: Rational; unit?: string; dimension?: string; root?: string; factor?: Rational };
 const plus = (a: Rational, b: Rational): Rational => ({ n: a.n * b.d + b.n * a.d, d: a.d * b.d });
 const negate = (a: Rational): Rational => ({ n: -a.n, d: a.d });
+const assertComparable = (left: Quantity, right: Quantity): void => {
+  if (left.dimension !== right.dimension || left.root !== right.root || !!left.unit !== !!right.unit) throw new BadRequestException('Cannot compare incompatible units');
+  if (left.unit === right.unit) return;
+  if (left.dimension === 'CURRENCY') throw new BadRequestException('Convert currencies with an explicit dated rate first');
+  if (left.dimension === 'TEMPERATURE') throw new BadRequestException('Convert temperatures before comparing them');
+  // Composite units such as EUR·kg carry no conversion factor.
+  if (!left.factor || !right.factor) throw new BadRequestException('Cannot compare incompatible units');
+};
+const inLeftUnit = (left: Quantity, right: Quantity): Rational => (left.unit !== right.unit ? divide(multiply(right.value, right.factor!), left.factor!) : right.value);
+const compareRational = (a: Rational, b: Rational): number => { const gap = a.n * b.d - b.n * a.d; return gap < 0n ? -1 : gap > 0n ? 1 : 0; };
+const compareQuantities = (left: Quantity, right: Quantity): number => { assertComparable(left, right); return compareRational(left.value, inLeftUnit(left, right)); };
+/** Floored remainder: the result takes the sign of the divisor, as MOD does in spreadsheets. */
+const modulo = (a: Rational, b: Rational): Rational => {
+  if (b.n === 0n) throw new BadRequestException('Cannot divide by zero');
+  const divisor = b.n * a.d;
+  const remainder = (a.n * b.d) % divisor;
+  return { n: remainder !== 0n && remainder < 0n !== divisor < 0n ? remainder + divisor : remainder, d: a.d * b.d };
+};
 
 @Injectable()
 export class AnalysisService {
@@ -63,7 +82,63 @@ export class AnalysisService {
     } else if (node.kind === 'operation') {
       if (!['ADD', 'SUBTRACT', 'MULTIPLY', 'DIVIDE'].includes(node.operator) || !Array.isArray(node.args) || node.args.length !== 2) throw new BadRequestException('Choose a binary arithmetic operation');
       for (const argument of node.args) this.inspect(argument, collection, formatId, references, depth + 1, budget);
+    } else if (node.kind === 'conditional') {
+      this.inspectBoolean(node.condition, collection, formatId, references, depth + 1, budget);
+      this.inspect(node.then, collection, formatId, references, depth + 1, budget);
+      this.inspect(node.else, collection, formatId, references, depth + 1, budget);
+    } else if (node.kind === 'min' || node.kind === 'max') {
+      if (!Array.isArray(node.args) || node.args.length < 2) throw new BadRequestException('Choose at least two values to compare');
+      for (const argument of node.args) this.inspect(argument, collection, formatId, references, depth + 1, budget);
+      this.assertCompatibleOperands(node.args, collection, formatId);
+    } else if (node.kind === 'abs' || node.kind === 'floor' || node.kind === 'ceil') {
+      this.inspect(node.value, collection, formatId, references, depth + 1, budget);
+    } else if (node.kind === 'modulo') {
+      this.inspect(node.left, collection, formatId, references, depth + 1, budget);
+      this.inspect(node.right, collection, formatId, references, depth + 1, budget);
+      this.assertCompatibleOperands([node.left, node.right], collection, formatId);
     } else throw new BadRequestException('Unknown formula operation');
+  }
+
+  private inspectBoolean(node: BooleanExpression, collection: Collection, formatId: string, references: Set<string>, depth: number, budget: { count: number }): void {
+    if (++budget.count > 64 || depth > 12 || !node || typeof node !== 'object') throw new BadRequestException('Formula is too complex');
+    if (node.kind === 'boolean') {
+      if (typeof node.value !== 'boolean') throw new BadRequestException('Invalid formula condition');
+    } else if (node.kind === 'comparison') {
+      if (!['EQ', 'NEQ', 'LT', 'LTE', 'GT', 'GTE'].includes(node.operator)) throw new BadRequestException('Choose a comparison operator');
+      this.inspect(node.left, collection, formatId, references, depth + 1, budget);
+      this.inspect(node.right, collection, formatId, references, depth + 1, budget);
+      this.assertCompatibleOperands([node.left, node.right], collection, formatId);
+    } else if (node.kind === 'logical') {
+      if (!['AND', 'OR'].includes(node.operator) || !Array.isArray(node.args) || node.args.length < 1) throw new BadRequestException('Choose a logical operator and its conditions');
+      for (const argument of node.args) this.inspectBoolean(argument, collection, formatId, references, depth + 1, budget);
+    } else if (node.kind === 'not') {
+      this.inspectBoolean(node.arg, collection, formatId, references, depth + 1, budget);
+    } else throw new BadRequestException('Invalid formula condition');
+  }
+
+  /** Refuses at save time what is certain to fail. Operands whose unit depends on the entry are checked during evaluation. */
+  private assertCompatibleOperands(nodes: Expression[], collection: Collection, formatId: string): void {
+    const known = nodes.map((node) => this.declaredQuantity(node, collection, formatId)).filter((item): item is Quantity => !!item);
+    for (const other of known.slice(1)) assertComparable(known[0], other);
+  }
+
+  private declaredQuantity(node: Expression, collection: Collection, formatId: string): Quantity | undefined {
+    const format = collection.formats.find((item) => item.id === formatId);
+    let unit: string | undefined;
+    if (node.kind === 'number') unit = node.unit;
+    else if (node.kind === 'field') unit = format?.fields.find((field) => field.id === node.fieldId)?.unit;
+    else if (node.kind === 'property') {
+      const reference = format?.fields.find((field) => field.id === node.referenceFieldId);
+      unit = collection.formats.find((item) => item.id === reference?.targetObjectFormatId)?.fields.find((field) => field.id === node.propertyFieldId)?.unit;
+    } else return undefined;
+    const value = { n: 0n, d: 1n };
+    if (!unit) return { value };
+    try {
+      const resolved = resolveUnit(unit, collection.units ?? []);
+      return { value, unit, dimension: resolved.dimension, root: resolved.root, factor: resolved.factor };
+    } catch {
+      return undefined;
+    }
   }
 
   async saveFormula(collectionId: string, ownerId: string, input: FormulaInput, formulaId?: string): Promise<Collection> {
@@ -177,6 +252,38 @@ export class AnalysisService {
       if (!formula) throw new BadRequestException('Formula dependency is missing');
       return this.evaluateNode(this.parse(formula.expression), collection, entry, ownerId, depth + 1);
     }
+    if (node.kind === 'conditional') {
+      const condition = await this.evaluateBoolean(node.condition, collection, entry, ownerId, depth + 1);
+      if (condition === undefined) return undefined;
+      return this.evaluateNode(condition ? node.then : node.else, collection, entry, ownerId, depth + 1);
+    }
+    if (node.kind === 'min' || node.kind === 'max') {
+      const values: Quantity[] = [];
+      let missing = false;
+      for (const argument of node.args) {
+        const value = await this.evaluateNode(argument, collection, entry, ownerId, depth + 1);
+        if (value) values.push(value); else missing = true;
+      }
+      if (missing) return undefined;
+      const wanted = node.kind === 'min' ? -1 : 1;
+      return values.reduce((best, candidate) => (compareQuantities(candidate, best) === wanted ? candidate : best));
+    }
+    if (node.kind === 'abs' || node.kind === 'floor' || node.kind === 'ceil') {
+      const quantity = await this.evaluateNode(node.value, collection, entry, ownerId, depth + 1);
+      if (!quantity) return undefined;
+      const { n, d } = quantity.value;
+      if (node.kind === 'abs') return { ...quantity, value: { n: n < 0n ? -n : n, d } };
+      const hasFraction = n % d !== 0n;
+      const adjustment = node.kind === 'floor' ? (n < 0n && hasFraction ? -1n : 0n) : (n > 0n && hasFraction ? 1n : 0n);
+      return { ...quantity, value: { n: n / d + adjustment, d: 1n } };
+    }
+    if (node.kind === 'modulo') {
+      const dividend = await this.evaluateNode(node.left, collection, entry, ownerId, depth + 1);
+      const divisor = await this.evaluateNode(node.right, collection, entry, ownerId, depth + 1);
+      if (!dividend || !divisor) return undefined;
+      assertComparable(dividend, divisor);
+      return { ...dividend, value: modulo(dividend.value, inLeftUnit(dividend, divisor)) };
+    }
     const left = await this.evaluateNode(node.args[0], collection, entry, ownerId, depth + 1);
     const right = await this.evaluateNode(node.args[1], collection, entry, ownerId, depth + 1);
     if (!left || !right) return undefined;
@@ -197,6 +304,31 @@ export class AnalysisService {
       return { value: divide(multiply(left.value, left.factor!), multiply(right.value, right.factor!)) };
     }
     return { ...left, value };
+  }
+
+  /** Three-valued: `undefined` means a source value is missing, so a condition never treats an absent value as false. */
+  private async evaluateBoolean(node: BooleanExpression, collection: Collection, entry: Entry, ownerId: string, depth: number): Promise<boolean | undefined> {
+    if (depth > 16) throw new BadRequestException('Formula is too deep');
+    if (node.kind === 'boolean') return node.value;
+    if (node.kind === 'not') {
+      const value = await this.evaluateBoolean(node.arg, collection, entry, ownerId, depth + 1);
+      return value === undefined ? undefined : !value;
+    }
+    if (node.kind === 'logical') {
+      const deciding = node.operator === 'OR';
+      let unknown = false;
+      for (const argument of node.args) {
+        const value = await this.evaluateBoolean(argument, collection, entry, ownerId, depth + 1);
+        if (value === deciding) return deciding;
+        if (value === undefined) unknown = true;
+      }
+      return unknown ? undefined : !deciding;
+    }
+    const left = await this.evaluateNode(node.left, collection, entry, ownerId, depth + 1);
+    const right = await this.evaluateNode(node.right, collection, entry, ownerId, depth + 1);
+    if (!left || !right) return undefined;
+    const order = compareQuantities(left, right);
+    return { EQ: order === 0, NEQ: order !== 0, LT: order < 0, LTE: order <= 0, GT: order > 0, GTE: order >= 0 }[node.operator];
   }
 
   async calculate(collectionId: string, ownerId: string, formulaId: string, entryId: string): Promise<FormulaResult> {

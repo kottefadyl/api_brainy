@@ -11,6 +11,7 @@ import { StockMovement } from './stock.schema';
 import { EntryRelation } from './relation.schema';
 import { CollaborationService } from './collaboration.service';
 import { protectedFields } from './sensitivity.logic';
+import { formulaChildKeys } from './formula_nodes';
 
 const colors = ['#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF', '#FFF0F4', '#EAF8FA', '#FBF7E9', '#F1F8ED', '#F8F0FA', '#F1F5FA', '#FFF7F1', '#EFF8FF', '#FDEFF7', '#EDF7FF', '#F7FBEA', '#FFF0E8', '#EFEFFD', '#E9F8F4', '#FBF1E8', '#F0F8F9', '#FFF2EF', '#F4F8E8', '#F1F2FF', '#EFFAF0'];
 type CopyPlan = { source: Collection; target: Collection; formats: CollectionFormat[]; units: CollectionUnit[]; codeLists: ClassificationList[]; formulas: CollectionFormula[]; entries: Entry[]; relations: EntryRelation[]; conflicts: string[]; colors: Map<string, string> };
@@ -142,7 +143,7 @@ export class TransferService implements OnApplicationBootstrap {
           const value = node as Record<string, unknown>;
           if (typeof value.unit === 'string' && value.unit.startsWith('local:') && !unitIds.has(value.unit.slice(6))) { unitIds.add(value.unit.slice(6)); changed = true; }
           if (Array.isArray(value.args)) value.args.forEach(scan);
-          if (value.value && typeof value.value === 'object') scan(value.value);
+          for (const key of formulaChildKeys) if (value[key] && typeof value[key] === 'object') scan(value[key]);
         };
         try { scan(JSON.parse(formula.expression)); }
         catch { conflicts.push(`Formula expression is invalid: ${formula.name}`); }
@@ -256,7 +257,7 @@ export class TransferService implements OnApplicationBootstrap {
       if (typeof mapped.formulaId === 'string') mapped.formulaId = formulaIds.get(mapped.formulaId) ?? mapped.formulaId;
       if (typeof mapped.unit === 'string' && mapped.unit.startsWith('local:')) mapped.unit = `local:${unitIds.get(mapped.unit.slice(6)) ?? mapped.unit.slice(6)}`;
       if (Array.isArray(mapped.args)) mapped.args = mapped.args.map((arg) => remapExpression(arg as Record<string, unknown>));
-      if (mapped.value && typeof mapped.value === 'object' && !Array.isArray(mapped.value)) mapped.value = remapExpression(mapped.value as Record<string, unknown>);
+      for (const key of formulaChildKeys) if (mapped[key] && typeof mapped[key] === 'object' && !Array.isArray(mapped[key])) mapped[key] = remapExpression(mapped[key] as Record<string, unknown>);
       return mapped;
     };
     const copiedFormulas: CollectionFormula[] = plan.formulas.map((formula) => ({ id: formulaIds.get(formula.id)!, name: formula.name, formatId: formatIds.get(formula.formatId)!, expression: JSON.stringify(remapExpression(JSON.parse(formula.expression) as Record<string, unknown>)), version: 1, dependencies: formula.dependencies.map((id) => formulaIds.get(id)!), transferKey, copiedFromFormulaId: formula.id }));

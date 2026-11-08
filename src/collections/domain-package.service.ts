@@ -15,6 +15,7 @@ import { StockService } from './stock.service';
 import { DomainPackage, PackageCodeList, PackageField, PackageFormat, PackageObject, PackageStockRule, PackageText, PackageUnit, PackageView, PackageFormula, PACKAGE_FORMAT, PACKAGE_SCHEMA_VERSION, compareVersions, localized, parseDomainPackage, signatureStatus } from './domain-package.format';
 import { DomainPackageExport, DomainPackageInstall, DomainPackageInstallResult, DomainPackageKey, DomainPackagePreview, DomainPackageSummary } from './domain-package.schema';
 import { pilotPackages } from './domain-package.pilots';
+import { formulaChildKeys } from './formula_nodes';
 
 export type DomainPackageExportOptions = { packageId: string; version: string; name: string; description?: string; notice?: string; author: string; license: string };
 
@@ -161,7 +162,7 @@ export class DomainPackageService {
         if (name === 'formulaId') { const found = formulaKeys.get(value as string); if (!found) missing = true; return [name, found ?? '']; }
         if (name === 'unit' && typeof value === 'string' && node.kind === 'number') { const mapped = builtInUnits.some((item) => item.id === value) ? value : unitKeys.has(value) ? `local:${unitKeys.get(value)}` : undefined; if (!mapped) missing = true; return [name, mapped ?? '']; }
         if (name === 'args' && Array.isArray(value)) return [name, value.map((child) => map(child as Record<string, unknown>))];
-        if (name === 'value' && value && typeof value === 'object') return [name, map(value as Record<string, unknown>)];
+        if (formulaChildKeys.includes(name) && value && typeof value === 'object') return [name, map(value as Record<string, unknown>)];
         return [name, value];
       }));
       const expression = map(JSON.parse(formula.expression) as Record<string, unknown>);
@@ -405,7 +406,7 @@ export class DomainPackageService {
         if (name === 'formulaId') return [name, plan.keys.get(`formula:${value as string}`) ?? ''];
         if (name === 'unit' && typeof value === 'string' && value.startsWith('local:')) return [name, plan.keys.get(`unit:${value.slice(6)}`) ?? ''];
         if (name === 'args' && Array.isArray(value)) return [name, value.map((child) => map(child as Record<string, unknown>))];
-        if (name === 'value' && value && typeof value === 'object') return [name, map(value as Record<string, unknown>)];
+        if (formulaChildKeys.includes(name) && value && typeof value === 'object') return [name, map(value as Record<string, unknown>)];
         return [name, value];
       }));
       const formatId = plan.keys.get(`format:${formula.dataFormat}`)!;

@@ -431,9 +431,128 @@ try {
     input: { formatId: latencyFmt.id, fieldId: idOf(latencyFmt, 'DurationMs'), groupBy: 'NONE', operation: 'STDDEV', measureKind: 'SNAPSHOT', filters: [{ fieldId: idOf(latencyFmt, 'Endpoint'), operator: 'EQ', value: 'A' }] },
   }, token, true);
 
+  // T21/1 — Conditions, comparisons, logic and numeric functions
+  const t21Formats = [{ name: 'Order', color: '#EEF5FF', fields: [{ name: 'Label', kind: 'TITLE' }, { name: 'Quantity', kind: 'NUMBER' }, { name: 'Price', kind: 'NUMBER', unit: 'EUR' }] }];
+  const t21Col = (await gql('mutation($input:CreateCollectionInput!) { createCollection(input:$input) { id formats { id name fields { id name } } } }', { input: { name: 'T21 Conditions', formats: t21Formats } })).createCollection;
+  ids.push(t21Col.id);
+  const orderFmt = t21Col.formats[0];
+  const t21Field = (name) => ({ kind: 'field', fieldId: idOf(orderFmt, name) });
+  const num = (value, unit) => ({ kind: 'number', value, ...(unit ? { unit } : {}) });
+  const cmp = (operator, left, right) => ({ kind: 'comparison', operator, left, right });
+  const iif = (condition, thenBranch, elseBranch) => ({ kind: 'conditional', condition, then: thenBranch, else: elseBranch });
+  const yesNo = (condition) => iif(condition, num('1'), num('0'));
+  const yes = { kind: 'boolean', value: true }, no = { kind: 'boolean', value: false };
+  const logical = (operator, ...args) => ({ kind: 'logical', operator, args });
+  const createOrder = async (collectionId, format, fieldId, label, quantity) => (await gql('mutation($id:String!,$input:SaveEntryInput!) { createEntry(collectionId:$id,input:$input) { id } }', { id: collectionId, input: { formatId: format.id, values: [{ fieldId: fieldId(format, 'Label'), value: label }, ...(quantity === null ? [] : [{ fieldId: fieldId(format, 'Quantity'), value: quantity }]), { fieldId: fieldId(format, 'Price'), value: '100' }] } })).createEntry.id;
+  const highOrder = await createOrder(t21Col.id, orderFmt, idOf, 'High', '6');
+  const lowOrder = await createOrder(t21Col.id, orderFmt, idOf, 'Boundary', '5');
+  const blankOrder = await createOrder(t21Col.id, orderFmt, idOf, 'No quantity', null);
+  let t21Count = 0;
+  const SAVE_FORMULA = 'mutation($id:String!,$input:FormulaInput!) { saveCollectionFormula(collectionId:$id,input:$input) { formulas { id name } } }';
+  const CALCULATE = 'query($id:String!,$formulaId:String!,$entryId:String!) { calculateCollectionFormula(collectionId:$id,formulaId:$formulaId,entryId:$entryId) { value unit missing } }';
+  const saveT21 = async (expression) => { const name = `T21 ${++t21Count}`; return (await gql(SAVE_FORMULA, { id: t21Col.id, input: { name, formatId: orderFmt.id, expression: JSON.stringify(expression) } })).saveCollectionFormula.formulas.find((item) => item.name === name).id; };
+  const refusedT21 = (expression) => gql(SAVE_FORMULA, { id: t21Col.id, input: { name: `T21 refused ${++t21Count}`, formatId: orderFmt.id, expression: JSON.stringify(expression) } }, token, true);
+  const evalT21 = async (expression, entryId = highOrder) => (await gql(CALCULATE, { id: t21Col.id, formulaId: await saveT21(expression), entryId })).calculateCollectionFormula;
+  const failsT21 = async (expression, entryId = highOrder) => gql(CALCULATE, { id: t21Col.id, formulaId: await saveT21(expression), entryId }, token, true);
+  const multiplyBy = (left, right) => ({ kind: 'operation', operator: 'MULTIPLY', args: [left, right] });
+
+  // IF(quantity > 5; price * 0.8; price), boundary excluded, missing stays missing
+  const discount = await saveT21(iif(cmp('GT', t21Field('Quantity'), num('5')), multiplyBy(t21Field('Price'), num('0.8')), t21Field('Price')));
+  const discountOn = async (entryId) => (await gql(CALCULATE, { id: t21Col.id, formulaId: discount, entryId })).calculateCollectionFormula;
+  assert.deepEqual({ ...(await discountOn(highOrder)) }, { value: '80', unit: 'EUR', missing: null });
+  assert.deepEqual({ ...(await discountOn(lowOrder)) }, { value: '100', unit: 'EUR', missing: null });
+  const blankDiscount = await discountOn(blankOrder);
+  assert.equal(blankDiscount.value, null);
+  assert.ok(blankDiscount.missing);
+
+  // The branch not taken is never evaluated
+  const guarded = iif(cmp('GT', t21Field('Quantity'), num('5')), num('1'), { kind: 'operation', operator: 'DIVIDE', args: [num('1'), num('0')] });
+  assert.equal((await evalT21(guarded)).value, '1');
+  assert.match(await failsT21(guarded, lowOrder), /divide by zero/i);
+
+  // Comparison operators, including conversion between compatible units
+  for (const [operator, left, right, expected] of [['EQ', '2', '2.0', '1'], ['EQ', '2', '3', '0'], ['NEQ', '2', '3', '1'], ['NEQ', '2', '2', '0'], ['LT', '1.5', '2', '1'], ['LT', '2', '2', '0'], ['LTE', '2', '2', '1'], ['LTE', '3', '2', '0'], ['GT', '-1', '-2', '1'], ['GT', '2', '2', '0'], ['GTE', '2', '2', '1'], ['GTE', '1', '2', '0']]) {
+    assert.equal((await evalT21(yesNo(cmp(operator, num(left), num(right))))).value, expected, `${left} ${operator} ${right}`);
+  }
+  assert.equal((await evalT21(yesNo(cmp('EQ', num('1', 'km'), num('1000', 'm'))))).value, '1');
+  assert.equal((await evalT21(yesNo(cmp('GT', num('1', 'km'), num('999', 'm'))))).value, '1');
+
+  // Incompatible units: refused on save when declared, during evaluation otherwise
+  assert.match(await refusedT21(yesNo(cmp('GT', num('1', 'EUR'), num('1', 'km')))), /incompatible units/);
+  assert.match(await refusedT21(yesNo(cmp('EQ', num('1', 'EUR'), num('1', 'USD')))), /dated rate/);
+  assert.match(await refusedT21(yesNo(cmp('GT', t21Field('Price'), num('5')))), /incompatible units/);
+  assert.match(await failsT21(yesNo(cmp('GT', { kind: 'abs', value: t21Field('Price') }, { kind: 'abs', value: num('1', 'km') }))), /incompatible units/);
+
+  // Logic, short-circuit and three-valued handling of missing values
+  const missingTest = cmp('GT', t21Field('Quantity'), num('0'));
+  for (const [condition, expected] of [[logical('AND', yes, yes), '1'], [logical('AND', yes, no), '0'], [logical('OR', no, yes), '1'], [logical('OR', no, no), '0'], [{ kind: 'not', arg: no }, '1'], [{ kind: 'not', arg: yes }, '0'], [logical('AND', no, missingTest), '0'], [logical('OR', yes, missingTest), '1']]) {
+    assert.equal((await evalT21(yesNo(condition), blankOrder)).value, expected, JSON.stringify(condition));
+  }
+  for (const condition of [logical('AND', yes, missingTest), logical('OR', no, missingTest), { kind: 'not', arg: missingTest }]) {
+    assert.ok((await evalT21(yesNo(condition), blankOrder)).missing, JSON.stringify(condition));
+  }
+  assert.equal((await evalT21(yesNo(logical('OR', yes, cmp('GT', { kind: 'abs', value: num('1', 'EUR') }, { kind: 'abs', value: num('1', 'km') }))))).value, '1', 'OR stops at the first true condition');
+
+  // MIN and MAX keep the unit of the selected quantity
+  const euros = [num('10', 'EUR'), num('4', 'EUR'), num('15', 'EUR')];
+  assert.deepEqual({ ...(await evalT21({ kind: 'min', args: euros })) }, { value: '4', unit: 'EUR', missing: null });
+  assert.deepEqual({ ...(await evalT21({ kind: 'max', args: euros })) }, { value: '15', unit: 'EUR', missing: null });
+  assert.deepEqual({ ...(await evalT21({ kind: 'min', args: [num('1', 'km'), num('500', 'm')] })) }, { value: '500', unit: 'm', missing: null });
+  assert.deepEqual({ ...(await evalT21({ kind: 'max', args: [num('1', 'km'), num('500', 'm')] })) }, { value: '1', unit: 'km', missing: null });
+  assert.ok((await evalT21({ kind: 'min', args: [t21Field('Quantity'), num('1')] }, blankOrder)).missing);
+  await refusedT21({ kind: 'min', args: [num('1')] });
+  assert.match(await refusedT21({ kind: 'max', args: [num('1', 'EUR'), num('1', 'km')] }), /incompatible units/);
+
+  // ABS, FLOOR, CEIL
+  assert.equal((await evalT21({ kind: 'abs', value: num('-12.5') })).value, '12.5');
+  assert.equal((await evalT21({ kind: 'abs', value: num('12.5') })).value, '12.5');
+  for (const [kind, input, expected] of [['floor', '3.7', '3'], ['ceil', '3.2', '4'], ['floor', '-3.2', '-4'], ['ceil', '-3.7', '-3'], ['floor', '5', '5'], ['ceil', '5', '5'], ['floor', '-5', '-5'], ['ceil', '-5', '-5'], ['ceil', '0.5', '1'], ['floor', '-0.5', '-1'], ['ceil', '-0.5', '0']]) {
+    assert.equal((await evalT21({ kind, value: num(input) })).value, expected, `${kind}(${input})`);
+  }
+  assert.deepEqual({ ...(await evalT21({ kind: 'floor', value: num('3.7', 'kg') })) }, { value: '3', unit: 'kg', missing: null });
+
+  // MODULO: exact on decimals, sign of the divisor, converted to the dividend unit
+  for (const [left, right, expected] of [['10', '3', '1'], ['7.5', '2', '1.5'], ['-7', '3', '2'], ['7', '-3', '-2'], ['-7', '-3', '-1'], ['9', '3', '0'], ['0.3', '0.1', '0']]) {
+    assert.equal((await evalT21({ kind: 'modulo', left: num(left), right: num(right) })).value, expected, `${left} mod ${right}`);
+  }
+  assert.deepEqual({ ...(await evalT21({ kind: 'modulo', left: num('1.5', 'km'), right: num('400', 'm') })) }, { value: '0.3', unit: 'km', missing: null });
+  assert.match(await failsT21({ kind: 'modulo', left: num('1'), right: num('0') }), /divide by zero/i);
+  assert.match(await refusedT21({ kind: 'modulo', left: num('1', 'EUR'), right: num('1', 'km') }), /incompatible units/);
+
+  // Static validation: unknown shapes, complexity and cycles through conditions
+  assert.match(await refusedT21(iif({ kind: 'unknown' }, num('1'), num('0'))), /condition/i);
+  assert.match(await refusedT21(yesNo(cmp('ALMOST', num('1'), num('1')))), /comparison/i);
+  assert.match(await refusedT21(yesNo(logical('AND', ...Array.from({ length: 70 }, () => yes)))), /too complex/);
+  const inner = await saveT21(num('1'));
+  const outer = await saveT21(iif(cmp('GT', { kind: 'formula', formulaId: inner }, num('0')), num('1'), num('0')));
+  assert.match(await gql('mutation($id:String!,$formulaId:String!,$input:FormulaInput!) { saveCollectionFormula(collectionId:$id,formulaId:$formulaId,input:$input) { id } }', { id: t21Col.id, formulaId: inner, input: { name: `T21 ${t21Count - 1}`, formatId: orderFmt.id, expectedVersion: 1, expression: JSON.stringify({ kind: 'formula', formulaId: outer }) } }, token, true), /cycle/i);
+
+  // Copies and domain packages rewrite identifiers nested in conditions
+  const nestedSource = (await gql('mutation($input:CreateCollectionInput!) { createCollection(input:$input) { id formats { id name fields { id name } } } }', { input: { name: 'T21 Source', formats: t21Formats } })).createCollection;
+  ids.push(nestedSource.id);
+  const sourceFmt = nestedSource.formats[0];
+  const nested = iif(cmp('GT', { kind: 'field', fieldId: idOf(sourceFmt, 'Quantity') }, num('5')), multiplyBy({ kind: 'field', fieldId: idOf(sourceFmt, 'Price') }, num('0.8')), { kind: 'field', fieldId: idOf(sourceFmt, 'Price') });
+  await gql(SAVE_FORMULA, { id: nestedSource.id, input: { name: 'Discount', formatId: sourceFmt.id, expression: JSON.stringify(nested) } });
+  const calculateDiscountIn = async (collectionId) => {
+    const installed = (await gql('query { collectionsList { id formulas { id name formatId } formats { id name fields { id name } } } }')).collectionsList.find((item) => item.id === collectionId);
+    const format = installed.formats.find((item) => item.name === 'Order');
+    const entryId = await createOrder(collectionId, format, idOf, 'Copied high', '6');
+    return (await gql(CALCULATE, { id: collectionId, formulaId: installed.formulas.find((item) => item.name === 'Discount' && item.formatId === format.id).id, entryId })).calculateCollectionFormula;
+  };
+  const copyDestination = (await gql('mutation($input:CreateCollectionInput!) { createCollection(input:$input) { id } }', { input: { name: 'T21 Copy', formats: [{ name: 'General', color: '#F4F0FF', fields: [{ name: 'Title', kind: 'TITLE' }] }] } })).createCollection;
+  ids.push(copyDestination.id);
+  await gql('mutation($formatId:String!,$targetCollectionId:String!) { copyCollectionDataFormat(formatId:$formatId,targetCollectionId:$targetCollectionId,withEntries:false) { copiedEntries } }', { formatId: sourceFmt.id, targetCollectionId: copyDestination.id });
+  assert.deepEqual({ ...(await calculateDiscountIn(copyDestination.id)) }, { value: '80', unit: 'EUR', missing: null });
+  const packaged = (await gql('query($id:String!,$input:DomainPackageExportInput!) { exportDomainPackage(collectionId:$id,input:$input,language:"en") { packageJson warnings } }', { id: nestedSource.id, input: { packageId: 'smoke.t21', version: '1.0.0', name: 'T21', author: 'Smoke', license: 'CC-BY-4.0' } })).exportDomainPackage;
+  assert.deepEqual(packaged.warnings, []);
+  const packageInstall = (await gql('mutation($json:String!) { installDomainPackage(packageJson:$json,collectionName:"T21 Installed",language:"en") { collectionId } }', { json: packaged.packageJson })).installDomainPackage;
+  ids.push(packageInstall.collectionId);
+  assert.deepEqual({ ...(await calculateDiscountIn(packageInstall.collectionId)) }, { value: '80', unit: 'EUR', missing: null });
+
   console.log('analysis smoke passed: formulas, date differences, rounding, formula transfer, units, cycles, zero division, aggregate, filters, period comparison, access, book manual order, templates, links, URL duplicates, link import and 10005-entry analysis');
 } finally {
   if (ownerId) {
+    await mongoose.connection.collection('domainpackageinstalls').deleteMany({ ownerId });
     await mongoose.connection.collection('entrylinks').deleteMany({ ownerId });
     await mongoose.connection.collection('entries').deleteMany({ ownerId });
     await mongoose.connection.collection('collections').deleteMany({ ownerId });
