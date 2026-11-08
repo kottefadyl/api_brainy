@@ -747,7 +747,14 @@ try {
   for (const [value, pattern, locale, expected] of [['1234.5', '#,##0.00', undefined, '1,234.50'], ['1234.5', '#,##0.00', 'fr', '1 234,50'], ['1234.5', '0.00', 'fr', '1234,50'], ['1234567', '#,##0', undefined, '1,234,567'], ['2.5', '0', undefined, '3'], ['-2.5', '0', undefined, '-3'], ['-0.004', '0.00', undefined, '0.00'], ['0.125', '0.00', undefined, '0.13'], ['7', '0.000', undefined, '7.000']]) {
     assert.deepEqual(await evalText(formatted(num(value), pattern, locale)), textOf(expected), `format ${value} ${pattern}`);
   }
-  assert.deepEqual(await evalText(formatted(noteNumber('Amount'), '0.00')), textOf('19.90 EUR'));
+  assert.deepEqual(await evalText(formatted(noteNumber('Amount'), '0.00')), textOf('19.90'));
+  assert.deepEqual(await evalText(concat(formatted(noteNumber('Amount'), '0.00'), lit(' €'))), textOf('19.90 €'));
+
+  // UNITE gives the unit as text, and an empty text for a plain number
+  assert.deepEqual(await evalText({ kind: 'unitOf', value: noteNumber('Amount') }), textOf('EUR'));
+  assert.deepEqual(await evalText({ kind: 'unitOf', value: noteNumber('Count') }), textOf(''));
+  assert.deepEqual(await evalText(concat(formatted(noteNumber('Amount'), '0.00'), lit(' '), { kind: 'unitOf', value: noteNumber('Amount') })), textOf('19.90 EUR'));
+  assert.ok((await evalText({ kind: 'unitOf', value: noteNumber('Amount') }, blankNote)).missing);
   assert.deepEqual(await evalText(formatted(noteDate('When'), 'DD/MM/YYYY')), textOf('01/03/2026'));
   assert.deepEqual(await evalText(formatted({ kind: 'dateLiteral', value: '2026-03-15T10:30:05Z' }, 'YYYY-MM-DD HH:mm:ss')), textOf('2026-03-15 10:30:05'));
   assert.deepEqual(await evalText(formatted({ kind: 'endOfMonth', date: noteDate('When') }, 'DD.MM')), textOf('31.03'));
@@ -809,6 +816,160 @@ try {
   const textInstall = (await gql('mutation($json:String!) { installDomainPackage(packageJson:$json,collectionName:"T23 Installed",language:"en") { collectionId } }', { json: textPackage.packageJson })).installDomainPackage;
   ids.push(textInstall.collectionId);
   await assertTextFormulasIn(textInstall.collectionId);
+
+  // T21/4 — Multi-level relations, fallback values and aggregates over multiple references
+  const ADD_FORMAT = 'mutation($id:String!,$input:CollectionFormatInput!) { addCollectionFormat(collectionId:$id,input:$input) { formats { id name fields { id name } } } }';
+  const buildShop = async (name) => {
+    const created = (await gql(CREATE_COLLECTION, { input: { name, formats: [{ name: 'Group', color: '#EEF5FF', objectModel: true, fields: [{ name: 'Name', kind: 'TITLE' }, { name: 'Rate', kind: 'NUMBER' }] }] } })).createCollection;
+    ids.push(created.id);
+    let formats = created.formats;
+    const byName = (item) => formats.find((format) => format.name === item);
+    const add = async (input) => { formats = (await gql(ADD_FORMAT, { id: created.id, input })).addCollectionFormat.formats; };
+    const title = { name: 'Name', kind: 'TITLE' };
+    const single = (fieldName, target, referenceMode = 'CURRENT') => ({ name: fieldName, kind: 'OBJECT_REF', targetObjectFormatId: byName(target).id, referenceMode });
+    await add({ name: 'Category', color: '#EDF9F3', objectModel: true, fields: [title, single('Group', 'Group')] });
+    await add({ name: 'Customer', color: '#FFF5EB', objectModel: true, fields: [title, { name: 'City', kind: 'TEXT' }] });
+    await add({ name: 'Product', color: '#F4F0FF', objectModel: true, fields: [title, { name: 'Price', kind: 'NUMBER', unit: 'EUR' }, { name: 'Discount', kind: 'NUMBER', unit: 'EUR' }, single('Category', 'Category')] });
+    await add({ name: 'Line', color: '#FFF0F4', objectModel: true, fields: [title, { name: 'Amount', kind: 'NUMBER', unit: 'EUR' }] });
+    await add({ name: 'Order', color: '#EAF8FA', fields: [{ name: 'Title', kind: 'TITLE' }, single('Product', 'Product'), single('Frozen', 'Product', 'SNAPSHOT'), single('Customer', 'Customer'), { ...single('Lines', 'Line'), multiple: true }, { ...single('FrozenLines', 'Line', 'SNAPSHOT'), multiple: true }] });
+    return { id: created.id, byName };
+  };
+  const refs = (...items) => JSON.stringify(items);
+  const seedShop = async (collectionId, byName) => {
+    const make = (name, values) => createEvent(collectionId, byName(name), values);
+    const group = await make('Group', { Name: 'Standard', Rate: '20' });
+    const category = await make('Category', { Name: 'Books', Group: refs(group) });
+    const customer = await make('Customer', { Name: 'Ada', City: 'Paris' });
+    const product = await make('Product', { Name: 'Novel', Price: '100', Category: refs(category) });
+    const discounted = await make('Product', { Name: 'Atlas', Price: '100', Discount: '5', Category: refs(category) });
+    const line1 = await make('Line', { Name: 'L1', Amount: '10' });
+    const line2 = await make('Line', { Name: 'L2', Amount: '20.5' });
+    const line3 = await make('Line', { Name: 'L3 without amount' });
+    const order = await make('Order', { Title: 'Order', Product: refs(product), Frozen: refs(product), Customer: refs(customer), Lines: refs(line1, line2, line3), FrozenLines: refs(line1, line2) });
+    return { group, category, customer, product, discounted, line1, line2, line3, order };
+  };
+  const shop = await buildShop('T21 Shop');
+  const seeded = await seedShop(shop.id, shop.byName);
+  const orderFormat = shop.byName('Order'), productFormat = shop.byName('Product'), categoryFormat = shop.byName('Category'), groupFormat = shop.byName('Group'), customerFormat = shop.byName('Customer'), lineFormat = shop.byName('Line');
+  const blankOrderId = await createEvent(shop.id, orderFormat, { Title: 'No relations' });
+  const discountedOrder = await createEvent(shop.id, orderFormat, { Title: 'Discounted', Product: refs(seeded.discounted) });
+  const orderRef = (name) => idOf(orderFormat, name);
+  const productPath = (name) => ({ kind: 'property', referenceFieldId: orderRef('Product'), propertyFieldId: idOf(productFormat, name) });
+  const frozenPath = (name) => ({ kind: 'property', referenceFieldId: orderRef('Frozen'), propertyFieldId: idOf(productFormat, name) });
+  const ratePath = { kind: 'property', referenceFieldId: orderRef('Product'), through: [idOf(productFormat, 'Category'), idOf(categoryFormat, 'Group')], propertyFieldId: idOf(groupFormat, 'Rate') };
+  const cityPath = { kind: 'textProperty', referenceFieldId: orderRef('Customer'), propertyFieldId: idOf(customerFormat, 'City') };
+  const related = (kind, field = 'Lines', property = 'Amount') => ({ kind, referenceFieldId: orderRef(field), ...(property ? { propertyFieldId: idOf(lineFormat, property) } : {}) });
+  const coalesce = (...args) => ({ kind: 'coalesce', args });
+  let t24Count = 0;
+  const saveShop = async (expression) => { const name = `T24 ${++t24Count}`; return (await gql(SAVE_FORMULA, { id: shop.id, input: { name, formatId: orderFormat.id, expression: JSON.stringify(expression) } })).saveCollectionFormula.formulas.find((item) => item.name === name).id; };
+  const refusedShop = (expression) => gql(SAVE_FORMULA, { id: shop.id, input: { name: `T24 refused ${++t24Count}`, formatId: orderFormat.id, expression: JSON.stringify(expression) } }, token, true);
+  const calcShop = async (formulaId, entryId) => ({ ...(await gql(CALCULATE_DATE, { id: shop.id, formulaId, entryId })).calculateCollectionFormula });
+  const evalShop = async (expression, entryId = seeded.order) => calcShop(await saveShop(expression), entryId);
+  const euros2 = (value) => quantityOf(value, 'EUR', 'CURRENCY');
+
+  // Navigation across several objects, in numbers and in text
+  assert.deepEqual(await evalShop(ratePath), quantityOf('20'));
+  assert.deepEqual(await evalShop(productPath('Price')), euros2('100'));
+  assert.deepEqual(await evalShop(cityPath), textOf('Paris'));
+  assert.deepEqual(await evalShop({ kind: 'upper', text: cityPath }), textOf('PARIS'));
+  assert.deepEqual(await evalShop(multiplyBy(productPath('Price'), { kind: 'operation', operator: 'DIVIDE', args: [ratePath, num('100')] })), euros2('20'));
+  assert.ok((await evalShop(ratePath, blankOrderId)).missing, 'an empty relation stays missing');
+
+  // Fallback: a present value wins, an absent value or relation uses the fallback
+  assert.deepEqual(await evalShop(coalesce(productPath('Discount'), num('0')), discountedOrder), euros2('5'));
+  assert.deepEqual(await evalShop(coalesce(productPath('Discount'), num('0'))), euros2('0'));
+  assert.deepEqual(await evalShop(coalesce(productPath('Discount'), num('0')), blankOrderId), euros2('0'));
+  assert.deepEqual(await evalShop(coalesce(productPath('Discount'), num('7', 'EUR'))), euros2('7'));
+  assert.deepEqual(await evalShop(coalesce(productPath('Discount'), frozenPath('Discount'), productPath('Price'))), euros2('100'));
+  assert.deepEqual(await evalShop(coalesce(ratePath, num('0')), blankOrderId), quantityOf('0'));
+  assert.deepEqual(await evalShop({ kind: 'operation', operator: 'SUBTRACT', args: [productPath('Price'), coalesce(productPath('Discount'), num('0'))] }), euros2('100'), 'the fallback zero takes the unit of the value it replaces');
+  assert.deepEqual(await evalShop(coalesce(productPath('Price'), { kind: 'operation', operator: 'DIVIDE', args: [num('1', 'EUR'), num('0')] })), euros2('100'), 'a fallback that is not needed is not evaluated');
+  assert.ok((await evalShop(coalesce(productPath('Discount'), productPath('Price')), blankOrderId)).missing);
+  assert.deepEqual(await evalShop({ kind: 'coalesceText', args: [cityPath, lit('Unknown')] }), textOf('Paris'));
+  assert.deepEqual(await evalShop({ kind: 'coalesceText', args: [cityPath, lit('Unknown')] }, blankOrderId), textOf('Unknown'));
+  assert.match(await refusedShop(coalesce(productPath('Price'))), /at least one fallback/);
+  assert.match(await refusedShop(coalesce(productPath('Price'), num('5'))), /incompatible units/);
+  assert.match(await refusedShop(coalesce(productPath('Price'), num('5', 'km'))), /incompatible units/);
+
+  // Aggregates over a multiple reference skip objects without the property
+  assert.deepEqual(await evalShop(related('sumRelated')), euros2('30.5'));
+  assert.deepEqual(await evalShop(related('avgRelated')), euros2('15.25'));
+  assert.deepEqual(await evalShop(related('minRelated')), euros2('10'));
+  assert.deepEqual(await evalShop(related('maxRelated')), euros2('20.5'));
+  assert.deepEqual(await evalShop(related('countRelated', 'Lines', null)), quantityOf('3'));
+  assert.deepEqual(await evalShop(related('countRelated')), quantityOf('2'));
+  assert.deepEqual(await evalShop(related('countRelated', 'Lines', null), blankOrderId), quantityOf('0'));
+  assert.ok((await evalShop(related('sumRelated'), blankOrderId)).missing, 'a total over nothing stays missing');
+  assert.deepEqual(await evalShop(coalesce(related('sumRelated'), num('0')), blankOrderId), euros2('0'));
+  assert.equal((await evalShop(iif(cmp('GT', related('sumRelated'), num('30', 'EUR')), num('1'), num('0')))).value, '1');
+  assert.match(await refusedShop(iif(cmp('GT', related('sumRelated'), num('30', 'km')), num('1'), num('0'))), /incompatible units/);
+
+  // The past stays intact: later changes reach CURRENT references only
+  const frozenPrice = await saveShop(frozenPath('Price'));
+  const currentPrice = await saveShop(productPath('Price'));
+  const frozenDiscount = await saveShop(frozenPath('Discount'));
+  const frozenDiscountOrZero = await saveShop(coalesce(frozenPath('Discount'), num('0')));
+  const currentSum = await saveShop(related('sumRelated'));
+  const frozenSum = await saveShop(related('sumRelated', 'FrozenLines'));
+  const updateObject = (entryId, format, values) => gql('mutation($id:String!,$input:SaveEntryInput!) { updateEntry(id:$id,input:$input) { id } }', { id: entryId, input: { formatId: format.id, values: Object.entries(values).map(([name, value]) => ({ fieldId: idOf(format, name), value })) } });
+  await updateObject(seeded.product, productFormat, { Name: 'Novel', Price: '200', Discount: '9', Category: refs(seeded.category) });
+  await updateObject(seeded.line1, lineFormat, { Name: 'L1', Amount: '99' });
+  assert.deepEqual(await calcShop(currentPrice, seeded.order), euros2('200'));
+  assert.deepEqual(await calcShop(frozenPrice, seeded.order), euros2('100'));
+  assert.ok((await calcShop(frozenDiscount, seeded.order)).missing, 'a value added later never appears in a snapshot');
+  assert.deepEqual(await calcShop(frozenDiscountOrZero, seeded.order), euros2('0'));
+  assert.deepEqual(await calcShop(currentSum, seeded.order), euros2('119.5'));
+  assert.deepEqual(await calcShop(frozenSum, seeded.order), euros2('30.5'));
+  const snapshotHop = { kind: 'property', referenceFieldId: orderRef('Frozen'), through: [idOf(productFormat, 'Category'), idOf(categoryFormat, 'Group')], propertyFieldId: idOf(groupFormat, 'Rate') };
+  assert.match(await refusedShop(snapshotHop), /snapshot reference cannot be followed/);
+  const smuggled = await saveShop(productPath('Price'));
+  await mongoose.connection.collection('collections').updateOne({ _id: new mongoose.Types.ObjectId(shop.id) }, { $set: { 'formulas.$[item].expression': JSON.stringify(snapshotHop) } }, { arrayFilters: [{ 'item.id': smuggled }] });
+  assert.ok((await calcShop(smuggled, seeded.order)).missing, 'even an unvalidated path never reads through a snapshot');
+
+  // Static validation of paths and aggregates
+  assert.match(await refusedShop({ kind: 'property', referenceFieldId: orderRef('Lines'), propertyFieldId: idOf(lineFormat, 'Amount') }), /single object reference/);
+  assert.match(await refusedShop({ ...ratePath, through: Array.from({ length: 5 }, () => idOf(productFormat, 'Category')) }), /at most five/);
+  assert.match(await refusedShop({ ...ratePath, through: [idOf(productFormat, 'Price')] }), /single object reference/);
+  assert.match(await refusedShop({ kind: 'property', referenceFieldId: orderRef('Customer'), propertyFieldId: idOf(customerFormat, 'City') }), /numeric property/);
+  assert.match(await refusedShop({ kind: 'textProperty', referenceFieldId: orderRef('Product'), propertyFieldId: idOf(productFormat, 'Price') }), /text, title, code or link/);
+  assert.match(await refusedShop({ kind: 'sumRelated', referenceFieldId: orderRef('Customer'), propertyFieldId: idOf(customerFormat, 'City') }), /numeric property/);
+  assert.match(await refusedShop({ kind: 'sumRelated', referenceFieldId: orderRef('Title'), propertyFieldId: idOf(lineFormat, 'Amount') }), /numeric property/);
+  assert.match(await refusedShop({ kind: 'countRelated', referenceFieldId: orderRef('Lines'), propertyFieldId: 'nope' }), /object reference/);
+
+  // Copies and domain packages rewrite every step of a path
+  const relationSource = await buildShop('T24 Source');
+  const relationOrder = relationSource.byName('Order');
+  const sourceRef = (name) => idOf(relationOrder, name);
+  const sourceProduct = relationSource.byName('Product'), sourceCategory = relationSource.byName('Category');
+  for (const [name, expression] of [
+    ['Rate', { kind: 'property', referenceFieldId: sourceRef('Product'), through: [idOf(sourceProduct, 'Category'), idOf(sourceCategory, 'Group')], propertyFieldId: idOf(relationSource.byName('Group'), 'Rate') }],
+    ['City', { kind: 'coalesceText', args: [{ kind: 'textProperty', referenceFieldId: sourceRef('Customer'), propertyFieldId: idOf(relationSource.byName('Customer'), 'City') }, lit(' ')] }],
+    ['Discount', coalesce({ kind: 'property', referenceFieldId: sourceRef('Product'), propertyFieldId: idOf(sourceProduct, 'Discount') }, num('0'))],
+    ['Total', { kind: 'sumRelated', referenceFieldId: sourceRef('Lines'), propertyFieldId: idOf(relationSource.byName('Line'), 'Amount') }],
+    ['Links', { kind: 'countRelated', referenceFieldId: sourceRef('Lines') }],
+    ['Unit', { kind: 'unitOf', value: { kind: 'sumRelated', referenceFieldId: sourceRef('FrozenLines'), propertyFieldId: idOf(relationSource.byName('Line'), 'Amount') } }],
+  ]) await gql(SAVE_FORMULA, { id: relationSource.id, input: { name, formatId: relationOrder.id, expression: JSON.stringify(expression) } });
+  const assertRelationsIn = async (collectionId) => {
+    const target = (await gql('query { collectionsList { id formulas { id name formatId } formats { id name fields { id name } } } }')).collectionsList.find((item) => item.id === collectionId);
+    const byName = (item) => target.formats.find((format) => format.name === item);
+    const entryId = (await seedShop(collectionId, byName)).order;
+    const resultOf = async (name) => ({ ...(await gql(CALCULATE_DATE, { id: collectionId, formulaId: target.formulas.find((item) => item.name === name && item.formatId === byName('Order').id).id, entryId })).calculateCollectionFormula });
+    assert.deepEqual(await resultOf('Rate'), quantityOf('20'));
+    assert.deepEqual(await resultOf('City'), textOf('Paris'));
+    assert.deepEqual(await resultOf('Discount'), euros2('0'));
+    assert.deepEqual(await resultOf('Total'), euros2('30.5'));
+    assert.deepEqual(await resultOf('Links'), quantityOf('3'));
+    assert.deepEqual(await resultOf('Unit'), textOf('EUR'));
+  };
+  const relationCopy = (await gql(CREATE_COLLECTION, { input: { name: 'T24 Copy', formats: [{ name: 'General', color: '#F4F0FF', fields: [{ name: 'Title', kind: 'TITLE' }] }] } })).createCollection;
+  ids.push(relationCopy.id);
+  await gql('mutation($formatId:String!,$targetCollectionId:String!) { copyCollectionDataFormat(formatId:$formatId,targetCollectionId:$targetCollectionId,withEntries:false) { copiedEntries } }', { formatId: relationOrder.id, targetCollectionId: relationCopy.id });
+  await assertRelationsIn(relationCopy.id);
+  const relationPackage = (await gql('query($id:String!,$input:DomainPackageExportInput!) { exportDomainPackage(collectionId:$id,input:$input,language:"en") { packageJson warnings } }', { id: relationSource.id, input: { packageId: 'smoke.t24', version: '1.0.0', name: 'T24', author: 'Smoke', license: 'CC-BY-4.0' } })).exportDomainPackage;
+  assert.deepEqual(relationPackage.warnings, []);
+  const relationInstall = (await gql('mutation($json:String!) { installDomainPackage(packageJson:$json,collectionName:"T24 Installed",language:"en") { collectionId } }', { json: relationPackage.packageJson })).installDomainPackage;
+  ids.push(relationInstall.collectionId);
+  await assertRelationsIn(relationInstall.collectionId);
 
   console.log('analysis smoke passed: formulas, date differences, rounding, formula transfer, units, cycles, zero division, aggregate, filters, period comparison, access, book manual order, templates, links, URL duplicates, link import and 10005-entry analysis');
 } finally {

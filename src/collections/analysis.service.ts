@@ -5,14 +5,14 @@ import { Model, Types } from 'mongoose';
 import { AnalysisInput, AnalysisResult, AnalysisRow, FormulaInput, FormulaResult } from './analysis.input';
 import { executeRegisteredOperation, getOperationSpec, ObservationRecord } from './analysis_registry';
 import { EntryFieldFilterInput, EntryFilterOperator } from './collection.input';
-import { Collection, CollectionField, CollectionFormula, FieldKind } from './collection.schema';
+import { Collection, CollectionField, CollectionFormat, CollectionFormula, FieldKind } from './collection.schema';
 import { codeAtDepth } from './classification.logic';
 import { ZoneAnalysisService } from './zone-analysis.service';
 import { CollaborationService } from './collaboration.service';
 import { assertSensitiveAnalysisRequest, enforceSensitiveAggregate } from './sensitivity.logic';
-import { Entry } from './entry.schema';
+import { Entry, EntryValue } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
-import { addDaysToDate, BooleanExpression, DateExpression, datePart, endOfMonth, Expression, formatDate, formatFormulaDate, formatNumber, FormulaDate, FormulaNode, isDateExpression, isDatePattern, isNumberPattern, isTextExpression, parseFormulaDate, splitCharacters, startOfMonth, TextExpression, toProperCase, wholeMonthsBetween } from './formula_nodes';
+import { addDaysToDate, BooleanExpression, DateExpression, datePart, endOfMonth, Expression, formatDate, formatFormulaDate, formatNumber, FormulaDate, FormulaNode, isDateExpression, isDatePattern, isNumberPattern, isRelatedAggregate, isTextExpression, ObjectPath, parseFormulaDate, RelatedAggregate, splitCharacters, startOfMonth, TextExpression, toProperCase, wholeMonthsBetween } from './formula_nodes';
 
 type Quantity = { value: Rational; unit?: string; dimension?: string; root?: string; factor?: Rational };
 const plus = (a: Rational, b: Rational): Rational => ({ n: a.n * b.d + b.n * a.d, d: a.d * b.d });
@@ -28,7 +28,9 @@ const assertComparable = (left: Quantity, right: Quantity): void => {
 const inLeftUnit = (left: Quantity, right: Quantity): Rational => (left.unit !== right.unit ? divide(multiply(right.value, right.factor!), left.factor!) : right.value);
 const compareRational = (a: Rational, b: Rational): number => { const gap = a.n * b.d - b.n * a.d; return gap < 0n ? -1 : gap > 0n ? 1 : 0; };
 const compareQuantities = (left: Quantity, right: Quantity): number => { assertComparable(left, right); return compareRational(left.value, inLeftUnit(left, right)); };
+type LinkedValue = { raw: string; unitSnapshot?: EntryValue['unitSnapshot']; field?: CollectionField };
 const textFieldKinds = [FieldKind.TEXT, FieldKind.TITLE, FieldKind.CODE, FieldKind.LINK];
+const isUnitlessZero = (node: Expression): boolean => node.kind === 'number' && !node.unit && /^[+-]?0+(?:\.0+)?$/.test(node.value);
 const numericOnly = (node: FormulaNode): Expression => {
   if (isDateExpression(node)) throw new BadRequestException('This formula gives a date, not a number');
   if (isTextExpression(node)) throw new BadRequestException('This formula gives text, not a number');
@@ -90,9 +92,16 @@ export class AnalysisService {
     } else if (node.kind === 'field') {
       if (!format.fields.some((field) => field.id === node.fieldId && field.kind === FieldKind.NUMBER)) throw new BadRequestException('Choose a numeric field in this data format');
     } else if (node.kind === 'property') {
-      const ref = format.fields.find((field) => field.id === node.referenceFieldId && field.kind === FieldKind.OBJECT_REF && !field.multiple);
-      const target = collection.formats.find((item) => item.id === ref?.targetObjectFormatId);
-      if (!target?.fields.some((field) => field.id === node.propertyFieldId && field.kind === FieldKind.NUMBER)) throw new BadRequestException('Choose one numeric property from a single object reference');
+      if (this.pathProperty(node, collection, formatId)?.kind !== FieldKind.NUMBER) throw new BadRequestException('Choose one numeric property from a single object reference');
+    } else if (isRelatedAggregate(node)) {
+      if (this.relatedTarget(node.referenceFieldId, collection, formatId)?.fields.find((field) => field.id === node.propertyFieldId)?.kind !== FieldKind.NUMBER) throw new BadRequestException('Choose a numeric property from an object reference');
+    } else if (node.kind === 'countRelated') {
+      const target = this.relatedTarget(node.referenceFieldId, collection, formatId);
+      if (!target || (node.propertyFieldId !== undefined && !target.fields.some((field) => field.id === node.propertyFieldId))) throw new BadRequestException('Choose an object reference and one of its properties');
+    } else if (node.kind === 'coalesce') {
+      if (!Array.isArray(node.args) || node.args.length < 2) throw new BadRequestException('Choose a value and at least one fallback');
+      for (const argument of node.args) this.inspect(argument, collection, formatId, references, depth + 1, budget);
+      this.assertCompatibleOperands(node.args.filter((argument) => !isUnitlessZero(argument)), collection, formatId);
     } else if (node.kind === 'formula') {
       if (typeof node.formulaId !== 'string') throw new BadRequestException('Invalid formula reference');
       references.add(node.formulaId);
@@ -163,6 +172,14 @@ export class AnalysisService {
     if (node.kind === 'textField') {
       const format = collection.formats.find((item) => item.id === formatId);
       if (!format?.fields.some((field) => field.id === node.fieldId && textFieldKinds.includes(field.kind))) throw new BadRequestException('Choose a text, title, code or link field in this data format');
+    } else if (node.kind === 'textProperty') {
+      const property = this.pathProperty(node, collection, formatId);
+      if (!property || !textFieldKinds.includes(property.kind)) throw new BadRequestException('Choose a text, title, code or link property');
+    } else if (node.kind === 'unitOf') {
+      this.inspect(node.value, collection, formatId, references, depth + 1, budget);
+    } else if (node.kind === 'coalesceText') {
+      if (!Array.isArray(node.args) || node.args.length < 2) throw new BadRequestException('Choose a value and at least one fallback');
+      for (const argument of node.args) this.inspectText(argument, collection, formatId, references, depth + 1, budget);
     } else if (node.kind === 'textLiteral') {
       if (typeof node.value !== 'string' || node.value.length > 1000) throw new BadRequestException('Use a text of at most 1000 characters');
     } else if (node.kind === 'upper' || node.kind === 'lower' || node.kind === 'proper') {
@@ -213,14 +230,36 @@ export class AnalysisService {
     for (const other of known.slice(1)) assertComparable(known[0], other);
   }
 
+  private pathProperty(node: ObjectPath, collection: Collection, formatId: string): CollectionField | undefined {
+    if (node.through !== undefined && (!Array.isArray(node.through) || node.through.length > 4 || node.through.some((id) => typeof id !== 'string'))) throw new BadRequestException('Follow at most five linked objects');
+    const hops = [node.referenceFieldId, ...(node.through ?? [])];
+    let format = collection.formats.find((item) => item.id === formatId);
+    for (const [index, fieldId] of hops.entries()) {
+      const reference = format?.fields.find((field) => field.id === fieldId && field.kind === FieldKind.OBJECT_REF && !field.multiple);
+      if (!reference) throw new BadRequestException('Choose one numeric property from a single object reference');
+      // A snapshot keeps only the referenced object's own values: anything further would be today's data.
+      if (reference.referenceMode === 'SNAPSHOT' && index < hops.length - 1) throw new BadRequestException('A snapshot reference cannot be followed further');
+      format = collection.formats.find((item) => item.id === reference.targetObjectFormatId);
+    }
+    return format?.fields.find((field) => field.id === node.propertyFieldId);
+  }
+
+  private relatedTarget(referenceFieldId: string, collection: Collection, formatId: string): CollectionFormat | undefined {
+    const reference = collection.formats.find((item) => item.id === formatId)?.fields.find((field) => field.id === referenceFieldId && field.kind === FieldKind.OBJECT_REF);
+    return collection.formats.find((item) => item.id === reference?.targetObjectFormatId);
+  }
+
   private declaredQuantity(node: Expression, collection: Collection, formatId: string): Quantity | undefined {
     const format = collection.formats.find((item) => item.id === formatId);
     let unit: string | undefined;
     if (node.kind === 'number') unit = node.unit;
     else if (node.kind === 'field') unit = format?.fields.find((field) => field.id === node.fieldId)?.unit;
-    else if (node.kind === 'property') {
-      const reference = format?.fields.find((field) => field.id === node.referenceFieldId);
-      unit = collection.formats.find((item) => item.id === reference?.targetObjectFormatId)?.fields.find((field) => field.id === node.propertyFieldId)?.unit;
+    else if (node.kind === 'property' || isRelatedAggregate(node)) {
+      try {
+        unit = (node.kind === 'property' ? this.pathProperty(node, collection, formatId) : this.relatedTarget(node.referenceFieldId, collection, formatId)?.fields.find((field) => field.id === node.propertyFieldId))?.unit;
+      } catch {
+        return undefined;
+      }
     } else return undefined;
     const value = { n: 0n, d: 1n };
     if (!unit) return { value };
@@ -322,24 +361,23 @@ export class AnalysisService {
       return { ...quantity, value: { n: sign * (quotient + increment), d: scale } };
     }
     if (node.kind === 'property') {
-      const reference = entry.values.find((item) => item.fieldId === node.referenceFieldId);
-      const objectId = reference?.objectIds?.[0];
-      if (!objectId || reference?.objectIds?.length !== 1) return undefined;
-      const referenceField = format.fields.find((item) => item.id === node.referenceFieldId);
-      let property = referenceField?.referenceMode === 'SNAPSHOT' ? reference.objectSnapshots?.[0]?.properties.find((item) => item.fieldId === node.propertyFieldId) : undefined;
-      // A missing historical value must stay missing; reading the current object would rewrite the past.
-      if (referenceField?.referenceMode === 'SNAPSHOT' && !property) return undefined;
-      let unit = property?.unitSnapshot?.id;
-      if (!property) {
-        const source = await this.entries.findOne({ _id: objectId, ownerId, collectionId: collection.id, formatId: referenceField?.targetObjectFormatId }).exec();
-        const value = source?.values.find((item) => item.fieldId === node.propertyFieldId);
-        if (!value) return undefined;
-        const sourceFormat = collection.formats.find((item) => item.id === source?.formatId);
-        unit = value.unitSnapshot?.id ?? sourceFormat?.fields.find((item) => item.id === node.propertyFieldId)?.unit;
-        return this.quantity(value.numberValue ?? value.value, unit, collection, value.unitSnapshot);
+      const found = await this.followPath(node, collection, entry, ownerId);
+      return found && this.linkedQuantity(found, collection);
+    }
+    if (isRelatedAggregate(node)) return this.aggregateRelated(node, collection, entry, ownerId);
+    if (node.kind === 'countRelated') {
+      const linked = await this.relatedValues(node, collection, entry, ownerId);
+      return { value: { n: BigInt(node.propertyFieldId === undefined ? linked.length : linked.filter(Boolean).length), d: 1n } };
+    }
+    if (node.kind === 'coalesce') {
+      for (const argument of node.args) {
+        const value = await this.evaluateNode(argument, collection, entry, ownerId, depth + 1);
+        if (!value) continue;
+        // A plain 0 means "zero of whatever this is", so that it can still be added to the other operands.
+        const declared = isUnitlessZero(argument) ? node.args.map((item) => this.declaredQuantity(item, collection, entry.formatId!)).find((item) => item?.unit) : undefined;
+        return declared ? { ...declared, value: value.value } : value;
       }
-      unit ??= collection.formats.find((item) => item.id === referenceField?.targetObjectFormatId)?.fields.find((item) => item.id === node.propertyFieldId)?.unit;
-      return this.quantity(property.value, unit, collection, property.unitSnapshot);
+      return undefined;
     }
     if (node.kind === 'formula') {
       const formula = (collection.formulas ?? []).find((item) => item.id === node.formulaId && item.formatId === entry.formatId);
@@ -431,11 +469,87 @@ export class AnalysisService {
     return { ...left, value };
   }
 
+  private linkedQuantity(found: LinkedValue, collection: Collection): Quantity {
+    return this.quantity(found.raw, found.unitSnapshot?.id ?? found.field?.unit, collection, found.unitSnapshot);
+  }
+
+  /** Follows single references. A SNAPSHOT step reads only what the holding entry froze, never the current object. */
+  private async followPath(node: ObjectPath, collection: Collection, entry: Entry, ownerId: string): Promise<LinkedValue | undefined> {
+    const hops = [node.referenceFieldId, ...(node.through ?? [])];
+    let holder = entry;
+    let format = collection.formats.find((item) => item.id === entry.formatId);
+    for (const [index, fieldId] of hops.entries()) {
+      const field = format?.fields.find((item) => item.id === fieldId && item.kind === FieldKind.OBJECT_REF);
+      const reference = holder.values.find((item) => item.fieldId === fieldId);
+      const objectId = reference?.objectIds?.length === 1 ? reference.objectIds[0] : undefined;
+      const target = collection.formats.find((item) => item.id === field?.targetObjectFormatId);
+      if (!field || !reference || !objectId || !target || !Types.ObjectId.isValid(objectId)) return undefined;
+      if (field.referenceMode === 'SNAPSHOT') {
+        if (index < hops.length - 1) return undefined;
+        const property = reference.objectSnapshots?.[0]?.properties.find((item) => item.fieldId === node.propertyFieldId);
+        return property?.value ? { raw: property.value, unitSnapshot: property.unitSnapshot, field: target.fields.find((item) => item.id === node.propertyFieldId) } : undefined;
+      }
+      const next = await this.entries.findOne({ _id: objectId, ownerId, collectionId: collection.id, formatId: target.id }).exec();
+      if (!next) return undefined;
+      holder = next;
+      format = target;
+    }
+    const value = holder.values.find((item) => item.fieldId === node.propertyFieldId);
+    const raw = value?.numberValue ?? value?.value;
+    return raw ? { raw, unitSnapshot: value?.unitSnapshot, field: format?.fields.find((item) => item.id === node.propertyFieldId) } : undefined;
+  }
+
+  /** One slot per linked object, `undefined` when that object has no value for the property. */
+  private async relatedValues(node: { referenceFieldId: string; propertyFieldId?: string }, collection: Collection, entry: Entry, ownerId: string): Promise<(LinkedValue | undefined)[]> {
+    const field = collection.formats.find((item) => item.id === entry.formatId)?.fields.find((item) => item.id === node.referenceFieldId && item.kind === FieldKind.OBJECT_REF);
+    const target = collection.formats.find((item) => item.id === field?.targetObjectFormatId);
+    const reference = entry.values.find((item) => item.fieldId === node.referenceFieldId);
+    const ids = reference?.objectIds ?? [];
+    if (!field || !target || !ids.length) return [];
+    const propertyField = target.fields.find((item) => item.id === node.propertyFieldId);
+    const linked = (raw: string | undefined, unitSnapshot: EntryValue['unitSnapshot']): LinkedValue | undefined => (raw ? { raw, unitSnapshot, field: propertyField } : undefined);
+    if (field.referenceMode === 'SNAPSHOT') {
+      return ids.map((id) => {
+        const property = reference?.objectSnapshots?.find((item) => item.objectId === id)?.properties.find((item) => item.fieldId === node.propertyFieldId);
+        return linked(property?.value, property?.unitSnapshot);
+      });
+    }
+    const objects = await this.entries.find({ _id: { $in: ids.filter((id) => Types.ObjectId.isValid(id)) }, ownerId, collectionId: collection.id, formatId: target.id }).exec();
+    return objects.map((object) => {
+      const value = object.values.find((item) => item.fieldId === node.propertyFieldId);
+      return linked(value?.numberValue ?? value?.value, value?.unitSnapshot);
+    });
+  }
+
+  /** Objects without the property are left out, as in collection analyses. With no value at all the result is absent. */
+  private async aggregateRelated(node: RelatedAggregate, collection: Collection, entry: Entry, ownerId: string): Promise<Quantity | undefined> {
+    const quantities = (await this.relatedValues(node, collection, entry, ownerId)).filter((item): item is LinkedValue => !!item).map((item) => this.linkedQuantity(item, collection));
+    if (!quantities.length) return undefined;
+    if (node.kind === 'minRelated' || node.kind === 'maxRelated') {
+      const wanted = node.kind === 'minRelated' ? -1 : 1;
+      return quantities.reduce((best, candidate) => (compareQuantities(candidate, best) === wanted ? candidate : best));
+    }
+    const total = quantities.reduce((sum, item) => { assertComparable(sum, item); return { ...sum, value: plus(sum.value, inLeftUnit(sum, item)) }; });
+    return node.kind === 'sumRelated' ? total : { ...total, value: divide(total.value, { n: BigInt(quantities.length), d: 1n }) };
+  }
+
   /** `undefined` means a source value is missing; an empty literal stays a real, empty text. */
   private async evaluateText(node: TextExpression, collection: Collection, entry: Entry, ownerId: string, depth: number): Promise<string | undefined> {
     if (depth > 16) throw new BadRequestException('Formula is too deep');
     if (node.kind === 'textLiteral') return node.value;
     if (node.kind === 'textField') return entry.values.find((item) => item.fieldId === node.fieldId)?.value || undefined;
+    if (node.kind === 'textProperty') return (await this.followPath(node, collection, entry, ownerId))?.raw;
+    if (node.kind === 'unitOf') {
+      const quantity = await this.evaluateNode(node.value, collection, entry, ownerId, depth + 1);
+      return quantity && (quantity.unit ?? '');
+    }
+    if (node.kind === 'coalesceText') {
+      for (const argument of node.args) {
+        const value = await this.evaluateText(argument, collection, entry, ownerId, depth + 1);
+        if (value !== undefined) return value;
+      }
+      return undefined;
+    }
     if (node.kind === 'concat') {
       let joined = '';
       for (const argument of node.args) {
@@ -452,8 +566,7 @@ export class AnalysisService {
       }
       const quantity = await this.evaluateNode(node.value, collection, entry, ownerId, depth + 1);
       if (!quantity) return undefined;
-      const number = formatNumber(quantity.value, node.pattern, node.locale);
-      return quantity.unit ? `${number} ${quantity.unit}` : number;
+      return formatNumber(quantity.value, node.pattern, node.locale);
     }
     const text = await this.evaluateText(node.text, collection, entry, ownerId, depth + 1);
     if (text === undefined) return undefined;

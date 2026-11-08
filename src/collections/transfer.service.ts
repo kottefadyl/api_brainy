@@ -254,7 +254,8 @@ export class TransferService implements OnApplicationBootstrap {
     const remapExpression = (node: Record<string, unknown>): Record<string, unknown> => {
       const mapped = { ...node };
       for (const key of ['fieldId', 'referenceFieldId', 'propertyFieldId', 'fromFieldId', 'toFieldId']) if (typeof mapped[key] === 'string') mapped[key] = fieldIds.get(mapped[key] as string) ?? mapped[key];
-      if (typeof mapped.formulaId === 'string') mapped.formulaId = formulaIds.get(mapped.formulaId) ?? mapped.formulaId;
+      if (Array.isArray(mapped.through)) mapped.through = mapped.through.map((step) => fieldIds.get(step as string) ?? step);
+      if (typeof mapped.formulaId === 'string') mapped.formulaId =formulaIds.get(mapped.formulaId) ?? mapped.formulaId;
       if (typeof mapped.unit === 'string' && mapped.unit.startsWith('local:')) mapped.unit = `local:${unitIds.get(mapped.unit.slice(6)) ?? mapped.unit.slice(6)}`;
       if (Array.isArray(mapped.args)) mapped.args = mapped.args.map((arg) => remapExpression(arg as Record<string, unknown>));
       for (const key of formulaChildKeys) if (mapped[key] && typeof mapped[key] === 'object' && !Array.isArray(mapped[key])) mapped[key] = remapExpression(mapped[key] as Record<string, unknown>);

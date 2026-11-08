@@ -159,6 +159,7 @@ export class DomainPackageService {
       let missing = false;
       const map = (node: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(node).map(([name, value]) => {
         if (['fieldId', 'referenceFieldId', 'propertyFieldId', 'fromFieldId', 'toFieldId'].includes(name)) { const found = fieldKeys.get(value as string); if (!found) missing = true; return [name, found?.key ?? '']; }
+        if (name === 'through' && Array.isArray(value)) return [name, value.map((step) => { const found = fieldKeys.get(step as string); if (!found) missing = true; return found?.key ?? ''; })];
         if (name === 'formulaId') { const found = formulaKeys.get(value as string); if (!found) missing = true; return [name, found ?? '']; }
         if (name === 'unit' && typeof value === 'string' && node.kind === 'number') { const mapped = builtInUnits.some((item) => item.id === value) ? value : unitKeys.has(value) ? `local:${unitKeys.get(value)}` : undefined; if (!mapped) missing = true; return [name, mapped ?? '']; }
         if (name === 'args' && Array.isArray(value)) return [name, value.map((child) => map(child as Record<string, unknown>))];
@@ -400,9 +401,20 @@ export class DomainPackageService {
     }
     for (const formula of plan.formulas) {
       const format = plan.pkg.content.dataFormats.find((item) => item.key === formula.dataFormat)!;
+      // Keys are unique per data format only, so each step is resolved in the format the previous step points to.
+      const path = (node: Record<string, unknown>): { steps: string[]; last?: PackageField } => {
+        let last = format.fields.find((item) => item.key === node.referenceFieldId);
+        const steps = ((node.through ?? []) as string[]).map((step) => {
+          const owner = last?.target;
+          last = plan.pkg.content.dataFormats.find((item) => item.key === owner)?.fields.find((item) => item.key === step);
+          return field(`${owner}.${step}`) ?? '';
+        });
+        return { steps, last };
+      };
       const map = (node: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(node).map(([name, value]) => {
         if (['fieldId', 'referenceFieldId', 'fromFieldId', 'toFieldId'].includes(name)) return [name, field(`${format.key}.${value as string}`) ?? ''];
-        if (name === 'propertyFieldId') { const reference = format.fields.find((item) => item.key === node.referenceFieldId); return [name, field(`${reference?.target}.${value as string}`) ?? '']; }
+        if (name === 'through' && Array.isArray(value)) return [name, path(node).steps];
+        if (name === 'propertyFieldId') return [name, field(`${path(node).last?.target}.${value as string}`) ?? ''];
         if (name === 'formulaId') return [name, plan.keys.get(`formula:${value as string}`) ?? ''];
         if (name === 'unit' && typeof value === 'string' && value.startsWith('local:')) return [name, plan.keys.get(`unit:${value.slice(6)}`) ?? ''];
         if (name === 'args' && Array.isArray(value)) return [name, value.map((child) => map(child as Record<string, unknown>))];

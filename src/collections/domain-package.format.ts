@@ -114,9 +114,10 @@ export function signatureStatus(source: string): { status: 'NONE' | 'VALID' | 'I
 
 function expression(node: unknown, path: string, depth = 0, budget = { count: 0 }): Record<string, unknown> {
   if (++budget.count > 64 || depth > 12) fail('Formula is too complex');
-  const item = record(node, path, ['kind', 'value', 'unit', 'fieldId', 'referenceFieldId', 'propertyFieldId', 'formulaId', 'fromFieldId', 'toFieldId', 'digits', 'mode', 'operator', 'args', 'condition', 'then', 'else', 'left', 'right', 'arg', 'date', 'days', 'end', 'start', 'duration', 'part', 'text', 'length', 'pattern', 'locale'], ['kind']);
+  const item = record(node, path, ['kind', 'value', 'unit', 'fieldId', 'referenceFieldId', 'propertyFieldId', 'formulaId', 'fromFieldId', 'toFieldId', 'digits', 'mode', 'operator', 'args', 'condition', 'then', 'else', 'left', 'right', 'arg', 'date', 'days', 'end', 'start', 'duration', 'part', 'text', 'length', 'pattern', 'locale', 'through'], ['kind']);
   for (const [name, value] of Object.entries(item)) {
     if (name === 'args') list(value, `${path}.args`, 64).forEach((child, index) => expression(child, `${path}.args[${index}]`, depth + 1, budget));
+    else if (name === 'through') list(value, `${path}.through`, 4).forEach((step, index) => text(step, `${path}.through[${index}]`, 64));
     else if (formulaChildKeys.includes(name) && typeof value === 'object') expression(value, `${path}.${name}`, depth + 1, budget);
     else if (name === 'value' && typeof value === 'boolean') continue;
     // A literal may legitimately be empty or a single space, such as a separator.
