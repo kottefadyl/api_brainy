@@ -146,6 +146,18 @@ input ClassificationCodeInput {
   parentCode: String
 }
 
+type ClassificationCodePath {
+  active: Boolean!
+  code: String!
+  label: String!
+  level: Int!
+
+  """
+  Labels of the ancestors, from the root; the code itself is not included
+  """
+  path: [String!]!
+}
+
 type ClassificationCopyPreview {
   allowed: Boolean!
   codeCount: Int!
@@ -1193,6 +1205,7 @@ type Query {
   backgroundJob(jobId: String!): BackgroundJob!
   backgroundJobs(collectionId: String!): [BackgroundJob!]!
   calculateCollectionFormula(collectionId: String!, entryId: String!, formulaId: String!): FormulaResult!
+  classificationCodePaths(collectionId: String!, language: String, listId: String!): [ClassificationCodePath!]!
   classificationCopyPreview(collectionId: String!, listId: String!, targetCollectionId: String!): ClassificationCopyPreview!
   classificationMergePreview(collectionId: String!, fromCode: String!, listId: String!, toCode: String!): ClassificationMergePreview!
   collectionAuditLogs(collectionId: String!): [AuditLog!]!
