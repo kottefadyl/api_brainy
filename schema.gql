@@ -724,6 +724,8 @@ type EntryValue {
   dateValue: String
   durationSeconds: Float
   fieldId: String!
+  largeFileId: String
+  largeFileSha256: String
   measureValue: EntryMeasureValue
   numberValue: String
   objectIds: [String!]
@@ -737,6 +739,7 @@ input EntryValueInput {
   attachmentBase64: String
   attachmentMimeType: String
   fieldId: String!
+  largeFileId: String
   measureValue: EntryMeasureValueInput
   unitSnapshot: UnitSnapshotInput
   value: String!
@@ -923,6 +926,33 @@ input InitialCodeListInput {
   name: String!
 }
 
+type LargeFileLink {
+  expiresAt: DateTime!
+  fileName: String!
+  sha256: String
+  size: Float!
+  url: String!
+}
+
+type LargeFileStatus {
+  checkedAt: DateTime
+  fileName: String!
+  largeFileId: String!
+  size: Float!
+  state: String!
+}
+
+type LargeFileUpload {
+  chunkSize: Int!
+  fileName: String!
+  id: ID!
+  partCount: Int!
+  receivedParts: [Int!]!
+  sha256: String
+  size: Float!
+  state: String!
+}
+
 type LedgerIntegrity {
   checked: Float!
   headHash: String!
@@ -964,6 +994,7 @@ type MoveOperationStatus {
 }
 
 type Mutation {
+  abortLargeFileUpload(uploadId: String!): Boolean!
   acceptLinkedDataFormatVersion(expectedSourceVersion: Int!, targetCollectionId: String!, targetFormatId: String!): Collection!
   addCollectionFormat(collectionId: String!, input: CollectionFormatInput!): Collection!
   addCollectionMember(collectionId: String!, email: String!, role: CollectionRole!, sensitiveFieldIds: [String!], sharedFieldIds: [String!]): Collection!
@@ -973,8 +1004,10 @@ type Mutation {
   cancelBackgroundJob(jobId: String!): BackgroundJob!
   cancelDataSourceRun(runId: String!): DataSourceRun!
   cancelEntryReminder(reminderId: String!): Boolean!
+  checkLargeFiles(collectionId: String!): [LargeFileStatus!]!
   commitEntryStockEffect(collectionId: String!, entryId: String!, expectedUpdatedAt: String!, ruleId: String!): StockMovement!
   commitStockMovement(collectionId: String!, input: StockMovementInput!): StockMovement!
+  completeLargeFileUpload(sha256: String!, uploadId: String!): LargeFileUpload!
   copyClassification(collectionId: String!, listId: String!, targetCollectionId: String!): Collection!
   copyCollectionDataFormat(formatId: String!, targetCollectionId: String!, withEntries: Boolean! = false): TransferResult!
   copyCollectionObject(objectId: String!, targetCollectionId: String!): TransferResult!
@@ -1051,6 +1084,7 @@ type Mutation {
   setStockNegativePolicy(allowNegative: Boolean!, collectionId: String!): Collection!
   shareCollectionObject(includeSensitive: Boolean, mode: String!, objectId: String!, propertyFieldIds: [String!]!, targetCollectionId: String!): SharedObjectGrant!
   startBackgroundJob(collectionId: String!, input: StartBackgroundJobInput!): BackgroundJob!
+  startLargeFileUpload(collectionId: String!, input: StartLargeFileUploadInput!): LargeFileUpload!
   submitContribution(input: SubmitContributionInput!, token: String!): ContributionReceipt!
   transitionWorkflowEntry(entryId: String!, expectedUpdatedAt: String!, to: String!): Entry!
   unregisterPushDevice(id: String!): Boolean!
@@ -1060,7 +1094,9 @@ type Mutation {
   updateNote(id: String!, input: UpdateNoteInput!): Note
   updateProfile(input: ProfileInput!): User!
   uploadDataSourceDelivery(content: String!, contentType: String!, deliveryId: String!, sourceId: String!): DataSourceRun!
+  uploadLargeFilePart(base64: String!, partNumber: Int!, sha256: String!, uploadId: String!): LargeFileUpload!
   useCollectionObject(objectId: String!, targetFieldId: String!, targetFormatId: String!): Entry!
+  verifyLargeFile(entryId: String!, fieldId: String!): LargeFileStatus!
 }
 
 type Note {
@@ -1179,6 +1215,8 @@ type Query {
   exportGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, includeSensitive: Boolean, kind: String!): String!
   forecastCollection(collectionId: String!, input: ForecastInput!): ForecastResult!
   health: String!
+  largeFileDownloadLink(entryId: String!, fieldId: String!): LargeFileLink!
+  largeFileUpload(uploadId: String!): LargeFileUpload!
   ledgerBalance(collectionId: String!, fieldId: String!, formatId: String!): String!
   ledgerProof(collectionId: String!, formatId: String!): String!
   linkedDataFormatUpdatePreview(targetCollectionId: String!, targetFormatId: String!): LinkedFormatUpdatePreview!
@@ -1337,6 +1375,12 @@ input StartBackgroundJobInput {
   kind: String!
   payload: String!
   requestKey: String!
+}
+
+input StartLargeFileUploadInput {
+  fileName: String!
+  mimeType: String!
+  size: Float!
 }
 
 type StarterTemplate {

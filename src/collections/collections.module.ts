@@ -56,6 +56,10 @@ import { DomainPackageService } from './domain-package.service';
 import { DataSource, DataSourceRun, DataSourceRunSchema, DataSourceSchema } from './data-source.schema';
 import { DataSourceResolver } from './data-source.resolver';
 import { DataSourceService } from './data-source.service';
+import { LargeFile, LargeFileSchema } from './large-file.schema';
+import { LargeFileResolver } from './large-file.resolver';
+import { LargeFileService } from './large-file.service';
+import { S3Storage } from './large-file.s3';
 
 @Module({
   imports: [
@@ -83,9 +87,10 @@ import { DataSourceService } from './data-source.service';
       { name: DomainPackageInstall.name, schema: DomainPackageInstallSchema },
       { name: DataSource.name, schema: DataSourceSchema },
       { name: DataSourceRun.name, schema: DataSourceRunSchema },
+      { name: LargeFile.name, schema: LargeFileSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}

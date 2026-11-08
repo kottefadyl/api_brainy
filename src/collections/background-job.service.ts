@@ -13,6 +13,7 @@ import { ForecastService } from './forecast.service';
 import { CollaborationService } from './collaboration.service';
 import { protectedFields } from './sensitivity.logic';
 import { EntryValue } from './entry.schema';
+import { LargeFileService } from './large-file.service';
 
 type ImportPayload = Pick<ImportEntriesInput, 'formatId' | 'rows'>;
 type ExportPayload = { formatId: string; limit?: number; includeSensitive?: boolean };
@@ -33,6 +34,7 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
     private readonly analysis: AnalysisService,
     private readonly forecast: ForecastService,
     private readonly collaboration: CollaborationService,
+    private readonly largeFiles: LargeFileService,
   ) {}
 
   onApplicationBootstrap() {
@@ -215,8 +217,13 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
     const currentFormat = latest.formats.find((item) => item.id === payload.formatId);
     if (!currentFormat) throw new BadRequestException('Data format changed during export');
     const hidden = payload.includeSensitive === true ? new Set<string>() : protectedFields(currentFormat);
-    const safeRows = rows.map((row) => ({ ...row, values: row.values.filter((value) => !hidden.has(value.fieldId)).map((value) => payload.includeSensitive ? value : { ...value, objectSnapshots: [] }) }));
+    // Values are Mongoose subdocuments: copy them as plain objects before reshaping (spreading a subdocument copies its internals).
+    const plain = (value: EntryValue): EntryValue => (typeof (value as { toObject?: () => EntryValue }).toObject === 'function' ? (value as unknown as { toObject: () => EntryValue }).toObject() : value);
+    const safeRows = rows.map((row) => ({ ...row, values: row.values.filter((value) => !hidden.has(value.fieldId)).map(plain).map((value) => payload.includeSensitive ? value : { ...value, objectSnapshots: [] }) }));
     if (payload.includeSensitive && protectedFields(currentFormat).size) await this.collaboration.logAction(job.collectionId, job.ownerId, 'EXPORT_PROTECTED_DATA', `Data format ${currentFormat.id}; rows ${rows.length}`);
-    return { formatId: payload.formatId, rows: safeRows, hasMore, protectedFieldsIncluded: payload.includeSensitive === true };
+    // T44: large attachments are listed by reference with how to retrieve them; their content is never exported.
+    const referenced = new Set(rows.flatMap((row) => row.values.flatMap((value) => value.largeFileId ? [value.largeFileId] : [])));
+    const largeFiles = referenced.size ? (await this.largeFiles.references([job.collectionId])).filter((file) => referenced.has(file.largeFileId)) : [];
+    return { formatId: payload.formatId, rows: safeRows, hasMore, protectedFieldsIncluded: payload.includeSensitive === true, ...(largeFiles.length ? { largeFiles, largeFileNotice: 'Large files are listed by reference. Download each one from Brainy (a 5-minute signed link) or ask the storage administrator for the listed bucket/key.' } : {}) };
   }
 }

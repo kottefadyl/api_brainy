@@ -139,6 +139,15 @@ export class EntryValue {
   @Prop({ type: Buffer })
   attachmentData?: Buffer;
 
+  // T44 — an attachment above 2 MiB is stored by reference.
+  @Field({ nullable: true })
+  @Prop()
+  largeFileId?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  largeFileSha256?: string;
+
   @Field(() => [String], { nullable: true })
   @Prop({ type: [String], default: undefined })
   objectIds?: string[];
@@ -303,6 +312,7 @@ EntrySchema.index({ ownerId: 1, collectionId: 1, 'values.value': 'text' }, { def
 EntrySchema.index({ ownerId: 1, collectionId: 1, importKey: 1, sourceId: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' }, sourceId: { $type: 'string' } } });
 EntrySchema.index({ ownerId: 1, collectionId: 1, clientMutationId: 1 }, { unique: true, partialFilterExpression: { clientMutationId: { $type: 'string' } } });
 EntrySchema.index({ ownerId: 1, 'values.objectIds': 1 });
+EntrySchema.index({ 'values.largeFileId': 1 }, { sparse: true });
 
 @ObjectType()
 export class EntryPage {

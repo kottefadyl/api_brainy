@@ -204,6 +204,9 @@ export class EntryValueInput {
   @Field({ nullable: true })
   attachmentMimeType?: string;
 
+  @Field({ nullable: true })
+  largeFileId?: string;
+
   @Field(() => UnitSnapshotInput, { nullable: true })
   unitSnapshot?: UnitSnapshotInput;
 

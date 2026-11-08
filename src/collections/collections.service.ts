@@ -13,6 +13,7 @@ import { CollectionUnit, QuantityConversion, UnitSnapshot } from './unit.schema'
 import { StockLedgerHead, StockMovement } from './stock.schema';
 import { MeasurementService } from './measurement.service';
 import { CollaborationService } from './collaboration.service';
+import { LargeFileService } from './large-file.service';
 import { LedgerService } from './ledger.service';
 import { CollectionRole } from './collaboration.schema';
 import { parsePosition, parseZone } from './geo.logic';
@@ -62,7 +63,8 @@ export class CollectionsService {
     @InjectModel(StockLedgerHead.name) private readonly stockLedgerHeads: Model<StockLedgerHead>,
     private readonly collaboration: CollaborationService,
     private readonly ledger: LedgerService,
-  ) {}
+    private readonly largeFiles: LargeFileService,
+  ) { largeFiles.useCollections(this); }
 
   private validId(id: string): void {
     if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid ID');
@@ -548,6 +550,7 @@ export class CollectionsService {
     if (await this.collections.exists({ ownerId: collection.ownerId, sharedObjects: { $elemMatch: { sourceCollectionId: id, revokedAt: null } } })) throw new BadRequestException('Revoke object links before deleting this collection');
     if (await this.collections.exists({ ownerId: collection.ownerId, 'formats.linkedSource.sourceCollectionId': id })) throw new BadRequestException('Detach linked data formats before deleting this collection');
     await this.entries.deleteMany({ collectionId: id }).exec();
+    await this.largeFiles.forgetCollection(id);
     await this.contributionSubmissions.deleteMany({ collectionId: id }).exec();
     await this.contributionLinks.deleteMany({ collectionId: id }).exec();
     await this.stockMovements.deleteMany({ collectionId: id }).exec();
@@ -953,6 +956,7 @@ export class CollectionsService {
     if (correctionOf && !format.appendOnly) throw new BadRequestException('Corrections require a register');
     if (format.appendOnly && contribution) throw new BadRequestException('Public contributions cannot write directly to a register');
     const validated = prepareWorkflowCreate(format, this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []));
+    await this.largeFiles.bind(collection, validated);
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
     let entry: Entry;
@@ -1178,6 +1182,7 @@ export class CollectionsService {
     const format = collection.formats.find((item) => item.id === savedFormatId);
     if (!format) throw new BadRequestException('Data format not found in this collection');
     const validated = this.validateValues(values, format.fields, entry.values, collection.units, false, collection.codeLists ?? []);
+    await this.largeFiles.bind(collection, validated, entry.values);
     assertWorkflowEdit(format, entry.values, validated);
     await this.validateReferences(collection, format, validated, collection.ownerId, entry.id, entry.values);
     this.assertObjectTitle(format, validated);
@@ -1202,6 +1207,7 @@ export class CollectionsService {
     if (await this.entries.exists({ collectionId: collection.id, $or: [{ sourceObjectId: id }, { 'values.objectIds': id }] })) throw new BadRequestException('This object is used in entries. Remove those links first');
     if (await this.collections.exists({ _id: collection.id, sharedObjects: { $elemMatch: { objectId: id, revokedAt: null } } })) throw new BadRequestException('Revoke object links before deleting this object');
     const result = await this.entries.deleteOne({ _id: id, movingOperationId: null }).exec();
+    if (result.deletedCount > 0) await this.largeFiles.markIfUnreferenced(entry.values.flatMap((value) => value.largeFileId ? [value.largeFileId] : []));
     if (result.deletedCount > 0) {
       await this.collaboration.logAction(collection.id, ownerId, 'DELETE_ENTRY', `Deleted entry ${id}`);
       return true;
@@ -1238,6 +1244,14 @@ export class CollectionsService {
       switch (field.kind) {
         case FieldKind.ATTACHMENT: {
           if (text.length > 255 || /[\\/\x00-\x1f\x7f]/.test(text) || text === '.' || text === '..') throw new BadRequestException(`${field.name} needs a valid file name`);
+          // T44: above 2 MiB the file is stored by reference (see large-file.service.ts).
+          const previousLarge = existing.find((item) => item.fieldId === fieldId && item.largeFileId && (input.largeFileId ? item.largeFileId === input.largeFileId : item.value === text));
+          if (input.largeFileId != null || (input.attachmentBase64 == null && previousLarge)) {
+            if (input.attachmentBase64 != null) throw new BadRequestException(`${field.name} cannot hold a file and a large file reference`);
+            const largeFileId = input.largeFileId ?? previousLarge!.largeFileId!;
+            if (!/^[a-f0-9]{24}$/.test(largeFileId)) throw new BadRequestException(`${field.name} needs a valid large file`);
+            return { fieldId, value: text, largeFileId, ...(previousLarge?.largeFileId === largeFileId ? { attachmentSize: previousLarge.attachmentSize, attachmentMimeType: previousLarge.attachmentMimeType, largeFileSha256: previousLarge.largeFileSha256 } : {}) };
+          }
           const previous = existing.find((item) => item.fieldId === fieldId && item.value === text && item.attachmentData);
           let data: Buffer;
           if (input.attachmentBase64 != null) {
