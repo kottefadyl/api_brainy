@@ -1,6 +1,6 @@
 import type { Rational } from './unit_math';
 
-export type BooleanExpression ={ kind: 'boolean'; value: boolean } | { kind: 'comparison'; operator: 'EQ' | 'NEQ' | 'LT' | 'LTE' | 'GT' | 'GTE'; left: Expression; right: Expression } | { kind: 'logical'; operator: 'AND' | 'OR'; args: BooleanExpression[] } | { kind: 'not'; arg: BooleanExpression };
+export type BooleanExpression ={ kind: 'boolean'; value: boolean } | { kind: 'comparison'; operator: 'EQ' | 'NEQ' | 'LT' | 'LTE' | 'GT' | 'GTE'; left: FormulaNode; right: FormulaNode } | { kind: 'logical'; operator: 'AND' | 'OR'; args: BooleanExpression[] } | { kind: 'not'; arg: BooleanExpression };
 export type DateExpression = { kind: 'dateField'; fieldId: string } | { kind: 'dateLiteral'; value: string } | { kind: 'addDays'; date: DateExpression; days: Expression } | { kind: 'startOfMonth'; date: DateExpression } | { kind: 'endOfMonth'; date: DateExpression };
 /** `through` lists the single references followed after the first one, so a.b.c.d is a, [b, c], d. */
 export type ObjectPath = { referenceFieldId: string; through?: string[]; propertyFieldId: string };

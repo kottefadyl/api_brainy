@@ -1077,6 +1077,36 @@ try {
   assert.equal((await calcTyped(gamma)).value, '1', 'a refused cycle leaves the formulas unchanged');
   assert.equal((await calcTyped(await saveTyped('Diamond', binary('ADD', { kind: 'formula', formulaId: beta }, { kind: 'formula', formulaId: gamma })))).value, '2', 'sharing a dependency is not a cycle');
 
+  // T21/6 — Date and text comparisons, and previewing a formula that is not saved
+  const dateCheck = (operator, left, right) => iifNumberOf(cmp(operator, left, right));
+  const previewOf = async (expression) => (await gql('query($id:String!,$formatId:String!,$expression:String!) { previewCollectionFormula(collectionId:$id,formatId:$formatId,expression:$expression) { entryId entryLabel value unit dimension missing } }', { id: datesCol.id, formatId: eventFmt.id, expression: JSON.stringify(expression) })).previewCollectionFormula;
+  for (const [operator, left, right, expected] of [['LT', '2026-01-01', '2026-01-02', '1'], ['LT', '2026-01-02', '2026-01-01', '0'], ['LTE', '2026-01-01', '2026-01-01', '1'], ['GT', '2026-02-01', '2026-01-31', '1'], ['GTE', '2026-01-01', '2026-01-02', '0'], ['EQ', '2026-01-01', '2026-01-01T00:00:00Z', '1'], ['NEQ', '2026-01-01', '2026-01-02', '1'], ['EQ', '2026-01-01T12:00:00+02:00', '2026-01-01T10:00:00Z', '1']]) {
+    assert.equal((await evalDate(dateCheck(operator, day(left), day(right)))).value, expected, `${left} ${operator} ${right}`);
+  }
+  assert.equal((await evalDate(dateCheck('GTE', dateField('End'), dateField('Start')))).value, '1');
+  assert.equal((await evalDate(dateCheck('LT', addDays(dateField('Start'), num('1')), dateField('End')))).value, '1');
+  assert.ok((await evalDate(dateCheck('LT', dateField('Start'), day('2026-01-01')), blankEvent)).missing, 'a missing date leaves the condition unknown');
+  for (const [operator, left, right, expected] of [['EQ', 'VALIDE', 'VALIDE', '1'], ['EQ', 'VALIDE', 'valide', '0'], ['NEQ', 'VALIDE', 'BROUILLON', '1'], ['NEQ', 'VALIDE', 'VALIDE', '0'], ['EQ', 'é', 'é', '1']]) {
+    assert.equal((await evalText(iifNumberOf(cmp(operator, lit(left), lit(right))))).value, expected, `${left} ${operator} ${right}`);
+  }
+  assert.equal((await evalText(iifNumberOf(cmp('EQ', textField('Label'), lit('Bonjour'))))).value, '1');
+  assert.ok((await evalText(iifNumberOf(cmp('EQ', textField('Body'), lit('x'))), blankNote)).missing);
+  assert.match(await refusedTyped(iifNumberOf(cmp('LT', sheetText('Note'), lit('a')))), /equal or different/);
+  assert.match(await refusedTyped(iifNumberOf(cmp('EQ', sheetText('Note'), price))), /Cannot compare text with a number/);
+  assert.match(await refusedTyped(iifNumberOf(cmp('EQ', cmp('GT', num('1'), num('0')), cmp('GT', num('1'), num('0'))))), /Conditions cannot be compared/);
+  assert.match(await refusedTyped(binary('ADD', price, distance)), /Cannot add incompatible units: EUR and km/);
+  assert.match(await refusedTyped(binary('ADD', price, quantity)), /Cannot add incompatible units: EUR and no unit/);
+  const firstEventPreview = { ...(await previewOf(diff('DAYS', dateField('End'), dateField('Start')))) };
+  assert.deepEqual(firstEventPreview, { entryId: fullEvent, entryLabel: 'Full', value: '29', unit: 'd', dimension: 'TIME', missing: null });
+  assert.equal((await previewOf(addDays(dateField('Start'), num('1')))).dimension, 'DATE');
+  assert.equal((await previewOf(part('YEAR', dateField('Start')))).value, '2026');
+  const countBefore = (await gql('query { collectionsList { id formulas { id } } }')).collectionsList.find((item) => item.id === datesCol.id).formulas.length;
+  await previewOf(num('1'));
+  assert.equal((await gql('query { collectionsList { id formulas { id } } }')).collectionsList.find((item) => item.id === datesCol.id).formulas.length, countBefore, 'a preview saves nothing');
+  const emptyFormat = (await gql(ADD_FORMAT, { id: datesCol.id, input: { name: 'Empty', color: '#EDF9F3', fields: [{ name: 'Title', kind: 'TITLE' }] } })).addCollectionFormat.formats.find((item) => item.name === 'Empty');
+  assert.equal((await gql('query($id:String!,$formatId:String!,$expression:String!) { previewCollectionFormula(collectionId:$id,formatId:$formatId,expression:$expression) { value } }', { id: datesCol.id, formatId: emptyFormat.id, expression: JSON.stringify(num('1')) })).previewCollectionFormula, null);
+  await gql('query($id:String!,$formatId:String!,$expression:String!) { previewCollectionFormula(collectionId:$id,formatId:$formatId,expression:$expression) { value } }', { id: datesCol.id, formatId: eventFmt.id, expression: JSON.stringify(num('1')) }, (await gql('mutation($input:RegisterInput!) { register(input:$input) { token user { id } } }', { input: { name: 'Preview outsider', email: `preview-${randomUUID()}@example.test`, password: 'temporary-test-password' } }, undefined)).register.token, true);
+
   console.log('analysis smoke passed: formulas, date differences, rounding, formula transfer, units, cycles, zero division, aggregate, filters, period comparison, access, book manual order, templates, links, URL duplicates, link import and 10005-entry analysis');
 } finally {
   if (ownerId) {

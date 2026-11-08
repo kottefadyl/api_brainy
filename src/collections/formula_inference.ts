@@ -9,21 +9,23 @@ export type StaticType = NumberType | { type: 'TEXT' } | { type: 'DATE' } | { ty
 
 const unitParts = ({ unit, dimension, root, factor }: UnitInfo): UnitInfo => ({ unit, dimension, root, factor });
 
+const unitPair = (left: UnitInfo, right: UnitInfo): string => `${left.unit ?? 'no unit'} and ${right.unit ?? 'no unit'}`;
+
 export const assertComparable = (left: UnitInfo, right: UnitInfo): void => {
-  if (left.dimension !== right.dimension || left.root !== right.root || !!left.unit !== !!right.unit) throw new BadRequestException('Cannot compare incompatible units');
+  if (left.dimension !== right.dimension || left.root !== right.root || !!left.unit !== !!right.unit) throw new BadRequestException(`Cannot compare incompatible units: ${unitPair(left, right)}`);
   if (left.unit === right.unit) return;
   if (left.dimension === 'CURRENCY') throw new BadRequestException('Convert currencies with an explicit dated rate first');
   if (left.dimension === 'TEMPERATURE') throw new BadRequestException('Convert temperatures before comparing them');
   // Composite units such as EUR·kg carry no conversion factor.
-  if (!left.factor || !right.factor) throw new BadRequestException('Cannot compare incompatible units');
+  if (!left.factor || !right.factor) throw new BadRequestException(`Cannot compare incompatible units: ${unitPair(left, right)}`);
 };
 
 export const assertAddable = (left: UnitInfo, right: UnitInfo): void => {
-  if (left.dimension !== right.dimension || left.root !== right.root || !!left.unit !== !!right.unit) throw new BadRequestException('Cannot add incompatible units');
+  if (left.dimension !== right.dimension || left.root !== right.root || !!left.unit !== !!right.unit) throw new BadRequestException(`Cannot add incompatible units: ${unitPair(left, right)}`);
   if (left.unit === right.unit) return;
   if (left.dimension === 'CURRENCY') throw new BadRequestException('Convert currencies with an explicit dated rate first');
   if (left.dimension === 'TEMPERATURE') throw new BadRequestException('Convert temperatures before adding them');
-  if (!left.factor || !right.factor) throw new BadRequestException('Cannot add incompatible units');
+  if (!left.factor || !right.factor) throw new BadRequestException(`Cannot add incompatible units: ${unitPair(left, right)}`);
 };
 
 export const isDuration = (quantity: UnitInfo): boolean => quantity.dimension === 'TIME' && quantity.root === 'TIME' && !!quantity.factor;
@@ -116,7 +118,11 @@ export function inferStaticType(node: FormulaNode | BooleanExpression, collectio
   if (node.kind === 'boolean') return { type: 'BOOLEAN' };
   if (node.kind === 'not') { infer(node.arg); return { type: 'BOOLEAN' }; }
   if (node.kind === 'logical') { node.args.forEach(infer); return { type: 'BOOLEAN' }; }
-  if (node.kind === 'comparison') { compared([number(node.left), number(node.right)]); return { type: 'BOOLEAN' }; }
+  if (node.kind === 'comparison') {
+    const [left, right] = [infer(node.left), infer(node.right)];
+    if (left.type === 'NUMBER' && right.type === 'NUMBER') compared([left, right]);
+    return { type: 'BOOLEAN' };
+  }
 
   if (isDateExpression(node)) {
     if (node.kind === 'dateField') return { type: collection.formats.find((item) => item.id === formatId)?.fields.find((field) => field.id === node.fieldId)?.kind === FieldKind.DATETIME ? 'DATETIME' : 'DATE' };

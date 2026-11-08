@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { AnalysisInput, AnalysisResult, AnalysisRow, FormulaInput, FormulaResult, FormulaStaticType } from './analysis.input';
+import { AnalysisInput, AnalysisResult, AnalysisRow, FormulaInput, FormulaPreview, FormulaResult, FormulaStaticType } from './analysis.input';
 import { executeRegisteredOperation, getOperationSpec, ObservationRecord } from './analysis_registry';
 import { EntryFieldFilterInput, EntryFilterOperator } from './collection.input';
 import { Collection, CollectionField, CollectionFormula, FieldKind } from './collection.schema';
@@ -203,9 +203,11 @@ export class AnalysisService {
     } else if (node.kind === 'comparison') {
       if (!['EQ', 'NEQ', 'LT', 'LTE', 'GT', 'GTE'].includes(node.operator)) throw new BadRequestException('Choose a comparison operator');
       const [left, right] = [describeNode(node.left), describeNode(node.right)];
-      if (left && right && (left !== 'a number' || right !== 'a number')) throw new BadRequestException(left === right ? 'Only numbers can be compared' : `Cannot compare ${left} with ${right}`);
-      this.inspect(node.left, collection, formatId, references, depth + 1, budget);
-      this.inspect(node.right, collection, formatId, references, depth + 1, budget);
+      if (left && right && left !== right) throw new BadRequestException(`Cannot compare ${left} with ${right}`);
+      if (left === 'a condition') throw new BadRequestException('Conditions cannot be compared');
+      if (left === 'text' && !['EQ', 'NEQ'].includes(node.operator)) throw new BadRequestException('Text can only be tested for equal or different');
+      this.inspectValue(node.left, collection, formatId, references, depth + 1, budget);
+      this.inspectValue(node.right, collection, formatId, references, depth + 1, budget);
     } else if (node.kind === 'logical') {
       if (!['AND', 'OR'].includes(node.operator) || !Array.isArray(node.args) || node.args.length < 1) throw new BadRequestException('Choose a logical operator and its conditions');
       for (const argument of node.args) this.inspectBoolean(argument, collection, formatId, references, depth + 1, budget);
@@ -214,10 +216,14 @@ export class AnalysisService {
     } else throw new BadRequestException(describeNode(node) ? `Expected a condition but found ${describeNode(node)}` : 'Invalid formula condition');
   }
 
+  private inspectValue(node: FormulaNode, collection: Collection, formatId: string, references: Set<string>, depth: number, budget: { count: number }): void {
+    if (node && typeof node === 'object' && isDateExpression(node)) this.inspectDate(node, collection, formatId, references, depth, budget);
+    else if (node && typeof node === 'object' && isTextExpression(node)) this.inspectText(node, collection, formatId, references, depth, budget);
+    else this.inspect(node, collection, formatId, references, depth, budget);
+  }
+
   private inspectRoot(parsed: FormulaNode, collection: Collection, formatId: string, dependencies: Set<string>): void {
-    if (isDateExpression(parsed)) this.inspectDate(parsed, collection, formatId, dependencies, 0, { count: 0 });
-    else if (isTextExpression(parsed)) this.inspectText(parsed, collection, formatId, dependencies, 0, { count: 0 });
-    else this.inspect(parsed, collection, formatId, dependencies);
+    this.inspectValue(parsed, collection, formatId, dependencies, 0, { count: 0 });
   }
 
   /** Reports what a formula would give, with the same refusals as saving it. */
@@ -556,6 +562,23 @@ export class AnalysisService {
     return days ? addDaysToDate(date, wholeDays(days)) : undefined;
   }
 
+  /** Dates compare by instant. Texts compare exactly, without regard to how accents are encoded. */
+  private async compareOperands(leftNode: FormulaNode, rightNode: FormulaNode, collection: Collection, entry: Entry, ownerId: string, depth: number): Promise<number | undefined> {
+    if (isDateExpression(leftNode) && isDateExpression(rightNode)) {
+      const left = await this.evaluateDate(leftNode, collection, entry, ownerId, depth);
+      const right = await this.evaluateDate(rightNode, collection, entry, ownerId, depth);
+      return left && right ? Math.sign(left.ms - right.ms) : undefined;
+    }
+    if (isTextExpression(leftNode) && isTextExpression(rightNode)) {
+      const left = await this.evaluateText(leftNode, collection, entry, ownerId, depth);
+      const right = await this.evaluateText(rightNode, collection, entry, ownerId, depth);
+      return left === undefined || right === undefined ? undefined : Number(left.normalize('NFC') !== right.normalize('NFC'));
+    }
+    const left = await this.evaluateNode(numericOnly(leftNode), collection, entry, ownerId, depth);
+    const right = await this.evaluateNode(numericOnly(rightNode), collection, entry, ownerId, depth);
+    return left && right ? compareQuantities(left, right) : undefined;
+  }
+
   /** Three-valued: `undefined` means a source value is missing, so a condition never treats an absent value as false. */
   private async evaluateBoolean(node: BooleanExpression, collection: Collection, entry: Entry, ownerId: string, depth: number): Promise<boolean | undefined> {
     if (depth > 16) throw new BadRequestException('Formula is too deep');
@@ -574,10 +597,8 @@ export class AnalysisService {
       }
       return unknown ? undefined : !deciding;
     }
-    const left = await this.evaluateNode(node.left, collection, entry, ownerId, depth + 1);
-    const right = await this.evaluateNode(node.right, collection, entry, ownerId, depth + 1);
-    if (!left || !right) return undefined;
-    const order = compareQuantities(left, right);
+    const order = await this.compareOperands(node.left, node.right, collection, entry, ownerId, depth + 1);
+    if (order === undefined) return undefined;
     return { EQ: order === 0, NEQ: order !== 0, LT: order < 0, LTE: order <= 0, GT: order > 0, GTE: order >= 0 }[node.operator];
   }
 
@@ -587,7 +608,25 @@ export class AnalysisService {
     if (!formula) throw new NotFoundException('Formula not found');
     const entry = await this.entries.findOne({ _id: entryId, collectionId, ownerId, formatId: formula.formatId }).exec();
     if (!entry) throw new NotFoundException('Entry not found');
-    const parsed = this.parse(formula.expression);
+    return this.evaluateFormula(this.parse(formula.expression), collection, entry, ownerId);
+  }
+
+  /** Calculates an unsaved formula on the first entry of the data format; null when the format has no entry yet. */
+  async previewFormula(collectionId: string, ownerId: string, formatId: string, expression: string): Promise<FormulaPreview | null> {
+    const collection = await this.collection(collectionId, ownerId);
+    const format = collection.formats.find((item) => item.id === formatId);
+    if (!format) throw new BadRequestException('Data format not found');
+    const parsed = this.parse(expression);
+    this.inspectRoot(parsed, collection, formatId, new Set<string>());
+    inferStaticType(parsed, collection, formatId);
+    const entry = await this.entries.findOne({ collectionId, ownerId, formatId }).sort({ _id: 1 }).exec();
+    if (!entry) return null;
+    const titleId = format.fields.find((field) => field.kind === FieldKind.TITLE)?.id;
+    return { ...(await this.evaluateFormula(parsed, collection, entry, ownerId)), entryLabel: entry.values.find((item) => item.fieldId === titleId)?.value };
+  }
+
+  private async evaluateFormula(parsed: FormulaNode, collection: Collection, entry: Entry, ownerId: string): Promise<FormulaResult> {
+    const entryId = entry.id as string;
     if (isDateExpression(parsed)) {
       const date = await this.evaluateDate(parsed, collection, entry, ownerId, 0);
       return { entryId, ...(date ? { value: formatFormulaDate(date), dimension: 'DATE' } : { missing: 'A source value is missing' }) };

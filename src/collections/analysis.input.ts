@@ -27,6 +27,11 @@ export class FormulaResult {
 }
 
 @ObjectType()
+export class FormulaPreview extends FormulaResult {
+  @Field({ nullable: true }) entryLabel?: string;
+}
+
+@ObjectType()
 export class AnalysisOperationSpec {
   @Field() id!: string;
   @Field(() => Int) version!: number;

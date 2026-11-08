@@ -818,6 +818,15 @@ input FormulaInput {
   name: String!
 }
 
+type FormulaPreview {
+  dimension: String
+  entryId: String!
+  entryLabel: String
+  missing: String
+  unit: String
+  value: String
+}
+
 type FormulaResult {
   dimension: String
   entryId: String!
@@ -1238,6 +1247,7 @@ type Query {
   objectMovePreview(objectId: String!, targetCollectionId: String!): TransferPreview!
   objectVariableProperty(entryId: String!, objectId: String, propertyFieldId: String!, variableName: String!): ResolvedObjectVariable!
   previewClassificationCsv(csv: String!): ClassificationCsvPreview!
+  previewCollectionFormula(collectionId: String!, expression: String!, formatId: String!): FormulaPreview
   previewDomainPackage(collectionId: String, language: String, packageJson: String!): DomainPackagePreview!
   previewEntryStockEffect(collectionId: String!, entryId: String!, ruleId: String!): StockPreview!
   previewGeoImport(collectionId: String!, fieldId: String!, formatId: String!, kind: String!, text: String!): GeoImportResult!
