@@ -265,6 +265,23 @@ export class Entry {
   @Field({ nullable: true })
   @Prop()
   contributionReceivedAt?: Date;
+
+  // T32 — provenance of an entry written by a data source.
+  @Field({ nullable: true })
+  @Prop()
+  dataSourceId?: string;
+
+  @Field({ nullable: true })
+  @Prop()
+  sourceObservedAt?: Date;
+
+  @Field({ nullable: true })
+  @Prop()
+  sourceReceivedAt?: Date;
+
+  @Field({ nullable: true })
+  @Prop()
+  sourceRunId?: string;
 }
 
 @ObjectType()

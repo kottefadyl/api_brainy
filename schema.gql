@@ -382,6 +382,94 @@ type CreatedContributionLink {
   token: String!
 }
 
+type DataSource {
+  collectionId: String!
+  createdAt: DateTime!
+  decimalSeparator: String!
+  delimiter: String!
+  formatId: String!
+  formatVersion: Int!
+  id: ID!
+  keyCreatedAt: DateTime
+  keyHint: String
+  mappings: [DataSourceMapping!]!
+  name: String!
+  observedAtColumn: String
+  qualityColumn: String
+  recordIdColumn: String!
+  statusColumn: String
+  updatePolicy: String!
+  updatedAt: DateTime!
+}
+
+input DataSourceInput {
+  decimalSeparator: String! = "DOT"
+  delimiter: String! = ","
+  formatId: String!
+  mappings: [DataSourceMappingInput!]!
+  name: String!
+  observedAtColumn: String
+  qualityColumn: String
+  recordIdColumn: String!
+  statusColumn: String
+  updatePolicy: String! = "UPDATE"
+}
+
+type DataSourceKey {
+  key: String!
+  source: DataSource!
+}
+
+type DataSourceMapping {
+  column: String!
+  fieldId: String!
+  unitColumn: String
+}
+
+input DataSourceMappingInput {
+  column: String!
+  fieldId: String!
+  unitColumn: String
+}
+
+type DataSourceRejection {
+  cells: [String!]!
+  code: String!
+  message: String!
+  recordId: String
+  row: Int!
+}
+
+type DataSourceRun {
+  actorId: String
+  collectionId: String!
+  contentType: String!
+  createdAt: DateTime!
+  createdCount: Int!
+  deliveryId: String!
+  durationMs: Int!
+  failure: String
+  finishedAt: DateTime
+  id: ID!
+  ignoredColumns: [String!]!
+  maxLagSeconds: Int
+  olderCount: Int!
+  origin: String!
+  processed: Int!
+  receivedAt: DateTime!
+  rejectedCount: Int!
+  rejections: [DataSourceRejection!]!
+  retryOf: String
+  rowsPerSecond: Float
+  sourceId: String!
+  startedAt: DateTime
+  state: String!
+  total: Int!
+  unchangedCount: Int!
+  updatedAt: DateTime!
+  updatedCount: Int!
+}
+
 """
 A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
 """
@@ -475,6 +563,7 @@ type Entry {
   copiedFromEntryId: String
   correctionOf: String
   createdAt: DateTime!
+  dataSourceId: String
   formatId: String
   formatVersion: Float
   id: ID!
@@ -484,6 +573,9 @@ type Entry {
   recurrence: EntryRecurrence
   revisions: [EntryRevision!]!
   sourceObjectId: String
+  sourceObservedAt: DateTime
+  sourceReceivedAt: DateTime
+  sourceRunId: String
   updatedAt: DateTime!
   values: [EntryValue!]!
   workflow: EntryWorkflow
@@ -879,6 +971,7 @@ type Mutation {
   addObjectModelFromTemplate(collectionId: String!, color: String!, language: String, name: String!, templateId: String!): Collection!
   assignWorkflowEntry(entryId: String!, input: WorkflowAssignmentInput!): Entry!
   cancelBackgroundJob(jobId: String!): BackgroundJob!
+  cancelDataSourceRun(runId: String!): DataSourceRun!
   cancelEntryReminder(reminderId: String!): Boolean!
   commitEntryStockEffect(collectionId: String!, entryId: String!, expectedUpdatedAt: String!, ruleId: String!): StockMovement!
   commitStockMovement(collectionId: String!, input: StockMovementInput!): StockMovement!
@@ -892,11 +985,13 @@ type Mutation {
   createCollectionFromTemplate(language: String, name: String!, templateId: String!, timeZone: String): Collection!
   createCollectionRelation(collectionId: String!, fromEntryId: String!, kind: RelationKind!, label: String, quantity: String, snapshotFieldId: String, toEntryId: String!, unit: String): EntryRelation!
   createContributionLink(collectionId: String!, input: CreateContributionLinkInput!): CreatedContributionLink!
+  createDataSource(collectionId: String!, input: DataSourceInput!): DataSource!
   createEntry(collectionId: String!, input: SaveEntryInput!): Entry!
   createNote(input: CreateNoteInput!): Note!
   deleteCollection(id: String!): Boolean!
   deleteCollectionFormula(collectionId: String!, formulaId: String!): Collection!
   deleteCollectionView(collectionId: String!, viewId: String!): Collection!
+  deleteDataSource(sourceId: String!): Boolean!
   deleteEntry(id: String!): Boolean!
   deleteNote(id: String!): Boolean!
   deleteStockRule(collectionId: String!, ruleId: String!): Collection!
@@ -918,6 +1013,7 @@ type Mutation {
   loginWithGoogle(firebaseIdToken: String!): AuthPayload!
   mergeClassificationCodes(collectionId: String!, expectedVersion: Int!, fromCode: String!, listId: String!, toCode: String!): Collection!
   moveCollectionObject(objectId: String!, targetCollectionId: String!): TransferResult!
+  pushDataSourceDelivery(content: String!, contentType: String!, deliveryId: String!, key: String!): DataSourceRun!
   readWorkflowNotification(id: String!): Boolean!
   recordCollectionExchangeRate(collectionId: String!, input: CollectionExchangeRateInput!): Collection!
   recoverCollectionMove(operationId: String!): MoveOperationStatus!
@@ -929,9 +1025,13 @@ type Mutation {
   renameCollection(id: String!, name: String!): Collection!
   restoreWorkspaceBackup(archive: String!, dryRun: Boolean!): WorkspaceBackupPreview!
   resumeBackgroundJob(jobId: String!): BackgroundJob!
+  resumeDataSourceRun(runId: String!): DataSourceRun!
+  retryDataSourceRejections(runId: String!): DataSourceRun!
   reviewContribution(action: String!, duplicateOf: String, id: String!): ContributionSubmission!
   revokeCollectionObjectShare(grantId: String!, targetCollectionId: String!): Boolean!
   revokeContributionLink(id: String!): ContributionLink!
+  revokeDataSourceKey(sourceId: String!): DataSource!
+  rotateDataSourceKey(sourceId: String!): DataSourceKey!
   saveClassification(codes: [ClassificationCodeInput!]!, collectionId: String!, expectedVersion: Int, listId: String, name: String!): Collection!
   saveCollectionFormula(collectionId: String!, formulaId: String, input: FormulaInput!): Collection!
   saveCollectionUnit(collectionId: String!, input: CollectionUnitInput!, unitId: String): Collection!
@@ -955,9 +1055,11 @@ type Mutation {
   transitionWorkflowEntry(entryId: String!, expectedUpdatedAt: String!, to: String!): Entry!
   unregisterPushDevice(id: String!): Boolean!
   updateCollectionFormat(collectionId: String!, formatId: String!, input: UpdateCollectionFormatInput!): Collection!
+  updateDataSource(input: DataSourceInput!, sourceId: String!): DataSource!
   updateEntry(id: String!, input: SaveEntryInput!): Entry!
   updateNote(id: String!, input: UpdateNoteInput!): Note
   updateProfile(input: ProfileInput!): User!
+  uploadDataSourceDelivery(content: String!, contentType: String!, deliveryId: String!, sourceId: String!): DataSourceRun!
   useCollectionObject(objectId: String!, targetFieldId: String!, targetFormatId: String!): Entry!
 }
 
@@ -1064,6 +1166,10 @@ type Query {
   contributionLinks(collectionId: String!): [ContributionLink!]!
   contributionSubmissions(collectionId: String!): [ContributionSubmission!]!
   dataFormatCopyPreview(formatId: String!, targetCollectionId: String!, withEntries: Boolean! = false): TransferPreview!
+  dataSourceRejectionsCsv(runId: String!): String!
+  dataSourceRun(runId: String!): DataSourceRun!
+  dataSourceRuns(sourceId: String!): [DataSourceRun!]!
+  dataSources(collectionId: String!): [DataSource!]!
   domainPackageInstalls(collectionId: String!): [DomainPackageInstall!]!
   domainPackagePilots(language: String): [DomainPackageSummary!]!
   entryAttachment(entryId: String!, fieldId: String!): EntryAttachment!

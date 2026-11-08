@@ -53,6 +53,9 @@ import { SensitivityResolver } from './sensitivity.resolver';
 import { DomainPackageInstall, DomainPackageInstallSchema } from './domain-package.schema';
 import { DomainPackageResolver } from './domain-package.resolver';
 import { DomainPackageService } from './domain-package.service';
+import { DataSource, DataSourceRun, DataSourceRunSchema, DataSourceSchema } from './data-source.schema';
+import { DataSourceResolver } from './data-source.resolver';
+import { DataSourceService } from './data-source.service';
 
 @Module({
   imports: [
@@ -78,9 +81,11 @@ import { DomainPackageService } from './domain-package.service';
       { name: LedgerHead.name, schema: LedgerHeadSchema },
       { name: LedgerRedaction.name, schema: LedgerRedactionSchema },
       { name: DomainPackageInstall.name, schema: DomainPackageInstallSchema },
+      { name: DataSource.name, schema: DataSourceSchema },
+      { name: DataSourceRun.name, schema: DataSourceRunSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}

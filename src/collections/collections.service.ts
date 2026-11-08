@@ -933,6 +933,11 @@ export class CollectionsService {
     return this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []);
   }
 
+  /** T32: shared value rules for data-source rows (see data-source.service.ts). */
+  validateSourceValues(collection: Collection, format: CollectionFormat, values: EntryValueInput[], existing: EntryValue[] = []): EntryValue[] {
+    return this.validateValues(values, format.fields, existing, collection.units, false, collection.codeLists ?? []);
+  }
+
   async createEntry(collectionId: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string, clientMutationId?: string, contribution?: { linkId: string; receivedAt: Date }, correctionOf?: string): Promise<Entry> {
     const collection = await this.one(collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
