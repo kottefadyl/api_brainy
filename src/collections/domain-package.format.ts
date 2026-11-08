@@ -114,7 +114,7 @@ export function signatureStatus(source: string): { status: 'NONE' | 'VALID' | 'I
 
 function expression(node: unknown, path: string, depth = 0, budget = { count: 0 }): Record<string, unknown> {
   if (++budget.count > 64 || depth > 12) fail('Formula is too complex');
-  const item = record(node, path, ['kind', 'value', 'unit', 'fieldId', 'referenceFieldId', 'propertyFieldId', 'formulaId', 'fromFieldId', 'toFieldId', 'digits', 'mode', 'operator', 'args', 'condition', 'then', 'else', 'left', 'right', 'arg'], ['kind']);
+  const item = record(node, path, ['kind', 'value', 'unit', 'fieldId', 'referenceFieldId', 'propertyFieldId', 'formulaId', 'fromFieldId', 'toFieldId', 'digits', 'mode', 'operator', 'args', 'condition', 'then', 'else', 'left', 'right', 'arg', 'date', 'days', 'end', 'start', 'duration', 'part'], ['kind']);
   for (const [name, value] of Object.entries(item)) {
     if (name === 'args') list(value, `${path}.args`, 64).forEach((child, index) => expression(child, `${path}.args[${index}]`, depth + 1, budget));
     else if (formulaChildKeys.includes(name) && typeof value === 'object') expression(value, `${path}.${name}`, depth + 1, budget);

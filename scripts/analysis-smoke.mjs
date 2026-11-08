@@ -549,6 +549,140 @@ try {
   ids.push(packageInstall.collectionId);
   assert.deepEqual({ ...(await calculateDiscountIn(packageInstall.collectionId)) }, { value: '80', unit: 'EUR', missing: null });
 
+  // T21/2 — Date differences, shifts, components and duration conversion
+  const eventFormats = [{ name: 'Event', color: '#FFF5EB', fields: [{ name: 'Label', kind: 'TITLE' }, { name: 'Start', kind: 'DATE' }, { name: 'End', kind: 'DATE' }, { name: 'At', kind: 'DATETIME' }, { name: 'Length', kind: 'DURATION' }, { name: 'Offset', kind: 'NUMBER' }, { name: 'Weight', kind: 'NUMBER', unit: 'kg' }] }];
+  const CREATE_COLLECTION = 'mutation($input:CreateCollectionInput!) { createCollection(input:$input) { id formats { id name fields { id name } } } }';
+  const CALCULATE_DATE = 'query($id:String!,$formulaId:String!,$entryId:String!) { calculateCollectionFormula(collectionId:$id,formulaId:$formulaId,entryId:$entryId) { value unit dimension missing } }';
+  const datesCol = (await gql(CREATE_COLLECTION, { input: { name: 'T21 Dates', formats: eventFormats } })).createCollection;
+  ids.push(datesCol.id);
+  const eventFmt = datesCol.formats[0];
+  const createEvent = async (collectionId, format, values) => (await gql('mutation($id:String!,$input:SaveEntryInput!) { createEntry(collectionId:$id,input:$input) { id } }', { id: collectionId, input: { formatId: format.id, values: Object.entries(values).map(([name, value]) => ({ fieldId: idOf(format, name), value })) } })).createEntry.id;
+  const fullEvent = await createEvent(datesCol.id, eventFmt, { Label: 'Full', Start: '2026-01-31', End: '2026-03-01', At: '2026-03-15T10:30:00Z', Length: '2:30', Offset: '-31', Weight: '2' });
+  const blankEvent = await createEvent(datesCol.id, eventFmt, { Label: 'Blank' });
+  const dateField = (name) => ({ kind: 'dateField', fieldId: idOf(eventFmt, name) });
+  const day = (value) => ({ kind: 'dateLiteral', value });
+  const diff = (unit, end, start) => ({ kind: 'dateDiff', unit, end, start });
+  const addDays = (date, days) => ({ kind: 'addDays', date, days });
+  const part = (name, date) => ({ kind: 'datePart', part: name, date });
+  const durationField = (name) => ({ kind: 'durationField', fieldId: idOf(eventFmt, name) });
+  const durationIn = (unit, duration) => ({ kind: 'durationIn', unit, duration });
+  let t22Count = 0;
+  const saveDate = async (expression) => { const name = `T22 ${++t22Count}`; return (await gql(SAVE_FORMULA, { id: datesCol.id, input: { name, formatId: eventFmt.id, expression: JSON.stringify(expression) } })).saveCollectionFormula.formulas.find((item) => item.name === name).id; };
+  const refusedDate = (expression) => gql(SAVE_FORMULA, { id: datesCol.id, input: { name: `T22 refused ${++t22Count}`, formatId: eventFmt.id, expression: JSON.stringify(expression) } }, token, true);
+  const evalDate = async (expression, entryId = fullEvent) => ({ ...(await gql(CALCULATE_DATE, { id: datesCol.id, formulaId: await saveDate(expression), entryId })).calculateCollectionFormula });
+  const quantityOf = (value, unit = null, dimension = null) => ({ value, unit, dimension, missing: null });
+  const dateOf = (value) => ({ value, unit: null, dimension: 'DATE', missing: null });
+
+  // DIFF_JOURS, DIFF_HEURES, DIFF_MOIS
+  assert.deepEqual(await evalDate(diff('DAYS', dateField('End'), dateField('Start'))), quantityOf('29', 'd', 'TIME'));
+  assert.deepEqual(await evalDate(diff('DAYS', dateField('Start'), dateField('End'))), quantityOf('-29', 'd', 'TIME'));
+  assert.deepEqual(await evalDate(diff('HOURS', day('2026-03-15T12:00:00Z'), dateField('At'))), quantityOf('1.5', 'h', 'TIME'));
+  assert.deepEqual(await evalDate(diff('HOURS', day('2026-03-15T12:00:00+02:00'), day('2026-03-15T10:00:00Z'))), quantityOf('0', 'h', 'TIME'));
+  for (const [end, start, expected] of [['2026-03-01', '2026-01-31', '1'], ['2026-02-28', '2026-01-31', '0'], ['2026-03-31', '2026-01-31', '2'], ['2026-03-20', '2025-01-15', '14'], ['2025-01-15', '2026-03-20', '-14'], ['2026-01-01', '2026-01-01', '0'], ['2026-01-31', '2026-02-28', '0'], ['2026-02-15T09:00:00Z', '2026-01-15T10:00:00Z', '0'], ['2026-02-15T10:00:00Z', '2026-01-15T10:00:00Z', '1']]) {
+    assert.deepEqual(await evalDate(diff('MONTHS', day(end), day(start))), quantityOf(expected), `months ${start} to ${end}`);
+  }
+
+  // AJOUTER_JOURS with negative shifts, field amounts, durations and date-time values
+  assert.deepEqual(await evalDate(addDays(dateField('Start'), num('30'))), dateOf('2026-03-02'));
+  assert.deepEqual(await evalDate(addDays(dateField('End'), { kind: 'field', fieldId: idOf(eventFmt, 'Offset') })), dateOf('2026-01-29'));
+  assert.deepEqual(await evalDate(addDays(day('2028-02-28'), num('1'))), dateOf('2028-02-29'));
+  assert.deepEqual(await evalDate(addDays(day('2026-01-01'), num('-1'))), dateOf('2025-12-31'));
+  assert.deepEqual(await evalDate(addDays(day('2026-01-01'), num('48', 'h'))), dateOf('2026-01-03'));
+  assert.deepEqual(await evalDate(addDays(dateField('At'), num('1'))), dateOf('2026-03-16T10:30:00.000Z'));
+  assert.deepEqual(await evalDate(addDays(dateField('Start'), diff('DAYS', dateField('End'), dateField('Start')))), dateOf('2026-03-01'));
+
+  // DEBUT_MOIS and FIN_MOIS, leap years and date-time input
+  for (const [kind, input, expected] of [['startOfMonth', '2026-03-17', '2026-03-01'], ['endOfMonth', '2028-02-15', '2028-02-29'], ['endOfMonth', '2026-02-15', '2026-02-28'], ['endOfMonth', '2026-12-10', '2026-12-31'], ['startOfMonth', '2026-03-15T10:30:00Z', '2026-03-01'], ['endOfMonth', '2026-03-15T10:30:00Z', '2026-03-31']]) {
+    assert.deepEqual(await evalDate({ kind, date: day(input) }), dateOf(expected), `${kind} ${input}`);
+  }
+
+  // ANNEE, MOIS, JOUR, JOUR_SEMAINE (ISO: Monday 1, Sunday 7)
+  for (const [name, input, expected] of [['YEAR', '2026-03-01', '2026'], ['MONTH', '2026-03-01', '3'], ['DAY', '2026-03-01', '1'], ['WEEKDAY', '2026-03-01', '7'], ['WEEKDAY', '2026-03-02', '1'], ['WEEKDAY', '2026-01-01', '4'], ['MONTH', '2026-12-31', '12']]) {
+    assert.deepEqual(await evalDate(part(name, day(input))), quantityOf(expected), `${name} ${input}`);
+  }
+  assert.equal((await evalDate(part('MONTH', addDays(dateField('End'), num('-1'))))).value, '2');
+  assert.equal((await evalDate(part('YEAR', { kind: 'endOfMonth', date: dateField('At') }))).value, '2026');
+  assert.equal((await evalDate(iif(cmp('EQ', part('WEEKDAY', dateField('End')), num('7')), num('1'), num('0')))).value, '1');
+  assert.equal((await evalDate(iif(cmp('GT', diff('DAYS', dateField('End'), dateField('Start')), num('28', 'd')), num('1'), num('0')))).value, '1');
+
+  // DUREE_EN_MINUTES, DUREE_EN_HEURES
+  assert.deepEqual(await evalDate(durationIn('MINUTES', durationField('Length'))), quantityOf('150', 'min', 'TIME'));
+  assert.deepEqual(await evalDate(durationIn('HOURS', durationField('Length'))), quantityOf('2.5', 'h', 'TIME'));
+  assert.deepEqual(await evalDate(durationIn('MINUTES', num('2', 'h'))), quantityOf('120', 'min', 'TIME'));
+  assert.deepEqual(await evalDate(durationIn('HOURS', diff('DAYS', dateField('End'), dateField('Start')))), quantityOf('696', 'h', 'TIME'));
+
+  // Missing, unreadable or out-of-range dates give an absent result
+  const absentCases = [diff('DAYS', dateField('End'), dateField('Start')), diff('HOURS', dateField('At'), day('2026-01-01')), diff('MONTHS', day('2026-01-01'), dateField('Start')), addDays(dateField('Start'), num('1')), { kind: 'startOfMonth', date: dateField('Start') }, { kind: 'endOfMonth', date: dateField('Start') }, part('YEAR', dateField('Start')), part('MONTH', dateField('Start')), part('DAY', dateField('Start')), part('WEEKDAY', dateField('Start')), durationIn('MINUTES', durationField('Length')), durationIn('HOURS', durationField('Length'))];
+  for (const expression of absentCases) {
+    const absent = await evalDate(expression, blankEvent);
+    assert.equal(absent.value, null, JSON.stringify(expression));
+    assert.ok(absent.missing, JSON.stringify(expression));
+  }
+  assert.ok((await evalDate(addDays(dateField('Start'), { kind: 'field', fieldId: idOf(eventFmt, 'Offset') }), await createEvent(datesCol.id, eventFmt, { Label: 'No shift', Start: '2026-01-01' }))).missing);
+  assert.ok((await evalDate(addDays(day('9999-12-31'), num('1')))).missing);
+  assert.ok((await evalDate(addDays(day('2026-01-01'), num('99999999999')))).missing);
+  const rawEntries = mongoose.connection.collection('entries');
+  const corrupt = async (entryId, fieldName, patch) => rawEntries.updateOne({ _id: new mongoose.Types.ObjectId(entryId), 'values.fieldId': idOf(eventFmt, fieldName) }, { $set: Object.fromEntries(Object.entries(patch).map(([key, value]) => [`values.$.${key}`, value])) });
+  for (const stored of ['2026-02-31', 'not-a-date', '2026-13-01', '']) {
+    const damaged = await createEvent(datesCol.id, eventFmt, { Label: `Damaged ${stored}`, Start: '2026-01-31' });
+    await corrupt(damaged, 'Start', { value: stored });
+    assert.ok((await evalDate(part('YEAR', dateField('Start')), damaged)).missing, stored);
+    assert.ok((await evalDate(diff('DAYS', day('2026-03-01'), dateField('Start')), damaged)).missing, stored);
+  }
+  const damagedLength = await createEvent(datesCol.id, eventFmt, { Label: 'Damaged duration', Length: '1:00' });
+  await corrupt(damagedLength, 'Length', { durationSeconds: 1.5 });
+  assert.ok((await evalDate(durationIn('MINUTES', durationField('Length')), damagedLength)).missing);
+
+  // Refused on save, or during evaluation when the value depends on the entry
+  assert.match(await refusedDate(part('YEAR', { kind: 'dateField', fieldId: idOf(eventFmt, 'Offset') })), /date field/);
+  assert.match(await refusedDate(part('YEAR', day('2026-02-31'))), /valid date/);
+  assert.match(await refusedDate(part('CENTURY', day('2026-01-01'))), /weekday/);
+  assert.match(await refusedDate(diff('YEARS', day('2026-01-01'), day('2026-01-02'))), /months/);
+  assert.match(await refusedDate({ kind: 'nextMonday', date: day('2026-01-01') }), /Unknown formula operation/);
+  assert.match(await refusedDate(addDays({ kind: 'number', value: '1' }, num('1'))), /Unknown date operation/);
+  assert.match(await refusedDate(addDays(day('2026-01-01'), num('1.5'))), /whole number/);
+  assert.match(await refusedDate(addDays(day('2026-01-01'), { kind: 'field', fieldId: idOf(eventFmt, 'Weight') })), /plain number or a duration/);
+  assert.match(await refusedDate({ kind: 'durationField', fieldId: idOf(eventFmt, 'Offset') }), /duration field/);
+  assert.match(await refusedDate(durationIn('MINUTES', num('90'))), /duration/);
+  assert.match(await refusedDate(durationIn('DAYS', num('1', 'h'))), /minutes or hours/);
+  assert.match(await refusedDate({ kind: 'operation', operator: 'ADD', args: [day('2026-01-01'), num('1')] }), /gives a date/);
+  const fractionalShift = await createEvent(datesCol.id, eventFmt, { Label: 'Half day', Start: '2026-01-01', Offset: '1.5' });
+  const shiftFormula = await saveDate(addDays(dateField('Start'), { kind: 'field', fieldId: idOf(eventFmt, 'Offset') }));
+  assert.match(await gql(CALCULATE_DATE, { id: datesCol.id, formulaId: shiftFormula, entryId: fractionalShift }, token, true), /whole number/);
+  const dateResultFormula = await saveDate(addDays(day('2026-01-01'), num('1')));
+  assert.match(await refusedDate({ kind: 'formula', formulaId: dateResultFormula }), /gives a date/);
+  assert.match(await gql('query($id:String!,$input:AnalysisInput!) { analyseCollection(collectionId:$id,input:$input) { rows { value } } }', { id: datesCol.id, input: { formatId: eventFmt.id, formulaId: dateResultFormula, groupBy: 'NONE', operation: 'SUM', measureKind: 'EVENT' } }, token, true), /gives a date/);
+  const durationAnalysis = await gql('query($id:String!,$input:AnalysisInput!) { analyseCollection(collectionId:$id,input:$input) { unit skippedMissingCount rows { value } } }', { id: datesCol.id, input: { formatId: eventFmt.id, formulaId: await saveDate(durationIn('MINUTES', durationField('Length'))), groupBy: 'NONE', operation: 'SUM', measureKind: 'EVENT' } });
+  assert.equal(durationAnalysis.analyseCollection.unit, 'min');
+  assert.equal(durationAnalysis.analyseCollection.rows[0].value, '150');
+
+  // Copies and domain packages rewrite identifiers nested in date expressions
+  const datesSource = (await gql(CREATE_COLLECTION, { input: { name: 'T22 Source', formats: eventFormats } })).createCollection;
+  ids.push(datesSource.id);
+  const datesSourceFmt = datesSource.formats[0];
+  const sourceDate = (name) => ({ kind: 'dateField', fieldId: idOf(datesSourceFmt, name) });
+  for (const [name, expression] of [['Span', diff('DAYS', sourceDate('End'), addDays(sourceDate('Start'), num('1')))], ['Due', addDays({ kind: 'endOfMonth', date: sourceDate('Start') }, num('1'))], ['Minutes', durationIn('MINUTES', { kind: 'durationField', fieldId: idOf(datesSourceFmt, 'Length') })]]) {
+    await gql(SAVE_FORMULA, { id: datesSource.id, input: { name, formatId: datesSourceFmt.id, expression: JSON.stringify(expression) } });
+  }
+  const assertDateFormulasIn = async (collectionId) => {
+    const target = (await gql('query { collectionsList { id formulas { id name formatId } formats { id name fields { id name } } } }')).collectionsList.find((item) => item.id === collectionId);
+    const format = target.formats.find((item) => item.name === 'Event');
+    const entryId = await createEvent(collectionId, format, { Label: 'Copied', Start: '2026-01-31', End: '2026-03-01', Length: '1:15' });
+    const resultOf = async (name) => ({ ...(await gql(CALCULATE_DATE, { id: collectionId, formulaId: target.formulas.find((item) => item.name === name && item.formatId === format.id).id, entryId })).calculateCollectionFormula });
+    assert.deepEqual(await resultOf('Span'), quantityOf('28', 'd', 'TIME'));
+    assert.deepEqual(await resultOf('Due'), dateOf('2026-02-01'));
+    assert.deepEqual(await resultOf('Minutes'), quantityOf('75', 'min', 'TIME'));
+  };
+  const datesCopy = (await gql(CREATE_COLLECTION, { input: { name: 'T22 Copy', formats: [{ name: 'General', color: '#F4F0FF', fields: [{ name: 'Title', kind: 'TITLE' }] }] } })).createCollection;
+  ids.push(datesCopy.id);
+  await gql('mutation($formatId:String!,$targetCollectionId:String!) { copyCollectionDataFormat(formatId:$formatId,targetCollectionId:$targetCollectionId,withEntries:false) { copiedEntries } }', { formatId: datesSourceFmt.id, targetCollectionId: datesCopy.id });
+  await assertDateFormulasIn(datesCopy.id);
+  const datesPackage = (await gql('query($id:String!,$input:DomainPackageExportInput!) { exportDomainPackage(collectionId:$id,input:$input,language:"en") { packageJson warnings } }', { id: datesSource.id, input: { packageId: 'smoke.t22', version: '1.0.0', name: 'T22', author: 'Smoke', license: 'CC-BY-4.0' } })).exportDomainPackage;
+  assert.deepEqual(datesPackage.warnings, []);
+  const datesInstall = (await gql('mutation($json:String!) { installDomainPackage(packageJson:$json,collectionName:"T22 Installed",language:"en") { collectionId } }', { json: datesPackage.packageJson })).installDomainPackage;
+  ids.push(datesInstall.collectionId);
+  await assertDateFormulasIn(datesInstall.collectionId);
+
   console.log('analysis smoke passed: formulas, date differences, rounding, formula transfer, units, cycles, zero division, aggregate, filters, period comparison, access, book manual order, templates, links, URL duplicates, link import and 10005-entry analysis');
 } finally {
   if (ownerId) {
