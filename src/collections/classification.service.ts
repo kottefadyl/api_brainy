@@ -6,7 +6,7 @@ import { CollaborationService } from './collaboration.service';
 import { CollectionRole } from './collaboration.schema';
 import { ClassificationCode, ClassificationList, Collection, FieldKind } from './collection.schema';
 import { Entry } from './entry.schema';
-import { parseClassificationCsv, validateClassificationCodes } from './classification.logic';
+import { parseClassificationCsv, resolveClassificationPaths, validateClassificationCodes } from './classification.logic';
 
 @Injectable()
 export class ClassificationService {
@@ -63,6 +63,10 @@ export class ClassificationService {
   }
 
   csvPreview(csv: string) { return parseClassificationCsv(csv); }
+
+  async codePaths(collectionId: string, listId: string, userId: string, language?: string) {
+    return resolveClassificationPaths(this.list(await this.context(collectionId, userId), listId), language);
+  }
 
   async copyPreview(collectionId: string, listId: string, targetId: string, userId: string): Promise<{ allowed: boolean; sourceName: string; targetName: string; codeCount: number; conflicts: string[] }> {
     const source = await this.context(collectionId, userId);

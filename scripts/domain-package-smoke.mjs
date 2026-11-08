@@ -179,6 +179,37 @@ try {
   assert.equal(tampered.allowed, false);
   await rejects(gql(INSTALL, { json: JSON.stringify(signed) }, bob), /signature/, 'tampered package refused');
 
+  // T39. A package with a five-level nomenclature installs, and its deepest code can be assigned and grouped.
+  const levels = JSON.parse(pilot('brainy.expenses'));
+  levels.id = 'example.five-levels';
+  levels.name = { en: 'Five levels', fr: 'Cinq niveaux' };
+  levels.content.codeLists = [{ key: 'expense-category', name: { en: 'Activities', fr: 'Activités' }, codes: [
+    { code: 'G', label: { en: 'Trade', fr: 'Commerce' } },
+    { code: '47', label: { en: 'Retail', fr: 'Vente de détail' }, parent: 'G' },
+    { code: '47.1', label: { en: 'Non-specialised stores', fr: 'Magasins non spécialisés' }, parent: '47' },
+    { code: '47.11', label: { en: 'Mostly food', fr: 'À prédominance alimentaire' }, parent: '47.1' },
+    { code: '47.11B', label: { en: 'General food stores', fr: "Commerce d'alimentation générale" }, parent: '47.11' },
+  ] }];
+  const levelsPreview = (await gql(PREVIEW, { json: JSON.stringify(levels), l: 'fr' }, bob)).previewDomainPackage;
+  assert.equal(levelsPreview.allowed, true);
+  const levelsResult = (await gql(INSTALL, { json: JSON.stringify(levels), l: 'fr' }, bob)).installDomainPackage;
+  const levelsCollection = await collection(bob, levelsResult.collectionId);
+  const levelsList = levelsCollection.codeLists[0];
+  assert.equal(levelsList.codes.length, 5);
+  const paths = (await gql('query($c:String!,$l:String!) { classificationCodePaths(collectionId:$c, listId:$l, language:"fr") { code label path level active } }', { c: levelsCollection.id, l: levelsList.id }, bob)).classificationCodePaths;
+  assert.deepEqual(paths.find((item) => item.code === '47.11B'), { code: '47.11B', label: "Commerce d'alimentation générale", path: ['Commerce', 'Vente de détail', 'Magasins non spécialisés', 'À prédominance alimentaire'], level: 5, active: true });
+  await rejects(gql('query($c:String!,$l:String!) { classificationCodePaths(collectionId:$c, listId:$l) { code } }', { c: levelsCollection.id, l: levelsList.id }, await account('Outsider')), /./, 'another account cannot read the paths');
+  const levelsFormat = levelsCollection.formats.find((format) => format.fields.some((item) => item.codeListId === levelsList.id));
+  const codeField = levelsFormat.fields.find((item) => item.codeListId === levelsList.id);
+  const titleField = levelsFormat.fields.find((item) => item.kind === 'TITLE');
+  await gql('mutation($id:String!,$input:SaveEntryInput!) { createEntry(collectionId:$id,input:$input) { id } }', { id: levelsCollection.id, input: { formatId: levelsFormat.id, values: [{ fieldId: titleField.id, value: 'Deep' }, { fieldId: codeField.id, value: '47.11B' }] } }, bob);
+  const grouped = (await gql('query($id:String!,$input:AnalysisInput!) { analyseCollection(collectionId:$id,input:$input) { rows { group count } } }', { id: levelsCollection.id, input: { formatId: levelsFormat.id, operation: 'COUNT', measureKind: 'EVENT', groupBy: 'CATEGORY', groupFieldId: codeField.id, groupDepth: 2 } }, bob)).analyseCollection.rows;
+  assert.deepEqual(grouped.map((row) => [row.group, row.count]), [['47.1', 1]], 'an entry groups at a level of a deep hierarchy');
+  const cyclic = JSON.parse(JSON.stringify(levels));
+  cyclic.id = 'example.cyclic';
+  cyclic.content.codeLists[0].codes[0].parent = '47.11B';
+  await rejects(gql(PREVIEW, { json: JSON.stringify(cyclic), l: 'fr' }, bob), /cycle/, 'a cyclic package is refused from the preview');
+
   // 7. A failing install leaves nothing behind.
   const broken = JSON.parse(pilot('brainy.simple-sales'));
   broken.id = 'example.broken';

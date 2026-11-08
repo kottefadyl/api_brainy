@@ -1,3 +1,4 @@
+import { codeHierarchy } from './classification.logic';
 import { BadRequestException } from '@nestjs/common';
 import { createHash, createPublicKey, verify } from 'node:crypto';
 import { FieldKind, SensitivityLevel } from './collection.schema';
@@ -189,6 +190,8 @@ export function parseDomainPackage(source: string): DomainPackage {
       const code = record(child, `${path}.codes[${childIndex}]`, ['code', 'label', 'parent', 'active'], ['code', 'label']);
       return { code: text(code.code, `${path}.codes[${childIndex}].code`, 100)!, label: label(code.label, `${path}.codes[${childIndex}].label`, 200)!, parent: text(code.parent, `${path}.codes[${childIndex}].parent`, 100, true), active: code.active === false ? false : undefined };
     });
+    const [problem] = codeHierarchy(codes.map((code) => ({ code: code.code, parentCode: code.parent }))).problems;
+    if (problem) fail(`${path}: ${problem.message}`);
     return { key: key(item.key, `${path}.key`), name: label(item.name, `${path}.name`)!, codes };
   });
   unique(codeLists.map((item) => item.key), 'codeLists');

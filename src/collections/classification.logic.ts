@@ -2,6 +2,46 @@ import { BadRequestException } from '@nestjs/common';
 import { ClassificationCode, ClassificationList } from './collection.schema';
 
 const codePattern = /^[\p{L}\p{N}_.-]{1,64}$/u;
+export const MAX_CODE_LEVELS = 8;
+
+type LinkedCode = Pick<ClassificationCode, 'code' | 'parentCode'>;
+export type CodeHierarchyProblem = { code: string; message: string };
+
+/** Level of every code and what is wrong with the tree, in one pass over the list. */
+export function codeHierarchy(codes: LinkedCode[]): { levels: Map<string, number>; problems: CodeHierarchyProblem[] } {
+  const byCode = new Map(codes.map((item) => [item.code, item]));
+  const levels = new Map<string, number>();
+  const broken = new Map<string, 'cycle' | 'missing'>();
+  for (const item of codes) {
+    const chain: LinkedCode[] = [];
+    const visiting = new Set<string>();
+    let cursor: LinkedCode | undefined = item;
+    let start = 1;
+    let failure: 'cycle' | 'missing' | undefined;
+    while (cursor) {
+      const known = levels.get(cursor.code);
+      if (known !== undefined) { start = known + 1; break; }
+      failure = broken.get(cursor.code) ?? (visiting.has(cursor.code) ? 'cycle' : undefined);
+      if (failure) break;
+      visiting.add(cursor.code);
+      chain.push(cursor);
+      if (!cursor.parentCode) break;
+      const parent: LinkedCode | undefined = byCode.get(cursor.parentCode);
+      if (!parent) failure = 'missing';
+      cursor = parent;
+    }
+    if (failure) for (const link of chain) broken.set(link.code, failure);
+    else for (const link of [...chain].reverse()) levels.set(link.code, start++);
+  }
+  const problems: CodeHierarchyProblem[] = [];
+  for (const { code } of codes) {
+    const failure = broken.get(code);
+    if (failure === 'cycle') problems.push({ code, message: `Code hierarchy has a cycle at ${code}` });
+    else if (failure === 'missing') problems.push({ code, message: `Missing parent code for ${code}` });
+    else if ((levels.get(code) ?? 0) > MAX_CODE_LEVELS) problems.push({ code, message: `Code hierarchy exceeds ${MAX_CODE_LEVELS} levels at ${code}` });
+  }
+  return { levels, problems };
+}
 
 export function validateClassificationCodes(codes: ClassificationCode[]): ClassificationCode[] {
   if (codes.length < 1 || codes.length > 5000) throw new BadRequestException('Choose between 1 and 5000 codes');
@@ -17,15 +57,9 @@ export function validateClassificationCodes(codes: ClassificationCode[]): Classi
     byCode.set(code, result);
     return result;
   });
+  const [problem] = codeHierarchy(normalized).problems;
+  if (problem) throw new BadRequestException(problem.message);
   for (const item of normalized) {
-    let cursor: ClassificationCode | undefined = item;
-    const seen = new Set<string>();
-    while (cursor) {
-      if (seen.has(cursor.code) || seen.size >= 3) throw new BadRequestException(`Code hierarchy has a cycle or exceeds three levels at ${item.code}`);
-      seen.add(cursor.code);
-      if (cursor.parentCode && !byCode.has(cursor.parentCode)) throw new BadRequestException(`Missing parent code for ${cursor.code}`);
-      cursor = cursor.parentCode ? byCode.get(cursor.parentCode) : undefined;
-    }
     if (item.mergedInto && (!byCode.get(item.mergedInto)?.active || item.mergedInto === item.code || item.active)) throw new BadRequestException('A merged code needs an active target');
   }
   return normalized;
@@ -41,6 +75,23 @@ export function codeAtDepth(list: ClassificationList, code: string, depth: numbe
     chain.unshift(current);
   }
   return chain[Math.min(Math.max(depth, 0), chain.length - 1)].code;
+}
+
+/** The labels of a code's ancestors, from the root, in the language asked for. */
+export function resolveClassificationPaths(list: ClassificationList, language?: string): { code: string; label: string; path: string[]; level: number; active: boolean }[] {
+  const byCode = new Map(list.codes.map((item) => [item.code, item]));
+  const label = (item: ClassificationCode) => (language === 'fr' ? item.labelFr : item.labelEn);
+  return list.codes.map((item) => {
+    const path: string[] = [];
+    const seen = new Set([item.code]);
+    let parent = item.parentCode ? byCode.get(item.parentCode) : undefined;
+    while (parent && !seen.has(parent.code)) {
+      seen.add(parent.code);
+      path.unshift(label(parent));
+      parent = parent.parentCode ? byCode.get(parent.parentCode) : undefined;
+    }
+    return { code: item.code, label: label(item), path, level: path.length + 1, active: item.active };
+  });
 }
 
 export function parseClassificationCsv(csv: string): { codes: ClassificationCode[]; errors: { row: number; message: string }[] } {
@@ -76,18 +127,7 @@ export function parseClassificationCsv(csv: string): { codes: ClassificationCode
     sourceRows.set(code, index + 2);
     codes.push({ code, labelEn, labelFr, parentCode: at(record, 'parent_code') || undefined, active: active === 'true' || active === '1' });
   }
-  const byCode = new Map(codes.map((item) => [item.code, item]));
-  for (const item of codes) {
-    let cursor: ClassificationCode | undefined = item;
-    const seen = new Set<string>();
-    while (cursor?.parentCode) {
-      if (seen.has(cursor.code) || seen.size >= 3) { errors.push({ row: sourceRows.get(item.code)!, message: 'Code hierarchy has a cycle or exceeds three levels' }); break; }
-      seen.add(cursor.code);
-      if (!byCode.has(cursor.parentCode)) { errors.push({ row: sourceRows.get(item.code)!, message: `Missing parent ${cursor.parentCode}` }); break; }
-      cursor = byCode.get(cursor.parentCode);
-    }
-    if (seen.size >= 3) errors.push({ row: sourceRows.get(item.code)!, message: 'Code hierarchy exceeds three levels' });
-  }
+  for (const problem of codeHierarchy(codes).problems) errors.push({ row: sourceRows.get(problem.code)!, message: problem.message });
   if (!errors.length) {
     try { validateClassificationCodes(codes); }
     catch (error) { errors.push({ row: 0, message: (error as Error).message }); }

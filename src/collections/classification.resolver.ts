@@ -37,6 +37,15 @@ class ClassificationCopyPreview {
 }
 
 @ObjectType()
+class ClassificationCodePath {
+  @Field() code!: string;
+  @Field() label!: string;
+  @Field(() => [String], { description: 'Labels of the ancestors, from the root; the code itself is not included' }) path!: string[];
+  @Field(() => Int) level!: number;
+  @Field() active!: boolean;
+}
+
+@ObjectType()
 class ClassificationMergePreview {
   @Field(() => Int) affectedEntries!: number;
   @Field() allowed!: boolean;
@@ -50,6 +59,11 @@ export class ClassificationResolver {
   @Mutation(() => Collection)
   async saveClassification(@Args('collectionId') collectionId: string, @Args('name') name: string, @Args('codes', { type: () => [ClassificationCodeInput] }) codes: ClassificationCodeInput[], @Args('listId', { type: () => String, nullable: true }) listId: string | undefined, @Args('expectedVersion', { type: () => Int, nullable: true }) expectedVersion: number | undefined, @Context('req') request: Request) {
     return this.service.save(collectionId, await this.user(request), listId, expectedVersion, name, codes as ClassificationCode[]);
+  }
+
+  @Query(() => [ClassificationCodePath])
+  async classificationCodePaths(@Args('collectionId') collectionId: string, @Args('listId') listId: string, @Args('language', { type: () => String, nullable: true }) language: string | undefined, @Context('req') request: Request) {
+    return this.service.codePaths(collectionId, listId, await this.user(request), language);
   }
 
   @Query(() => ClassificationCsvPreview)
