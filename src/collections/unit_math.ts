@@ -10,7 +10,7 @@ export const builtInUnits: CollectionUnit[] = [
   ['bpm', 'Beats per minute', 'bpm', 'FREQUENCY', '1'],
   ['item', 'Item', 'item', 'COUNT', '1'], ['%', 'Percent', '%', 'RATIO', '0.01'],
   ['°C', 'Celsius', '°C', 'TEMPERATURE', '1'], ['°F', 'Fahrenheit', '°F', 'TEMPERATURE', '1'],
-  ['EUR', 'Euro', '€', 'CURRENCY', '1'], ['USD', 'US dollar', '$', 'CURRENCY', '1'], ['GBP', 'British pound', '£', 'CURRENCY', '1'], ['NGN', 'Nigerian naira', '₦', 'CURRENCY', '1'],
+  ['EUR', 'Euro', '€', 'CURRENCY', '1'], ['USD', 'US dollar', '$', 'CURRENCY', '1'], ['GBP', 'British pound', '£', 'CURRENCY', '1'], ['NGN', 'Nigerian naira', '₦', 'CURRENCY', '1'], ['FCFA', 'CFA franc', 'FCFA', 'CURRENCY', '1'],
 ].map(([id, name, symbol, dimension, factor]) => ({ id, name, symbol, dimension, factor, version: 1 }));
 
 export function decimal(value: string, positive = false): Rational {

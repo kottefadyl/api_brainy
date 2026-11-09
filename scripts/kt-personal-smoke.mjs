@@ -34,6 +34,9 @@ try {
   assert.equal(shop.formats.length, 1, 'one data format');
   const format = shop.formats[0];
   assert.deepEqual(format.fields.map((field) => field.kind), ['DATE', 'NUMBER'], 'only a date and an amount');
+  assert.equal(format.fields[1].unit, 'FCFA', 'amounts are in FCFA');
+  const { collectionAvailableUnits } = data(await gql('query($id:String!){collectionAvailableUnits(collectionId:$id){id symbol dimension}}', { id: shop.id }, owner.token));
+  assert.deepEqual(collectionAvailableUnits.find((unit) => unit.id === 'FCFA'), { id: 'FCFA', symbol: 'FCFA', dimension: 'CURRENCY' }, 'FCFA is a listed currency');
   assert.deepEqual(shop.periodTotals, { formatId: format.id, dateFieldId: format.fields[0].id, amountFieldId: format.fields[1].id });
 
   const other = data(await gql(fromTemplate, { t: 'expenses', n: 'Autre', l: 'fr' }, owner.token)).createCollectionFromTemplate;
@@ -43,11 +46,12 @@ try {
   // Mon 2 Nov to Sun 8 Nov 2026 is the week under test; the entries sit on each boundary.
   for (const [date, amount] of [['2026-11-01', '100'], ['2026-11-02', '1500.50'], ['2026-11-08', '2000'], ['2026-11-09', '40'], ['2026-11-30', '5'], ['2026-12-01', '7'], ['2026-01-01', '11'], ['2025-12-31', '13']]) data(await add(date, amount));
 
-  const total = async (from, to, token = owner.token) => gql('query($id:String!,$input:AnalysisInput!){analyseCollection(collectionId:$id,input:$input){rows{value count}}}', { id: shop.id, input: { formatId: format.id, fieldId: format.fields[1].id, dateFieldId: format.fields[0].id, groupBy: 'NONE', operation: 'SUM', measureKind: 'EVENT', from, to } }, token);
+  const total = async (from, to, token = owner.token) => gql('query($id:String!,$input:AnalysisInput!){analyseCollection(collectionId:$id,input:$input){unit rows{value count}}}', { id: shop.id, input: { formatId: format.id, fieldId: format.fields[1].id, dateFieldId: format.fields[0].id, groupBy: 'NONE', operation: 'SUM', measureKind: 'EVENT', from, to } }, token);
   const sum = async (from, to) => data(await total(from, to)).analyseCollection.rows[0]?.value;
   assert.equal(await sum('2026-11-02', '2026-11-08'), '3500.5', 'week, both bounds included');
   assert.equal(await sum('2026-11-01', '2026-11-30'), '3645.5', 'month, both bounds included');
   assert.equal(await sum('2026-01-01', '2026-12-31'), '3663.5', 'year, both bounds included');
+  assert.equal(data(await total('2026-11-01', '2026-11-30')).analyseCollection.unit, 'FCFA', 'the total keeps its currency');
   assert.equal(await sum('2030-01-01', '2030-01-31'), undefined, 'an empty period returns no row');
   assert.ok((await total('2026-11-01', '2026-11-30', stranger.token)).errors, 'another account cannot read the totals');
   console.log('KT personal smoke passed');
