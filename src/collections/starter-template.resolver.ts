@@ -1,5 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Args, Context, Field, Mutation, ObjectType, Query, Resolver } from '@nestjs/graphql';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { AuthService } from '../auth/auth.service';
 import { Collection, FieldKind, SensitivityLevel } from './collection.schema';
 import { CollectionsService } from './collections.service';
@@ -21,6 +23,7 @@ function templates(language: string): TemplateDefinition[] {
   const fr = language === 'fr';
   return [
     { id: 'blank', name: fr ? 'Partir de zéro' : 'Start from scratch', description: fr ? 'Une collection et un format de données simple à modifier.' : 'One simple, editable data format.', formats: [{ name: fr ? 'Général' : 'General', color: '#EEF5FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }] }] },
+    { id: 'kt_personal', name: 'KT personal', description: fr ? 'Ventes d’eau : notez le montant de chaque journée et suivez le total de la semaine, du mois et de l’année.' : 'Water sales: note each day’s amount and follow the week, month and year totals.', formats: [{ name: fr ? 'Bilan du jour' : 'Daily sales', color: '#EAF8FA', fields: [{ name: 'Date', kind: FieldKind.DATE }, { name: fr ? 'Montant' : 'Amount', kind: FieldKind.NUMBER }] }] },
     { id: 'notes', name: fr ? 'Notes et écriture' : 'Notes and writing', description: fr ? 'Des notes longues, datées et faciles à rechercher.' : 'Dated, searchable long-form notes.', formats: [{ name: fr ? 'Note' : 'Note', color: '#EEF5FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Contenu' : 'Content', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Date' : 'Date', kind: FieldKind.DATE }] }] },
     { id: 'links', name: fr ? 'Liens conservés' : 'Saved links', description: fr ? 'URL, commentaire, catégorie et date de sauvegarde.' : 'URL, comment, category and saved date.', formats: [{ name: fr ? 'Lien' : 'Link', color: '#EDF9F3', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: 'URL', kind: FieldKind.LINK }, { name: fr ? 'Commentaire' : 'Comment', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Catégorie' : 'Category', kind: FieldKind.TEXT }, { name: fr ? 'Enregistré le' : 'Saved on', kind: FieldKind.DATE }] }] },
     { id: 'capture', name: fr ? 'Captures rapides' : 'Quick captures', description: fr ? 'Liens, textes et fichiers avec une note de contexte.' : 'Links, text and files with a context note.', formats: [{ name: fr ? 'Capture' : 'Capture', color: '#EAF8FA', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Lien' : 'Link', kind: FieldKind.LINK }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.TEXT }, { name: fr ? 'Note' : 'Note', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Source' : 'Source', kind: FieldKind.TEXT }, { name: fr ? 'Pièce jointe' : 'Attachment', kind: FieldKind.ATTACHMENT }] }] },
@@ -64,7 +67,7 @@ function templates(language: string): TemplateDefinition[] {
 
 @Resolver()
 export class StarterTemplateResolver {
-  constructor(private readonly collections: CollectionsService, private readonly auth: AuthService, private readonly stock: StockService) {}
+  constructor(private readonly collections: CollectionsService, private readonly auth: AuthService, private readonly stock: StockService, @InjectModel(Collection.name) private readonly collectionModel: Model<Collection>) {}
 
   @Query(() => [StarterTemplate])
   starterTemplates(@Args('language', { type: () => String, nullable: true }) language?: string): StarterTemplate[] {
@@ -85,6 +88,10 @@ export class StarterTemplateResolver {
     if (template.layout === 'CALENDAR') {
       const dates = format.fields.filter((field) => field.kind === FieldKind.DATETIME);
       collection = await this.collections.saveView(collection.id, ownerId, { name: language === 'fr' ? 'Calendrier' : 'Calendar', layout: 'CALENDAR', formatIds: [format.id], columnFieldIds: format.fields.map((field) => field.id), sort: 'NEWEST', groupByFormat: false, calendarStartFieldId: dates[0].id, calendarEndFieldId: dates[1].id, calendarTimeZone: timeZone || 'UTC' });
+    }
+    if (template.id === 'kt_personal') {
+      const periodTotals = { formatId: format.id, dateFieldId: byKind(FieldKind.DATE), amountFieldId: byKind(FieldKind.NUMBER) };
+      collection = (await this.collectionModel.findOneAndUpdate({ _id: collection.id, ownerId }, { $set: { periodTotals } }, { new: true }).exec())!;
     }
     if (template.id === 'book') {
       const ordered = collection.formats.filter((item) => item.fields.some((field) => field.kind === FieldKind.NUMBER));

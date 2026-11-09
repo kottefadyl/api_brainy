@@ -289,9 +289,23 @@ export class CollectionFormula {
 }
 export const CollectionFormulaSchema = SchemaFactory.createForClass(CollectionFormula);
 
+/** Field pair behind the week, month and year totals panel. Only the KT personal template sets it. */
+@ObjectType()
+@Schema({ _id: false })
+export class CollectionPeriodTotals {
+  @Field() @Prop({ required: true }) formatId!: string;
+  @Field() @Prop({ required: true }) dateFieldId!: string;
+  @Field() @Prop({ required: true }) amountFieldId!: string;
+}
+const CollectionPeriodTotalsSchema = SchemaFactory.createForClass(CollectionPeriodTotals);
+
 @ObjectType()
 @Schema({ timestamps: true })
 export class Collection {
+  @Field(() => CollectionPeriodTotals, { nullable: true })
+  @Prop({ type: CollectionPeriodTotalsSchema })
+  periodTotals?: CollectionPeriodTotals;
+
   @Field({ nullable: true })
   @Prop({ default: 5, min: 2, max: 100 })
   minAggregateSize?: number;

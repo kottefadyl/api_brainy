@@ -18,6 +18,7 @@
     "smoke:domain-packages": "node scripts/domain-package-smoke.mjs",
     "smoke:data-sources": "node scripts/data-source-smoke.mjs",
     "smoke:large-files": "node scripts/large-file-smoke.mjs",
+    "smoke:kt-personal": "node scripts/kt-personal-smoke.mjs",
     "smoke:web": "node scripts/web-smoke.mjs"
   },
   "dependencies": {

@@ -200,6 +200,7 @@ type Collection {
   minAggregateSize: Float
   name: String!
   ownerId: String!
+  periodTotals: CollectionPeriodTotals
   savedViews: [SavedCollectionView!]!
   sharedObjects: [SharedObjectGrant!]!
   stockRules: [StockRule!]!
@@ -293,6 +294,12 @@ type CollectionMember {
   sensitiveFieldIds: [String!]
   sharedFieldIds: [String!]
   userId: String!
+}
+
+type CollectionPeriodTotals {
+  amountFieldId: String!
+  dateFieldId: String!
+  formatId: String!
 }
 
 enum CollectionRole {
