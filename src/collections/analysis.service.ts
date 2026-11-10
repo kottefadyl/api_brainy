@@ -11,7 +11,7 @@ import { Collection, CollectionField, CollectionFormula, FieldKind } from './col
 import { codeAtDepth } from './classification.logic';
 import { ZoneAnalysisService } from './zone-analysis.service';
 import { CollaborationService } from './collaboration.service';
-import { assertSensitiveAnalysisRequest, enforceSensitiveAggregate } from './sensitivity.logic';
+import { assertSensitiveAnalysisRequest, finishSensitiveAggregate, generalizeSensitiveAggregate } from './sensitivity.logic';
 import { recordSensitiveAggregate } from './sensitive-aggregate-watch';
 import { Entry, EntryValue } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
@@ -643,7 +643,8 @@ export class AnalysisService {
     return { entryId, ...(result ? { value: fractionText(result.value), unit: result.unit, dimension: result.dimension } : { missing: 'A source value is missing' }) };
   }
 
-  async analyse(collectionId: string, ownerId: string, input: AnalysisInput): Promise<AnalysisResult> {
+  /** `widened` lists the generalisation steps already taken for a sensitive aggregate (T43/1). */
+  async analyse(collectionId: string, ownerId: string, input: AnalysisInput, widened: string[] = []): Promise<AnalysisResult> {
     const collection = await this.collection(collectionId, ownerId);
     const format = collection.formats.find((item) => item.id === input.formatId);
     if (!format) throw new BadRequestException('Data format not found');
@@ -877,8 +878,11 @@ export class AnalysisService {
       comparisonRows,
     };
     if (!sensitive) return result;
-    let safe: AnalysisResult;
-    try { safe = enforceSensitiveAggregate(result, minimum); } catch (error) { throw await refuse(error); }
+    let outcome: ReturnType<typeof generalizeSensitiveAggregate>;
+    try { outcome = generalizeSensitiveAggregate(result, minimum, input.language); } catch (error) { throw await refuse(error); }
+    if (outcome.kind === 'coarser') return this.analyse(collectionId, ownerId, { ...input, groupBy: outcome.groupBy }, [...widened, `${input.groupBy}>${outcome.groupBy}`]);
+    if (outcome.kind === 'refused') throw await refuse(new BadRequestException(outcome.reason));
+    const safe = finishSensitiveAggregate(outcome.result, minimum, [...widened, ...(outcome.kind === 'merged' ? [`MERGED:${outcome.merged}`] : [])], input.language);
     await recordSensitiveAggregate(this.collaboration, { collectionId, userId: ownerId, formatId: format.id, input, minimum, observationCount: safe.rows.reduce((sum, row) => sum + row.count, 0) });
     return safe;
   }

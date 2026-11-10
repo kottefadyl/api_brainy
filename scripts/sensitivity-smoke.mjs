@@ -76,6 +76,28 @@ try {
   for (let i = 0; i < 8; i++) data(await graphql(analyse, { collectionId: collection.id, input: analysisInput }, owner.token));
   const finalAlerts = await alerts();
   assert.ok(finalAlerts.some((detail) => detail.startsWith('BURST')), 'the same question asked ten times in an hour raises a burst alert');
+  // T43/1: k-anonymity rule. Small groups are widened before anything is refused.
+  const clinic = data(await graphql(create, { input: { name: 'R9 clinic', formats: [{ name: 'Visits', color: '#EEF5FF', fields: [{ name: 'Title', kind: 'TITLE' }, { name: 'Amount', kind: 'NUMBER' }, { name: 'Ward', kind: 'SELECT', options: ['North', 'South', 'East', 'West'] }, { name: 'When', kind: 'DATE' }, { name: 'Diagnosis', kind: 'TEXT' }] }] } }, owner.token)).createCollection;
+  const visits = clinic.formats[0];
+  const visit = Object.fromEntries(visits.fields.map((field) => [field.name, field.id]));
+  data(await graphql(setLevel, { collectionId: clinic.id, formatId: visits.id, fieldId: visit.Diagnosis, level: 'SENSITIVE', expectedVersion: visits.version }, owner.token));
+  data(await graphql(minimum, { collectionId: clinic.id, minimum: 3 }, owner.token));
+  const clinicRows = [['North', '10', '2026-03-01'], ['North', '20', '2026-03-01'], ['North', '30', '2026-03-02'], ['North', '40', '2026-03-02'], ['South', '50', '2026-03-03'], ['South', '60', '2026-03-04'], ['East', '70', '2026-04-10'], ['West', '80', '2026-04-11']];
+  for (const [ward, amount, when] of clinicRows) data(await graphql(add, { id: clinic.id, input: { formatId: visits.id, values: [{ fieldId: visit.Title, value: `${ward} ${amount}` }, { fieldId: visit.Amount, value: amount }, { fieldId: visit.Ward, value: ward }, { fieldId: visit.When, value: when }, { fieldId: visit.Diagnosis, value: 'private' }] } }, owner.token));
+  const widened = 'query($collectionId:String!,$input:AnalysisInput!){analyseCollection(collectionId:$collectionId,input:$input){groupBy rows{group label value count sources{entryId}} explanation}}';
+  const byWard = { formatId: visits.id, fieldId: visit.Amount, operation: 'COUNT', groupBy: 'CATEGORY', groupFieldId: visit.Ward, measureKind: 'EVENT', language: 'en' };
+  const merged = data(await graphql(widened, { collectionId: clinic.id, input: byWard }, owner.token)).analyseCollection;
+  assert.deepEqual(merged.rows.map((row) => [row.label, row.count, row.value]), [['North', 4, '4'], ['Other (3 groups merged)', 4, '4']], 'three small wards become one group of four');
+  assert.ok(merged.rows.every((row) => row.sources.length === 0) && /3 small groups merged/.test(merged.explanation), merged.explanation);
+  const average = data(await graphql(widened, { collectionId: clinic.id, input: { ...byWard, operation: 'AVERAGE', language: 'fr' } }, owner.token)).analyseCollection;
+  assert.deepEqual(average.rows.map((row) => [row.label, row.value]), [['North', '25'], ['Autres (3 groupes regroupés)', '65']], 'the merged average weighs each group by its count');
+  const byDay = { ...byWard, operation: 'SUM', groupBy: 'DAY', dateFieldId: visit.When, groupFieldId: undefined };
+  const total = data(await graphql(widened, { collectionId: clinic.id, input: byDay }, owner.token)).analyseCollection;
+  assert.equal(total.groupBy, 'NONE', 'days with one visit widen to months, then to one total');
+  assert.deepEqual(total.rows.map((row) => [row.count, row.value]), [[8, '360']]);
+  assert.match(total.explanation, /days → months; months → one total/);
+  data(await graphql(minimum, { collectionId: clinic.id, minimum: 9 }, owner.token));
+  assert.ok((await graphql(widened, { collectionId: clinic.id, input: byDay }, owner.token)).errors?.length, 'a total under the threshold is still refused');
   assert.equal(finalAlerts.filter((detail) => detail.startsWith('DIFFERENCING')).length, 1, 'one alert of a kind per hour');
   const backup = 'query($includeSensitive:Boolean){workspaceBackup(includeSensitive:$includeSensitive)}';
   assert.ok((await graphql(backup, {}, owner.token)).errors?.length, 'backup requires explicit inclusion');
@@ -87,7 +109,7 @@ try {
   }
   assert.equal(JSON.stringify(audit).includes('private patient note'), false, 'audit does not copy protected values');
   assert.equal(JSON.stringify(audit).includes('secret-0'), false, 'audit does not copy protected values');
-  console.log('T43 R7/R8: member masking, explicit position grant, server threshold, source stripping, differencing refusals, repeated-query alerts, geo export and backup choice passed.');
+  console.log('T43 R7/R8/R9: member masking, explicit position grant, server threshold, k-anonymity widening, source stripping, differencing refusals, repeated-query alerts, geo export and backup choice passed.');
 } finally {
   try {
     for (const userId of owners) {
