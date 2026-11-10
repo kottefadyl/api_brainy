@@ -62,6 +62,21 @@ try {
   assert.match(safe.explanation, /not anonymization/i);
   assert.ok((await graphql(analyse, { collectionId: collection.id, input: { ...analysisInput, search: 'Sample 0' } }, owner.token)).errors?.length, 'filtered complement/differencing query is refused');
   assert.ok((await graphql(analyse, { collectionId: collection.id, input: { ...analysisInput, comparisonFrom: '2026-01-01' } }, owner.token)).errors?.length, 'comparison is refused');
+  // T43/3: repeated targeting patterns are recorded, without values.
+  const watched = async (action) => mongoose.connection.collection('auditlogs').find({ collectionId: collection.id, action }).toArray();
+  const served = await watched('READ_SENSITIVE_AGGREGATE');
+  assert.ok(served.length >= 1 && served.every((item) => /^[0-9a-f]{16}$/.test(item.queryKey) && item.observationCount === 3), 'served aggregates carry a query fingerprint and their size');
+  assert.ok((await watched('REFUSED_SENSITIVE_AGGREGATE')).length >= 3, 'refused sensitive queries are recorded');
+  data(await graphql(add, { id: collection.id, input: { formatId: format.id, values: [{ fieldId: fields.Title, value: 'Sample 3' }, { fieldId: fields.Amount, value: '99' }, { fieldId: fields.Diagnosis, value: 'secret-3' }] } }, owner.token));
+  assert.equal(data(await graphql(analyse, { collectionId: collection.id, input: analysisInput }, owner.token)).analyseCollection.rows[0].count, 4, 'the aggregate is still served');
+  const alerts = async () => (await watched('SENSITIVE_AGGREGATE_ALERT')).map((item) => item.details);
+  assert.ok((await alerts()).some((detail) => detail.startsWith('DIFFERENCING')), 'a total differing by one entry raises a differencing alert');
+  for (let i = 0; i < 3; i++) assert.ok((await graphql(analyse, { collectionId: collection.id, input: { ...analysisInput, search: `probe ${i}` } }, owner.token)).errors?.length);
+  assert.ok((await alerts()).some((detail) => detail.startsWith('PROBING')), 'repeated refusals raise a probing alert');
+  for (let i = 0; i < 8; i++) data(await graphql(analyse, { collectionId: collection.id, input: analysisInput }, owner.token));
+  const finalAlerts = await alerts();
+  assert.ok(finalAlerts.some((detail) => detail.startsWith('BURST')), 'the same question asked ten times in an hour raises a burst alert');
+  assert.equal(finalAlerts.filter((detail) => detail.startsWith('DIFFERENCING')).length, 1, 'one alert of a kind per hour');
   const backup = 'query($includeSensitive:Boolean){workspaceBackup(includeSensitive:$includeSensitive)}';
   assert.ok((await graphql(backup, {}, owner.token)).errors?.length, 'backup requires explicit inclusion');
   assert.ok(data(await graphql(backup, { includeSensitive: true }, owner.token)).workspaceBackup.length > 100);
@@ -72,7 +87,7 @@ try {
   }
   assert.equal(JSON.stringify(audit).includes('private patient note'), false, 'audit does not copy protected values');
   assert.equal(JSON.stringify(audit).includes('secret-0'), false, 'audit does not copy protected values');
-  console.log('T43 R7/R8: member masking, explicit position grant, server threshold, source stripping, differencing refusals, geo export and backup choice passed.');
+  console.log('T43 R7/R8: member masking, explicit position grant, server threshold, source stripping, differencing refusals, repeated-query alerts, geo export and backup choice passed.');
 } finally {
   try {
     for (const userId of owners) {

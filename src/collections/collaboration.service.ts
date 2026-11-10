@@ -181,14 +181,20 @@ export class CollaborationService {
     return updated!;
   }
 
-  async logAction(collectionId: string, userId: string, action: string, details?: string): Promise<AuditLog> {
+  async logAction(collectionId: string, userId: string, action: string, details?: string, extra: { queryKey?: string; observationCount?: number } = {}): Promise<AuditLog> {
     return this.auditLogsModel.create({
       collectionId,
       userId,
       action,
       details,
       occurredAt: new Date(),
+      ...extra,
     });
+  }
+
+  /** One person's audit events of the given kinds in a collection since a date, newest first. */
+  async recentActions(collectionId: string, userId: string, actions: string[], since: Date): Promise<AuditLog[]> {
+    return this.auditLogsModel.find({ collectionId, userId, action: { $in: actions }, occurredAt: { $gte: since } }).sort({ occurredAt: -1 }).limit(500).exec();
   }
 
   async getAuditLogs(collectionId: string, userId: string): Promise<AuditLog[]> {

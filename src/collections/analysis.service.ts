@@ -12,6 +12,7 @@ import { codeAtDepth } from './classification.logic';
 import { ZoneAnalysisService } from './zone-analysis.service';
 import { CollaborationService } from './collaboration.service';
 import { assertSensitiveAnalysisRequest, enforceSensitiveAggregate } from './sensitivity.logic';
+import { recordSensitiveAggregate } from './sensitive-aggregate-watch';
 import { Entry, EntryValue } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
 import { assertAddable, assertComparable, divideUnits, inferStaticType, isDuration, isUnitlessZero, multiplyUnits, pathProperty, relatedTarget, UnitInfo } from './formula_inference';
@@ -645,7 +646,13 @@ export class AnalysisService {
     const collection = await this.collection(collectionId, ownerId);
     const format = collection.formats.find((item) => item.id === input.formatId);
     if (!format) throw new BadRequestException('Data format not found');
-    const sensitive = assertSensitiveAnalysisRequest(format, input);
+    const minimum = collection.minAggregateSize ?? 5;
+    const refuse = async (error: unknown) => {
+      await recordSensitiveAggregate(this.collaboration, { collectionId, userId: ownerId, formatId: format.id, input, minimum, refused: error instanceof Error ? error.message : 'Refused' });
+      return error;
+    };
+    let sensitive: boolean;
+    try { sensitive = assertSensitiveAnalysisRequest(format, input); } catch (error) { throw await refuse(error); }
     if (input.groupBy === 'ZONE') return this.zoneAnalysis.analyse(collection, ownerId, input);
     const spec = getOperationSpec(input.operation);
     if (!['NONE', 'DAY', 'MONTH', 'CATEGORY', 'OBJECT'].includes(input.groupBy) || !['EVENT', 'SNAPSHOT', 'RATE'].includes(input.measureKind)) {
@@ -866,8 +873,9 @@ export class AnalysisService {
       comparisonRows,
     };
     if (!sensitive) return result;
-    const safe = enforceSensitiveAggregate(result, collection.minAggregateSize ?? 5);
-    await this.collaboration.logAction(collectionId, ownerId, 'READ_SENSITIVE_AGGREGATE', `Data format ${format.id}; operation ${input.operation}`);
+    let safe: AnalysisResult;
+    try { safe = enforceSensitiveAggregate(result, minimum); } catch (error) { throw await refuse(error); }
+    await recordSensitiveAggregate(this.collaboration, { collectionId, userId: ownerId, formatId: format.id, input, minimum, observationCount: safe.rows.reduce((sum, row) => sum + row.count, 0) });
     return safe;
   }
 }

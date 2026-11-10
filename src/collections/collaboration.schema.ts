@@ -68,7 +68,16 @@ export class AuditLog {
   @Field()
   @Prop({ required: true, default: () => new Date() })
   occurredAt!: Date;
+
+  /** Fingerprint of a sensitive aggregate query (T43/3); never a value. */
+  @Prop()
+  queryKey?: string;
+
+  /** Number of observations behind a sensitive aggregate (T43/3). */
+  @Prop()
+  observationCount?: number;
 }
 
 export const AuditLogSchema = SchemaFactory.createForClass(AuditLog);
 AuditLogSchema.index({ collectionId: 1, occurredAt: -1 });
+AuditLogSchema.index({ collectionId: 1, userId: 1, action: 1, occurredAt: -1 });
