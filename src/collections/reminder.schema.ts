@@ -55,6 +55,8 @@ export class PushDevice {
   @Field() @Prop({ required: true }) lastSeenAt!: Date;
 }
 export const PushDeviceSchema = SchemaFactory.createForClass(PushDevice);
+// FCM treats tokens unused for 270 days as expired; clients refresh lastSeenAt at each sign-in.
+PushDeviceSchema.index({ lastSeenAt: 1 }, { expireAfterSeconds: 270 * 24 * 60 * 60 });
 
 @ObjectType()
 export class ReminderCapabilities {
