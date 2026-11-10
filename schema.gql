@@ -177,8 +177,11 @@ type ClassificationCsvPreview {
 }
 
 type ClassificationList {
+  codeCount: Int
   codes: [ClassificationCode!]!
+  external: Boolean
   id: String!
+  levels: Int
   name: String!
   version: Float!
 }
@@ -863,6 +866,17 @@ type FormulaStaticType {
   unitOpen: Boolean!
 }
 
+type FoundClassificationCode {
+  active: Boolean!
+  code: String!
+  hasChildren: Boolean!
+  label: String!
+  level: Int!
+
+  """Labels of the ancestors, from the root"""
+  path: [String!]!
+}
+
 type GeoDistance {
   unit: String!
   value: String!
@@ -1075,6 +1089,7 @@ type Mutation {
   importCollectionRelations(collectionId: String!, importKey: String!, rows: [ImportedRelationInput!]!): Boolean!
   importEntriesBatch(collectionId: String!, input: ImportEntriesInput!): ImportEntriesResult!
   importGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, importKey: String!, kind: String!, text: String!): GeoImportResult!
+  importReferential(collectionId: String!, content: String!, expectedVersion: Int, format: String!, listId: String, name: String!): Collection!
   installDomainPackage(collectionId: String, collectionName: String, language: String, packageJson: String!): DomainPackageInstallResult!
   linkCollectionDataFormat(formatId: String!, targetCollectionId: String!): TransferResult!
   linkImportedEntries(collectionId: String!, importKey: String!, links: [ImportedEntryLinkInput!]!): Boolean!
@@ -1165,6 +1180,11 @@ type ObjectReferenceSnapshot {
   properties: [ObjectPropertySnapshot!]!
 }
 
+type PlatformCapabilities {
+  frozenModules: [String!]!
+  maxEntryAttachmentBytes: Int!
+}
+
 input ProfileInput {
   fieldOfStudy: String!
   hobbies: [String!]!
@@ -1213,6 +1233,9 @@ type Query {
   backgroundJobs(collectionId: String!): [BackgroundJob!]!
   calculateCollectionFormula(collectionId: String!, entryId: String!, formulaId: String!): FormulaResult!
   classificationCodePaths(collectionId: String!, language: String, listId: String!): [ClassificationCodePath!]!
+
+  """Codes by value, to label the codes already saved in entries"""
+  classificationCodesByValue(codes: [String!]!, collectionId: String!, listId: String!): [ClassificationCode!]!
   classificationCopyPreview(collectionId: String!, listId: String!, targetCollectionId: String!): ClassificationCopyPreview!
   classificationMergePreview(collectionId: String!, fromCode: String!, listId: String!, toCode: String!): ClassificationMergePreview!
   collectionAuditLogs(collectionId: String!): [AuditLog!]!
@@ -1266,15 +1289,18 @@ type Query {
   objectModelTemplates(language: String): [ObjectModelTemplate!]!
   objectMovePreview(objectId: String!, targetCollectionId: String!): TransferPreview!
   objectVariableProperty(entryId: String!, objectId: String, propertyFieldId: String!, variableName: String!): ResolvedObjectVariable!
+  platformCapabilities: PlatformCapabilities!
   previewClassificationCsv(csv: String!): ClassificationCsvPreview!
   previewCollectionFormula(collectionId: String!, expression: String!, formatId: String!): FormulaPreview
   previewDomainPackage(collectionId: String, language: String, packageJson: String!): DomainPackagePreview!
   previewEntryStockEffect(collectionId: String!, entryId: String!, ruleId: String!): StockPreview!
   previewGeoImport(collectionId: String!, fieldId: String!, formatId: String!, kind: String!, text: String!): GeoImportResult!
+  previewReferential(content: String!, format: String!): ReferentialPreview!
   previewStockMovement(collectionId: String!, input: StockMovementInput!): StockPreview!
   publicContributionForm(token: String!): PublicContributionForm!
   pushDevices: [PushDevice!]!
   reminderCapabilities: ReminderCapabilities!
+  searchClassificationCodes(collectionId: String!, includeInactive: Boolean, language: String, limit: Int, listId: String!, parentCode: String, query: String): [FoundClassificationCode!]!
   starterTemplates(language: String): [StarterTemplate!]!
   stockDailyReport(collectionId: String!, from: String!, location: String, lot: String, productId: String!, timeZone: String!, to: String!): [StockDailyRow!]!
   stockLedgerProof(collectionId: String!, productId: String!): String!
@@ -1284,6 +1310,21 @@ type Query {
   verifyStockLedger(collectionId: String!, productId: String!): LedgerIntegrity!
   workflowNotifications: [WorkflowNotification!]!
   workspaceBackup(includeSensitive: Boolean): String!
+}
+
+type ReferentialError {
+  message: String!
+  row: Int!
+}
+
+type ReferentialPreview {
+  codeCount: Int!
+  errors: [ReferentialError!]!
+
+  """More than 5,000 codes: stored apart and searched on the server"""
+  large: Boolean!
+  levels: Int!
+  sample: [ClassificationCode!]!
 }
 
 input RegisterInput {
