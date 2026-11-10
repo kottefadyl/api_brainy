@@ -29,6 +29,21 @@ export class AuthResolver {
     return this.auth.currentUser(request.headers.authorization);
   }
 
+  @Query(() => String, { nullable: true })
+  async profilePhoto(@Context('req') request: GraphqlRequest): Promise<string | null> {
+    const user = await this.auth.currentUser(request.headers.authorization);
+    return this.auth.profilePhoto(user.id);
+  }
+
+  @Mutation(() => User)
+  async updateProfilePhoto(
+    @Args('photo', { type: () => String, nullable: true }) photo: string | null,
+    @Context('req') request: GraphqlRequest,
+  ): Promise<User> {
+    const user = await this.auth.currentUser(request.headers.authorization);
+    return this.auth.updateProfilePhoto(user.id, photo);
+  }
+
   @Mutation(() => User)
   async updateProfile(
     @Args('input') input: ProfileInput,

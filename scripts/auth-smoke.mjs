@@ -50,6 +50,19 @@ try {
   })).errors?.length, 'anonymous profile updates must fail');
   assert.ok((await graphql(register, { input: firstInput })).errors?.length, 'duplicate email should fail');
 
+  const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  const setPhoto = 'mutation($photo: String) { updateProfilePhoto(photo: $photo) { id hasProfilePhoto } }';
+  assert.equal(data(await graphql(setPhoto, { photo: png }, first.token)).updateProfilePhoto.hasProfilePhoto, true);
+  assert.equal(data(await graphql('query { profilePhoto }', {}, first.token)).profilePhoto, png);
+  assert.equal(data(await graphql('query { profilePhoto }', {}, second.token)).profilePhoto, null);
+  assert.ok((await graphql(setPhoto, { photo: 'data:image/png;base64,PHN2Zz48L3N2Zz4=' }, first.token)).errors?.length,
+    'a photo whose bytes are not an image must fail');
+  const tooLarge = `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff]), Buffer.alloc(1024 * 1024)]).toString('base64')}`;
+  assert.ok((await graphql(setPhoto, { photo: tooLarge }, first.token)).errors?.length, 'photos over 1 MiB must fail');
+  assert.ok((await graphql(setPhoto, { photo: png })).errors?.length, 'anonymous photo updates must fail');
+  assert.equal(data(await graphql(setPhoto, { photo: null }, first.token)).updateProfilePhoto.hasProfilePhoto, false);
+  assert.equal(data(await graphql('query { profilePhoto }', {}, first.token)).profilePhoto, null);
+
   const login = `mutation($input: LoginInput!) {
     login(input: $input) { token user { id name email } }
   }`;

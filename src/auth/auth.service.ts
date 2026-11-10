@@ -9,6 +9,7 @@ import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } fr
 import { promisify } from 'node:util';
 import { Model } from 'mongoose';
 import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types';
+import { validateProfilePhoto } from './profile-photo';
 import { FirebaseIdentityService } from './firebase-identity.service';
 import { User } from './user.schema';
 
@@ -161,6 +162,20 @@ export class AuthService {
         profileCompleted: true,
       },
     }, { returnDocument: 'after', runValidators: true }).exec();
+    if (!user) throw new UnauthorizedException('Invalid session');
+    return user;
+  }
+
+  async profilePhoto(userId: string): Promise<string | null> {
+    const user = await this.users.findById(userId).select('+profilePhoto').exec();
+    return user?.profilePhoto || null;
+  }
+
+  async updateProfilePhoto(userId: string, photo: string | null): Promise<User> {
+    const update = photo?.trim()
+      ? { $set: { profilePhoto: validateProfilePhoto(photo), hasProfilePhoto: true } }
+      : { $unset: { profilePhoto: 1 }, $set: { hasProfilePhoto: false } };
+    const user = await this.users.findByIdAndUpdate(userId, update, { returnDocument: 'after' }).exec();
     if (!user) throw new UnauthorizedException('Invalid session');
     return user;
   }

@@ -44,6 +44,14 @@ export class User {
   @Field()
   @Prop({ default: false })
   profileCompleted!: boolean;
+
+  /** Profile photo stored as a data URL (at most 1 MiB decoded); loaded only on request. */
+  @Prop({ select: false })
+  profilePhoto?: string;
+
+  @Field()
+  @Prop({ default: false })
+  hasProfilePhoto!: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

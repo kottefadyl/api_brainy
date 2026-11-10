@@ -1145,6 +1145,7 @@ type Mutation {
   updateEntry(id: String!, input: SaveEntryInput!): Entry!
   updateNote(id: String!, input: UpdateNoteInput!): Note
   updateProfile(input: ProfileInput!): User!
+  updateProfilePhoto(photo: String): User!
   uploadDataSourceDelivery(content: String!, contentType: String!, deliveryId: String!, sourceId: String!): DataSourceRun!
   uploadLargeFilePart(base64: String!, partNumber: Int!, sha256: String!, uploadId: String!): LargeFileUpload!
   useCollectionObject(objectId: String!, targetFieldId: String!, targetFormatId: String!): Entry!
@@ -1297,6 +1298,7 @@ type Query {
   previewGeoImport(collectionId: String!, fieldId: String!, formatId: String!, kind: String!, text: String!): GeoImportResult!
   previewReferential(content: String!, format: String!): ReferentialPreview!
   previewStockMovement(collectionId: String!, input: StockMovementInput!): StockPreview!
+  profilePhoto: String
   publicContributionForm(token: String!): PublicContributionForm!
   pushDevices: [PushDevice!]!
   reminderCapabilities: ReminderCapabilities!
@@ -1663,6 +1665,7 @@ input UpdateNoteInput {
 type User {
   email: String!
   fieldOfStudy: String
+  hasProfilePhoto: Boolean!
   hobbies: [String!]!
   id: ID!
   interests: [String!]!
