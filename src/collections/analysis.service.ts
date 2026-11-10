@@ -17,6 +17,7 @@ import { Entry, EntryValue } from './entry.schema';
 import { decimal, divide, fractionText, multiply, Rational, resolveUnit } from './unit_math';
 import { assertAddable, assertComparable, divideUnits, inferStaticType, isDuration, isUnitlessZero, multiplyUnits, pathProperty, relatedTarget, UnitInfo } from './formula_inference';
 import { addDaysToDate, BooleanExpression, DateExpression, datePart, describeNode, endOfMonth, Expression, formatDate, formatFormulaDate, formatNumber, FormulaDate, FormulaNode, isDateExpression, isDatePattern, isNumberPattern, isRelatedAggregate, isTextExpression, ObjectPath, parseFormulaDate, RelatedAggregate, splitCharacters, startOfMonth, TextExpression, toProperCase, wholeMonthsBetween } from './formula_nodes';
+import { CodeListStore } from './code-list-store.service';
 
 type Quantity = UnitInfo & { value: Rational };
 const plus = (a: Rational, b: Rational): Rational => ({ n: a.n * b.d + b.n * a.d, d: a.d * b.d });
@@ -54,7 +55,7 @@ const modulo = (a: Rational, b: Rational): Rational => {
 
 @Injectable()
 export class AnalysisService {
-  constructor(@InjectModel(Collection.name) private readonly collections: Model<Collection>, @InjectModel(Entry.name) private readonly entries: Model<Entry>, private readonly zoneAnalysis: ZoneAnalysisService, private readonly collaboration: CollaborationService) {}
+  constructor(@InjectModel(Collection.name) private readonly collections: Model<Collection>, @InjectModel(Entry.name) private readonly entries: Model<Entry>, private readonly zoneAnalysis: ZoneAnalysisService, private readonly collaboration: CollaborationService, private readonly codeLists: CodeListStore) {}
 
   private async collection(collectionId: string, ownerId: string): Promise<Collection> {
     if (!Types.ObjectId.isValid(collectionId)) throw new NotFoundException('Collection not found');
@@ -717,6 +718,9 @@ export class AnalysisService {
     let unit: string | undefined;
     let dimension: string | undefined;
     let unitKnown = false;
+    // Large code lists (T39/3) are loaded once for grouping by level and labels.
+    const largeLists = [groupField, secondaryGroupField].filter((item) => item?.kind === FieldKind.CODE && collection.codeLists?.some((list) => list.id === item.codeListId && list.external)).map((item) => item!.codeListId!);
+    if (largeLists.length) collection.codeLists = await this.codeLists.materialize(collection, largeLists);
     const keyFor = (entry: Entry, dateValue: string | undefined, mode: string, targetField?: CollectionField, depth?: number): string => {
       if (mode === 'DAY' || mode === 'MONTH') return dateValue?.slice(0, mode === 'DAY' ? 10 : 7) ?? 'Missing date';
       if (mode === 'CATEGORY') {

@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType, registerEnumType } from '@nestjs/graphql';
+import { Field, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { CollectionExchangeRate, CollectionExchangeRateSchema, CollectionUnit, CollectionUnitSchema } from './unit.schema';
 import { ObjectPropertySnapshot, ObjectPropertySnapshotSchema } from './entry.schema';
@@ -158,6 +158,10 @@ export class ClassificationList {
   @Field() @Prop({ required: true }) name!: string;
   @Field() @Prop({ required: true, default: 1 }) version!: number;
   @Field(() => [ClassificationCode]) @Prop({ type: [ClassificationCodeSchema], default: [] }) codes!: ClassificationCode[];
+  /** True for a large list (more than 5,000 codes): its codes are stored apart and searched on the server (T39/3). */
+  @Field({ nullable: true }) @Prop() external?: boolean;
+  @Field(() => Int, { nullable: true }) @Prop() codeCount?: number;
+  @Field(() => Int, { nullable: true }) @Prop() levels?: number;
   @Prop() copiedFromListId?: string;
   @Prop() transferKey?: string;
 }

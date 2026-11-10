@@ -20,6 +20,7 @@ import { parsePosition, parseZone } from './geo.logic';
 import { assertWorkflowEdit, importedWorkflowHistory, prepareWorkflowCreate, prepareWorkflowImport } from './workflow.rules';
 import { protectedFields, validSensitivity } from './sensitivity.logic';
 import { maxEntryAttachmentBytes } from '../platform';
+import { CodeListStore } from './code-list-store.service';
 
 export const formatColors = [
   '#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF',
@@ -56,6 +57,7 @@ export class CollectionsService {
   private readonly measurements = new MeasurementService();
 
   constructor(
+    private readonly codeLists: CodeListStore,
     @InjectModel(Collection.name) private readonly collections: Model<Collection>,
     @InjectModel(Entry.name) private readonly entries: Model<Entry>,
     @InjectModel(ContributionLink.name) private readonly contributionLinks: Model<ContributionLink>,
@@ -552,6 +554,7 @@ export class CollectionsService {
     if (await this.collections.exists({ ownerId: collection.ownerId, 'formats.linkedSource.sourceCollectionId': id })) throw new BadRequestException('Detach linked data formats before deleting this collection');
     await this.entries.deleteMany({ collectionId: id }).exec();
     await this.largeFiles.forgetCollection(id);
+    await this.codeLists.forgetCollection(id);
     await this.contributionSubmissions.deleteMany({ collectionId: id }).exec();
     await this.contributionLinks.deleteMany({ collectionId: id }).exec();
     await this.stockMovements.deleteMany({ collectionId: id }).exec();
@@ -883,7 +886,7 @@ export class CollectionsService {
         const createdAt = new Date(row.createdAt);
         const updatedAt = new Date(row.updatedAt);
         if (Number.isNaN(createdAt.getTime()) || Number.isNaN(updatedAt.getTime()) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.createdAt) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(row.updatedAt) || updatedAt < createdAt) throw new BadRequestException('Invalid entry dates');
-        const values = prepareWorkflowImport(format, this.validateValues(row.values, format.fields, [], collection.units, true, collection.codeLists ?? []));
+        const values = prepareWorkflowImport(format, this.validateValues(row.values, format.fields, [], collection.units, true, await this.codeLists.listsForValues(collection, row.values)));
         const history = importedWorkflowHistory(format, values, row.workflowHistory, ownerId, new Date());
         await this.validateReferences(collection, format, values, ownerId);
         this.assertObjectTitle(format, values);
@@ -934,7 +937,7 @@ export class CollectionsService {
   async validateContributionValues(collection: Collection, formatId: string, values: EntryValueInput[]): Promise<EntryValue[]> {
     const format = collection.formats.find((item) => item.id === formatId);
     if (!format) throw new BadRequestException('Data format not found in this collection');
-    return this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []);
+    return this.validateValues(values, format.fields, [], collection.units, false, await this.codeLists.listsForValues(collection, values));
   }
 
   /** T32: shared value rules for data-source rows (see data-source.service.ts). */
@@ -956,7 +959,7 @@ export class CollectionsService {
     if (!format) throw new BadRequestException('Data format not found in this collection');
     if (correctionOf && !format.appendOnly) throw new BadRequestException('Corrections require a register');
     if (format.appendOnly && contribution) throw new BadRequestException('Public contributions cannot write directly to a register');
-    const validated = prepareWorkflowCreate(format, this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []));
+    const validated = prepareWorkflowCreate(format, this.validateValues(values, format.fields, [], collection.units, false, await this.codeLists.listsForValues(collection, values)));
     await this.largeFiles.bind(collection, validated);
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
@@ -983,7 +986,7 @@ export class CollectionsService {
     this.collaboration.checkAccess(collection, actorId, CollectionRole.EDITOR);
     const format = collection.formats.find((item) => item.id === original.formatId);
     if (!format?.appendOnly || !original.ledgerHash) throw new BadRequestException('Choose a writing in a register');
-    const proposed = this.validateValues(values, format.fields, [], collection.units, false, collection.codeLists ?? []);
+    const proposed = this.validateValues(values, format.fields, [], collection.units, false, await this.codeLists.listsForValues(collection, values));
     for (const field of format.fields.filter((item) => item.kind === FieldKind.NUMBER)) {
       const before = original.values.find((item) => item.fieldId === field.id);
       const after = proposed.find((item) => item.fieldId === field.id);
@@ -1182,7 +1185,7 @@ export class CollectionsService {
     if (formatId && formatId !== savedFormatId) throw new BadRequestException('Entry data format cannot be changed');
     const format = collection.formats.find((item) => item.id === savedFormatId);
     if (!format) throw new BadRequestException('Data format not found in this collection');
-    const validated = this.validateValues(values, format.fields, entry.values, collection.units, false, collection.codeLists ?? []);
+    const validated = this.validateValues(values, format.fields, entry.values, collection.units, false, await this.codeLists.listsForValues(collection, values));
     await this.largeFiles.bind(collection, validated, entry.values);
     assertWorkflowEdit(format, entry.values, validated);
     await this.validateReferences(collection, format, validated, collection.ownerId, entry.id, entry.values);

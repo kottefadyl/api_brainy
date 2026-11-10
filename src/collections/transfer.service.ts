@@ -160,6 +160,7 @@ export class TransferService implements OnApplicationBootstrap {
     const requiredListIds = new Set(formats.flatMap((format) => format.fields.map((field) => field.codeListId).filter((id): id is string => !!id)));
     const codeLists = (source.codeLists ?? []).filter((item) => requiredListIds.has(item.id));
     if (codeLists.length !== requiredListIds.size) conflicts.push('A required code list is missing');
+    if (codeLists.some((item) => item.external)) conflicts.push('Large code lists cannot be copied to another collection yet');
     const units = source.units.filter((item) => unitIds.has(item.id));
     const formulas = (source.formulas ?? []).filter((item) => formatIds.has(item.formatId));
     for (const formula of formulas) if (formula.dependencies.some((id) => !formulas.some((candidate) => candidate.id === id))) conflicts.push(`Formula dependency is missing: ${formula.name}`);

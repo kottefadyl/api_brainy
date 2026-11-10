@@ -3,6 +3,11 @@ import { ClassificationCode, ClassificationList } from './collection.schema';
 
 const codePattern = /^[\p{L}\p{N}_.-]{1,64}$/u;
 export const MAX_CODE_LEVELS = 8;
+/** Lists up to this size stay inside the collection document; larger ones are stored apart (T39/3). */
+export const EMBEDDED_CODE_LIMIT = 5000;
+export const MAX_REFERENTIAL_CODES = 50_000;
+/** Below Vercel's 4.5 MB request limit, with room for the rest of the request. */
+export const MAX_REFERENTIAL_TEXT = 4_200_000;
 
 type LinkedCode = Pick<ClassificationCode, 'code' | 'parentCode'>;
 export type CodeHierarchyProblem = { code: string; message: string };
@@ -43,8 +48,8 @@ export function codeHierarchy(codes: LinkedCode[]): { levels: Map<string, number
   return { levels, problems };
 }
 
-export function validateClassificationCodes(codes: ClassificationCode[]): ClassificationCode[] {
-  if (codes.length < 1 || codes.length > 5000) throw new BadRequestException('Choose between 1 and 5000 codes');
+export function validateClassificationCodes(codes: ClassificationCode[], max = EMBEDDED_CODE_LIMIT): ClassificationCode[] {
+  if (codes.length < 1 || codes.length > max) throw new BadRequestException(`Choose between 1 and ${max} codes`);
   const byCode = new Map<string, ClassificationCode>();
   const normalized = codes.map((item) => {
     const code = (item.code ?? '').trim();
@@ -133,4 +138,84 @@ export function parseClassificationCsv(csv: string): { codes: ClassificationCode
     catch (error) { errors.push({ row: 0, message: (error as Error).message }); }
   }
   return { codes, errors };
+}
+
+/** Lower case without accents, for searching labels whatever their spelling. */
+export const foldSearch = (text: string): string => text.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('en');
+
+type ReferentialRow = { code: string; labelEn: string; labelFr: string; parentCode?: string; active: boolean };
+
+/**
+ * A standard referential (T39/1): CSV with `code` and `label`, or
+ * `label_en`/`label_fr`, and optional `parent_code` (or `parent`) and
+ * `active` columns, separated by commas or semicolons; or JSON, flat
+ * (`parent_code`) or nested (`children`). A single label serves both
+ * languages. Up to 50,000 codes on 8 levels.
+ */
+export function parseReferential(format: 'CSV' | 'JSON', content: string): { codes: ClassificationCode[]; errors: { row: number; message: string }[] } {
+  if (content.length > MAX_REFERENTIAL_TEXT) throw new BadRequestException('Referential file is too large (4 MB at most)');
+  const rows: { row: number; value: Record<string, unknown>; parent?: string }[] = [];
+  if (format === 'JSON') {
+    let root: unknown;
+    try { root = JSON.parse(content); } catch { throw new BadRequestException('JSON could not be read'); }
+    const items = Array.isArray(root) ? root : (root as { codes?: unknown })?.codes;
+    if (!Array.isArray(items)) throw new BadRequestException('JSON needs a list of codes');
+    const walk = (list: unknown[], parent?: string, depth = 1) => {
+      for (const item of list) {
+        if (rows.length > MAX_REFERENTIAL_CODES) return;
+        if (!item || typeof item !== 'object' || Array.isArray(item)) { rows.push({ row: rows.length + 1, value: {} }); continue; }
+        const value = item as Record<string, unknown>;
+        rows.push({ row: rows.length + 1, value, parent });
+        if (Array.isArray(value.children) && depth < MAX_CODE_LEVELS + 1) walk(value.children, String(value.code ?? ''), depth + 1);
+      }
+    };
+    walk(items);
+  } else {
+    const firstLine = content.slice(0, Math.max(0, content.search(/\r?\n|$/)));
+    const separator = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ';' : ',';
+    const records: string[][] = [];
+    let row: string[] = [], cell = '', quoted = false;
+    const text = content.replace(/^\uFEFF/, '');
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (quoted && char === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (char === '"') quoted = !quoted;
+      else if (char === separator && !quoted) { row.push(cell); cell = ''; }
+      else if ((char === '\n' || char === '\r') && !quoted) {
+        if (char === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); records.push(row); row = []; cell = '';
+      } else cell += char;
+    }
+    if (quoted) throw new BadRequestException('CSV has an unclosed quote');
+    if (cell || row.length) { row.push(cell); records.push(row); }
+    const header = records.shift()?.map((part) => part.trim().toLowerCase()) ?? [];
+    if (!header.includes('code') || !(header.includes('label') || header.includes('label_en') || header.includes('label_fr'))) throw new BadRequestException('CSV needs a code column and a label, label_en or label_fr column');
+    for (const [index, record] of records.entries()) {
+      if (record.every((value) => !value.trim())) continue;
+      rows.push({ row: index + 2, value: Object.fromEntries(header.map((name, column) => [name, record[column]])) });
+    }
+  }
+  if (rows.length > MAX_REFERENTIAL_CODES) throw new BadRequestException(`A referential holds at most ${MAX_REFERENTIAL_CODES} codes`);
+  const field = (value: Record<string, unknown>, ...names: string[]) => {
+    for (const name of names) { const found = value[name]; if (found !== undefined && found !== null && String(found).trim()) return String(found).trim(); }
+    return '';
+  };
+  const errors: { row: number; message: string }[] = [];
+  const seen = new Map<string, number>();
+  const parsed: ReferentialRow[] = [];
+  for (const { row, value, parent } of rows) {
+    const code = field(value, 'code');
+    const common = field(value, 'label');
+    const labelEn = (field(value, 'label_en', 'labelEn') || common || field(value, 'label_fr', 'labelFr')).slice(0, 120);
+    const labelFr = (field(value, 'label_fr', 'labelFr') || common || labelEn).slice(0, 120);
+    const activeText = field(value, 'active').toLowerCase();
+    if (!codePattern.test(code) || !labelEn) { errors.push({ row, message: 'Invalid code or missing label' }); continue; }
+    if (activeText && !['true', 'false', '1', '0', 'yes', 'no', 'oui', 'non'].includes(activeText)) { errors.push({ row, message: 'Invalid active value' }); continue; }
+    if (seen.has(code)) { errors.push({ row, message: `Repeated code ${code}` }); continue; }
+    seen.set(code, row);
+    parsed.push({ code, labelEn, labelFr, parentCode: field(value, 'parent_code', 'parentCode', 'parent') || parent || undefined, active: !['false', '0', 'no', 'non'].includes(activeText) });
+  }
+  for (const problem of codeHierarchy(parsed).problems) errors.push({ row: seen.get(problem.code) ?? 0, message: problem.message });
+  if (!errors.length && !parsed.length) errors.push({ row: 0, message: 'The file holds no code' });
+  return { codes: parsed, errors: errors.slice(0, 200) };
 }

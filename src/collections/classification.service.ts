@@ -45,6 +45,7 @@ export class ClassificationService {
       return result;
     }
     const prior = this.list(collection, listId);
+    if (prior.external) throw new BadRequestException('Replace a large code list by importing a referential');
     if (expectedVersion !== prior.version) throw new BadRequestException('Code list changed. Refresh and try again');
     const next = new Map(codes.map((item) => [item.code, item]));
     for (const old of prior.codes) {
@@ -65,7 +66,9 @@ export class ClassificationService {
   csvPreview(csv: string) { return parseClassificationCsv(csv); }
 
   async codePaths(collectionId: string, listId: string, userId: string, language?: string) {
-    return resolveClassificationPaths(this.list(await this.context(collectionId, userId), listId), language);
+    const list = this.list(await this.context(collectionId, userId), listId);
+    // A large list is searched on the server (searchClassificationCodes), never sent whole.
+    return list.external ? [] : resolveClassificationPaths(list, language);
   }
 
   async copyPreview(collectionId: string, listId: string, targetId: string, userId: string): Promise<{ allowed: boolean; sourceName: string; targetName: string; codeCount: number; conflicts: string[] }> {
@@ -74,9 +77,10 @@ export class ClassificationService {
     const list = this.list(source, listId);
     const conflicts: string[] = [];
     if (source.id === target.id) conflicts.push('Choose another collection');
+    if (list.external) conflicts.push('Large code lists cannot be copied to another collection yet');
     if ((target.codeLists ?? []).some((item) => item.name.toLocaleLowerCase() === list.name.toLocaleLowerCase())) conflicts.push('Target has a code list with this name');
     if ((target.codeLists ?? []).length >= 100) conflicts.push('Target has too many code lists');
-    return { allowed: !conflicts.length, sourceName: source.name, targetName: target.name, codeCount: list.codes.length, conflicts };
+    return { allowed: !conflicts.length, sourceName: source.name, targetName: target.name, codeCount: list.external ? list.codeCount ?? 0 : list.codes.length, conflicts };
   }
 
   async copy(collectionId: string, listId: string, targetId: string, userId: string): Promise<Collection> {
@@ -96,6 +100,7 @@ export class ClassificationService {
   async mergePreview(collectionId: string, listId: string, fromCode: string, toCode: string, userId: string): Promise<{ affectedEntries: number; allowed: boolean }> {
     const collection = await this.context(collectionId, userId, CollectionRole.OWNER);
     const list = this.list(collection, listId);
+    if (list.external) throw new BadRequestException('Codes of a large code list cannot be merged yet');
     const source = list.codes.find((item) => item.code === fromCode);
     const target = list.codes.find((item) => item.code === toCode);
     if (!source || !target || fromCode === toCode || !target.active || (source.mergedInto && source.mergedInto !== toCode)) throw new BadRequestException('Choose two compatible codes');

@@ -143,6 +143,7 @@ export class DomainPackageService {
     }
     const ref = (fieldId?: string) => { const found = fieldId ? fieldKeys.get(fieldId) : undefined; return found ? `${found.format}.${found.key}` : undefined; };
     const units: PackageUnit[] = collection.units.map((unit) => ({ key: unitKeys.get(unit.id)!, name: unit.name, symbol: unit.symbol, dimension: unit.dimension, base: unit.baseUnitId ? (unitKeys.has(unit.baseUnitId) ? `local:${unitKeys.get(unit.baseUnitId)}` : unit.baseUnitId) : undefined, factor: unit.factor, objectFormat: unit.objectFormatId ? formatKeys.get(unit.objectFormatId) : undefined }));
+    if ((collection.codeLists ?? []).some((list) => list.external)) throw new BadRequestException('Large code lists cannot be shared in a domain package');
     const codeLists: PackageCodeList[] = (collection.codeLists ?? []).map((list) => ({ key: listKeys.get(list.id)!, name: list.name, codes: list.codes.map((code) => ({ code: code.code, label: { en: code.labelEn, fr: code.labelFr }, parent: code.parentCode, active: code.active === false || code.mergedInto ? false : undefined })) }));
     const views: PackageView[] = [];
     for (const view of collection.savedViews ?? []) {

@@ -18,14 +18,15 @@ import { StockLedgerService, verifyStockRows } from './stock-ledger.service';
 import { hasProtectedData } from './sensitivity.logic';
 import { CollaborationService } from './collaboration.service';
 import { LargeFile } from './large-file.schema';
+import { StoredCode } from './code-list-store.schema';
 
 // T44: large files are listed by reference (metadata only); their content stays in object storage.
 const largeFileNotice = 'Large files are not inside this backup. Each largeFiles item lists the name, size, type, SHA-256 fingerprint and storage key. Download them from Brainy (entry > attachment > download, a 5-minute signed link) or ask the storage administrator for the listed bucket/key. After a restore, a file absent from storage shows as missing.';
 
-type Kind = 'collections' | 'entries' | 'entryLinks' | 'relations' | 'stockMovements' | 'reminders' | 'deliveries' | 'auditLogs' | 'moves' | 'contributionLinks' | 'contributionSubmissions' | 'ledgerHeads' | 'ledgerRedactions' | 'stockLedgerHeads' | 'largeFiles';
+type Kind = 'collections' | 'entries' | 'entryLinks' | 'relations' | 'stockMovements' | 'reminders' | 'deliveries' | 'auditLogs' | 'moves' | 'contributionLinks' | 'contributionSubmissions' | 'ledgerHeads' | 'ledgerRedactions' | 'stockLedgerHeads' | 'storedCodes' | 'largeFiles';
 const legacyKinds: Kind[] = ['collections', 'entries', 'entryLinks', 'relations', 'stockMovements', 'reminders', 'deliveries', 'auditLogs', 'moves'];
-const kinds: Kind[] = [...legacyKinds, 'contributionLinks', 'contributionSubmissions', 'ledgerHeads', 'ledgerRedactions', 'stockLedgerHeads', 'largeFiles'];
-const modelName: Record<Kind, string> = { collections: Collection.name, entries: Entry.name, entryLinks: EntryLink.name, relations: EntryRelation.name, stockMovements: StockMovement.name, reminders: EntryReminder.name, deliveries: ReminderDelivery.name, auditLogs: AuditLog.name, moves: MoveOperation.name, contributionLinks: ContributionLink.name, contributionSubmissions: ContributionSubmission.name, ledgerHeads: LedgerHead.name, ledgerRedactions: LedgerRedaction.name, stockLedgerHeads: StockLedgerHead.name, largeFiles: LargeFile.name };
+const kinds: Kind[] = [...legacyKinds, 'contributionLinks', 'contributionSubmissions', 'ledgerHeads', 'ledgerRedactions', 'stockLedgerHeads', 'largeFiles', 'storedCodes'];
+const modelName: Record<Kind, string> = { storedCodes: StoredCode.name, collections: Collection.name, entries: Entry.name, entryLinks: EntryLink.name, relations: EntryRelation.name, stockMovements: StockMovement.name, reminders: EntryReminder.name, deliveries: ReminderDelivery.name, auditLogs: AuditLog.name, moves: MoveOperation.name, contributionLinks: ContributionLink.name, contributionSubmissions: ContributionSubmission.name, ledgerHeads: LedgerHead.name, ledgerRedactions: LedgerRedaction.name, stockLedgerHeads: StockLedgerHead.name, largeFiles: LargeFile.name };
 type Archive = { brainyWorkspaceVersion: 1; ownerId: string; exportedAt: string; data: Record<Kind, string[]>; checksum: string; largeFileNotice?: string };
 
 function checksum(data: Archive['data']): string { return createHash('sha256').update(JSON.stringify(data)).digest('hex'); }
@@ -60,8 +61,10 @@ export class WorkspaceBackupService {
       const integrity = await this.stockLedger.verify(String(head.collectionId), String(head.productId), userId);
       if (!integrity.valid) throw new BadRequestException(`Stock integrity failed: ${integrity.problem}`);
     }
+    // T39/3: codes of large lists, stored apart from their collection.
+    const storedCodes = await this.collection('storedCodes').find({ collectionId: { $in: ids } }).toArray();
     const largeFiles = await this.collection('largeFiles').find({ collectionId: { $in: ids }, state: { $in: ['COMPLETE', 'AVAILABLE', 'MISSING', 'CORRUPTED'] } }).project({ uploadId: 0 }).toArray();
-    const data: Archive['data'] = { collections: this.encode(collections), entries: this.encode(entries), entryLinks: this.encode(entryLinks), relations: this.encode(relations), stockMovements: this.encode(stockMovements), reminders: this.encode(reminders), deliveries: this.encode(deliveries), auditLogs: this.encode(auditLogs), moves: this.encode(moves), contributionLinks: this.encode(contributionLinks), contributionSubmissions: this.encode(contributionSubmissions), ledgerHeads: this.encode(ledgerHeads), ledgerRedactions: this.encode(ledgerRedactions), stockLedgerHeads: this.encode(stockLedgerHeads), largeFiles: this.encode(largeFiles) };
+    const data: Archive['data'] = { storedCodes: this.encode(storedCodes), collections: this.encode(collections), entries: this.encode(entries), entryLinks: this.encode(entryLinks), relations: this.encode(relations), stockMovements: this.encode(stockMovements), reminders: this.encode(reminders), deliveries: this.encode(deliveries), auditLogs: this.encode(auditLogs), moves: this.encode(moves), contributionLinks: this.encode(contributionLinks), contributionSubmissions: this.encode(contributionSubmissions), ledgerHeads: this.encode(ledgerHeads), ledgerRedactions: this.encode(ledgerRedactions), stockLedgerHeads: this.encode(stockLedgerHeads), largeFiles: this.encode(largeFiles) };
     const result = JSON.stringify({ brainyWorkspaceVersion: 1, ownerId: userId, exportedAt: new Date().toISOString(), data, checksum: checksum(data), ...(largeFiles.length ? { largeFileNotice } : {}) });
     if (result.length > 50_000_000) throw new BadRequestException('Workspace backup exceeds 50 MB. Export collections separately until large backups are available');
     for (const collection of protectedCollections) await this.collaboration.logAction(collection._id.toString(), userId, 'EXPORT_PROTECTED_DATA', 'Complete workspace backup');
@@ -73,7 +76,7 @@ export class WorkspaceBackupService {
     let archive: Archive;
     try { archive = JSON.parse(raw) as Archive; } catch { throw new BadRequestException('Invalid backup file'); }
     if (archive.brainyWorkspaceVersion !== 1 || archive.ownerId !== userId || !archive.data || typeof archive.checksum !== 'string' || checksum(archive.data) !== archive.checksum || legacyKinds.some((kind) => !Array.isArray(archive.data[kind]))) throw new BadRequestException('Backup version, owner or checksum is invalid');
-    for (const kind of ['contributionLinks', 'contributionSubmissions', 'ledgerHeads', 'ledgerRedactions', 'stockLedgerHeads', 'largeFiles'] as const) {
+    for (const kind of ['contributionLinks', 'contributionSubmissions', 'ledgerHeads', 'ledgerRedactions', 'stockLedgerHeads', 'largeFiles', 'storedCodes'] as const) {
       if (archive.data[kind] !== undefined && !Array.isArray(archive.data[kind])) throw new BadRequestException('Backup version, owner or checksum is invalid');
       archive.data[kind] ??= [];
     }
@@ -109,6 +112,7 @@ export class WorkspaceBackupService {
     for (const move of docs.moves) if (move.ownerId !== userId || !collectionIds.has(String(move.sourceCollectionId)) || !collectionIds.has(String(move.targetCollectionId)) || ['PLANNED', 'PREPARED', 'COPIED', 'RECOVERING'].includes(String(move.state))) conflicts.push('A move is incomplete or outside the workspace');
     for (const kind of ['entryLinks', 'relations', 'stockMovements', 'reminders', 'deliveries'] as const) for (const doc of docs[kind]) if (doc.ownerId !== userId || (kind !== 'deliveries' && !collectionIds.has(String(doc.collectionId)))) conflicts.push(`${kind} contains data outside this account`);
     for (const audit of docs.auditLogs) if (!collectionIds.has(String(audit.collectionId))) conflicts.push('An audit event is outside this workspace');
+    for (const code of docs.storedCodes) if (!collectionIds.has(String(code.collectionId))) conflicts.push('A code of a large list is outside this workspace');
     for (const file of docs.largeFiles) if (file.ownerId !== userId || !collectionIds.has(String(file.collectionId)) || file.state === 'UPLOADING') conflicts.push('A large file reference is outside this workspace');
     const linkIds = new Set(docs.contributionLinks.map((item) => item._id!.toString()));
     for (const link of docs.contributionLinks) if (!collectionIds.has(String(link.collectionId)) || !docs.collections.some((item) => item._id!.toString() === String(link.collectionId) && ((item.formats as { id: string }[] | undefined) ?? []).some((format) => format.id === link.formatId))) conflicts.push('A contribution link is outside this workspace or has no data format');
