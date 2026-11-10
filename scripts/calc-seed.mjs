@@ -172,6 +172,8 @@ try {
       ] },
       rows,
       view: { name: 'Séances', columns: ['Titre', 'Activité', 'Distance', 'Durée'] },
+      units: [{ name: 'Kilomètre par heure', symbol: 'km/h', dimension: 'SPEED', factor: '1' }],
+      formulas: [{ name: 'Vitesse moyenne', build: (id) => op('DIVIDE', field(id('Distance')), { kind: 'durationIn', unit: 'HOURS', duration: { kind: 'durationField', fieldId: id('Durée') } }) }],
     });
   }
 
