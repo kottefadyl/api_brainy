@@ -114,7 +114,8 @@ export class CodeListStore {
       const filter: Record<string, unknown> = { listId, version: list.version, ...(options.includeInactive ? {} : { active: true }) };
       if (query) filter.search = { $regex: escapeRegex(query) };
       else filter.parentCode = options.parentCode ? options.parentCode : { $exists: false };
-      found = await this.codes.find(filter).sort({ level: 1, code: 1 }).limit(limit).lean().exec();
+      // Natural order: « Région 2 » before « Région 10 ». The indexes stay binary; the sort is in memory, bounded by the limit.
+      found = await this.codes.find(filter).sort({ level: 1, code: 1 }).collation({ locale: 'en', numericOrdering: true }).limit(limit).lean().exec();
     }
     const ancestors = await this.withAncestors(list, found);
     const parents = new Set(list.external

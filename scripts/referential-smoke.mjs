@@ -43,7 +43,7 @@ try {
   assert.deepEqual(town.path, ['Région 10', 'Département 90']);
   assert.equal(town.level, 3);
   const roots = data(await graphql(SEARCH, { c: collection.id, l: large.id }, token)).searchClassificationCodes;
-  assert.equal(roots.length, 10);
+  assert.deepEqual(roots.map((item) => item.code), Array.from({ length: 10 }, (_, index) => `R${index + 1}`), 'natural order: R2 before R10');
   assert.ok(roots.every((item) => item.level === 1 && item.hasChildren));
   const children = data(await graphql(SEARCH, { c: collection.id, l: large.id, p: 'R1', lang: 'en' }, token)).searchClassificationCodes;
   assert.ok(children.length === 10 && children.every((item) => item.path[0] === 'Region 1'), JSON.stringify(children.slice(0, 2)));
