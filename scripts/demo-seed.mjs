@@ -1,5 +1,5 @@
 // Persistent, repeatable demo data for the sole local Brainy account.
-// Run inside the API container: docker compose exec -T api node scripts/demo-seed.mjs
+// Run from api/ with the API running: node --env-file=.env scripts/demo-seed.mjs
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import mongoose from 'mongoose';

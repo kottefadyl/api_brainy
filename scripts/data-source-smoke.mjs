@@ -1,5 +1,5 @@
-// T32 smoke: data sources (connectors). Run: docker compose exec -T api node scripts/data-source-smoke.mjs
-// Volume measurement: add -e DATA_SOURCE_ROWS=100000 (deliveries of 10 000 rows).
+// T32 smoke: data sources (connectors). Run from api/ with the API running: node --env-file=.env scripts/data-source-smoke.mjs
+// Volume measurement: set DATA_SOURCE_ROWS=100000 (deliveries of 10 000 rows).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
