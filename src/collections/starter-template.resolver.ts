@@ -91,7 +91,7 @@ export class StarterTemplateResolver {
     }
     if (template.id === 'kt_personal') {
       const periodTotals = { formatId: format.id, dateFieldId: byKind(FieldKind.DATE), amountFieldId: byKind(FieldKind.NUMBER) };
-      collection = (await this.collectionModel.findOneAndUpdate({ _id: collection.id, ownerId }, { $set: { periodTotals } }, { new: true }).exec())!;
+      collection = (await this.collectionModel.findOneAndUpdate({ _id: collection.id, ownerId }, { $set: { periodTotals } }, { returnDocument: 'after' }).exec())!;
     }
     if (template.id === 'book') {
       const ordered = collection.formats.filter((item) => item.fields.some((field) => field.kind === FieldKind.NUMBER));

@@ -146,7 +146,7 @@ export class CollaborationService {
     const updated = await this.collections.findByIdAndUpdate(
       collectionId,
       { $set: { members: updatedMembers } },
-      { new: true },
+      { returnDocument: 'after' },
     ).exec();
 
     await this.logAction(
@@ -174,7 +174,7 @@ export class CollaborationService {
     const updated = await this.collections.findByIdAndUpdate(
       collectionId,
       { $pull: { members: { userId: memberUserId } } },
-      { new: true },
+      { returnDocument: 'after' },
     ).exec();
 
     await this.logAction(collectionId, operatorUserId, 'REVOKE_MEMBER', `Revoked member ${member.email}`);

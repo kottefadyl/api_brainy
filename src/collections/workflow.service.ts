@@ -65,7 +65,7 @@ export class WorkflowService {
     const updated = await this.collections.findOneAndUpdate(
       { _id: collectionId, formats: { $elemMatch: { id: formatId, version: version === 1 ? { $in: [null, 1] } : version } } },
       { $set: { 'formats.$.workflow': definition, 'formats.$.version': version + 1 } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!updated) throw new BadRequestException('Data format changed. Refresh and try again');
     await this.collaboration.logAction(collectionId, actorUserId, 'UPDATE_WORKFLOW', `Configured workflow in ${format.name}`);
@@ -96,7 +96,7 @@ export class WorkflowService {
     } };
     const updated = await this.collections.findOneAndUpdate(
       { _id: collectionId, 'formats.23': { $exists: false }, 'formats.color': { $ne: color }, 'formats.name': { $ne: name } },
-      { $push: { formats: format } }, { new: true, runValidators: true },
+      { $push: { formats: format } }, { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!updated) throw new BadRequestException('Collection changed. Review the new data format');
     await this.collaboration.logAction(collectionId, actorUserId, 'UPDATE_WORKFLOW', `Added ${name} workflow template`);
@@ -121,7 +121,7 @@ export class WorkflowService {
     const updated = await this.entries.findOneAndUpdate(
       { _id: entryId, ownerId: collection.ownerId, updatedAt: entry.updatedAt, values: { $elemMatch: { fieldId: format.workflow!.stateFieldId, value: from } } },
       { $set: { 'values.$[state].value': to }, $push: { 'workflow.history': event } },
-      { new: true, runValidators: true, arrayFilters: [{ 'state.fieldId': format.workflow!.stateFieldId }] },
+      { returnDocument: 'after', runValidators: true, arrayFilters: [{ 'state.fieldId': format.workflow!.stateFieldId }] },
     ).exec();
     if (!updated) throw new BadRequestException('This entry changed elsewhere. Refresh and try again');
     if (!format.workflow!.transitions.some((item) => item.from === to)) await this.reminders.scheduleWorkflow(updated, undefined);
@@ -151,7 +151,7 @@ export class WorkflowService {
     const updated = await this.entries.findOneAndUpdate(
       { _id: entryId, ownerId: collection.ownerId, updatedAt: entry.updatedAt },
       { $set: { 'workflow.assigneeUserId': assigneeUserId, 'workflow.dueAt': dueAt, 'workflow.reminderMinutesBefore': reminderMinutesBefore }, $push: { 'workflow.history': event } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!updated) throw new BadRequestException('This entry changed elsewhere. Refresh and try again');
     if (assigneeUserId && assigneeUserId !== entry.workflow?.assigneeUserId) {

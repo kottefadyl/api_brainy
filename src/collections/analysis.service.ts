@@ -274,7 +274,7 @@ export class AnalysisService {
     for (const item of [draft, ...formulas]) visit(item);
     // Runs after the cycle check, so that inference only ever walks an acyclic graph.
     inferStaticType(parsed, collection, input.formatId);
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId, ...(formulaId ? { formulas: { $elemMatch: { id: formulaId, version: input.expectedVersion } } } : {}) }, { $set: { formulas } }, { new: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId, ...(formulaId ? { formulas: { $elemMatch: { id: formulaId, version: input.expectedVersion } } } : {}) }, { $set: { formulas } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new BadRequestException('Formula changed. Refresh and try again');
     return updated;
   }
@@ -283,7 +283,7 @@ export class AnalysisService {
     const collection = await this.collection(collectionId, ownerId);
     if (!(collection.formulas ?? []).some((item) => item.id === formulaId)) throw new NotFoundException('Formula not found');
     if (collection.formulas.some((item) => item.dependencies.includes(formulaId))) throw new BadRequestException('Another formula uses this formula');
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId }, { $pull: { formulas: { id: formulaId } } }, { new: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId }, { $pull: { formulas: { id: formulaId } } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Collection not found');
     return updated;
   }

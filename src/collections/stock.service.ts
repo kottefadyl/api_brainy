@@ -169,7 +169,7 @@ export class StockService {
     catch (error) { if ((error as { code?: number }).code !== 11000) throw error; }
     const token = randomUUID();
     const now = new Date();
-    const lock = await this.locks.findOneAndUpdate({ ...key, lockedUntil: { $lte: now } }, { $set: { token, lockedUntil: new Date(now.getTime() + 60_000) } }, { new: true }).exec();
+    const lock = await this.locks.findOneAndUpdate({ ...key, lockedUntil: { $lte: now } }, { $set: { token, lockedUntil: new Date(now.getTime() + 60_000) } }, { returnDocument: 'after' }).exec();
     if (!lock) throw new ConflictException('Stock is being updated. Try again');
     return token;
   }
@@ -217,7 +217,7 @@ export class StockService {
   }
 
   async setNegativePolicy(collectionId: string, ownerId: string, allowNegative: boolean): Promise<Collection> {
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId }, { $set: { allowNegativeStock: allowNegative } }, { new: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId }, { $set: { allowNegativeStock: allowNegative } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Collection not found');
     return updated;
   }
@@ -257,13 +257,13 @@ export class StockService {
     const rule: StockRule = { id: ruleId ?? randomUUID(), name, formatId: input.formatId, productFieldId: input.productFieldId, quantityFieldId: input.quantityFieldId, kind: input.kind, dateFieldId: input.dateFieldId, priceFieldId: input.priceFieldId, reasonFieldId: input.reasonFieldId, fromLocationFieldId: input.fromLocationFieldId, toLocationFieldId: input.toLocationFieldId, lotFieldId: input.lotFieldId, packageFactor, version: (existing?.version ?? 0) + 1 };
     const stockRules = [...(collection.stockRules ?? []).filter((item) => item.id !== rule.id), rule];
     if (stockRules.length > 50) throw new BadRequestException('This collection has 50 stock rules');
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId, ...(ruleId ? { stockRules: { $elemMatch: { id: ruleId, version: input.expectedVersion } } } : {}) }, { $set: { stockRules } }, { new: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId, ...(ruleId ? { stockRules: { $elemMatch: { id: ruleId, version: input.expectedVersion } } } : {}) }, { $set: { stockRules } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new ConflictException('Stock rules changed. Refresh and try again');
     return updated;
   }
 
   async deleteRule(collectionId: string, ownerId: string, ruleId: string): Promise<Collection> {
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId, 'stockRules.id': ruleId }, { $pull: { stockRules: { id: ruleId } } }, { new: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId, 'stockRules.id': ruleId }, { $pull: { stockRules: { id: ruleId } } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Stock rule not found');
     return updated;
   }

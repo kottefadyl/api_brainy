@@ -77,7 +77,7 @@ export class AuthService {
         user = await this.users.findOneAndUpdate(
           { _id: user.id, firebaseUid: { $exists: false } },
           { $set: { firebaseUid: identity.uid } },
-          { new: true },
+          { returnDocument: 'after' },
         ).exec() ?? await this.users.findOne({ firebaseUid: identity.uid }).exec();
       } else {
         try {
@@ -160,7 +160,7 @@ export class AuthService {
         hobbies,
         profileCompleted: true,
       },
-    }, { new: true, runValidators: true }).exec();
+    }, { returnDocument: 'after', runValidators: true }).exec();
     if (!user) throw new UnauthorizedException('Invalid session');
     return user;
   }

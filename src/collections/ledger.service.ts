@@ -107,7 +107,7 @@ export class LedgerService {
     if (await this.entries.exists({ collectionId, formatId })) throw new BadRequestException('Enable the register on an empty data format');
     if (await this.contributionLinks.exists({ collectionId, formatId })) throw new BadRequestException('Use a data format without public contribution links for the register');
     await this.heads.updateOne({ ownerId: collection.ownerId, collectionId, formatId }, { $setOnInsert: { count: 0, hash: '', redactionCount: 0, redactionHash: '', lockedUntil: new Date(0) } }, { upsert: true }).exec();
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, formats: { $elemMatch: { id: formatId, appendOnly: { $ne: true } } } }, { $set: { 'formats.$.appendOnly': true } }, { new: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, formats: { $elemMatch: { id: formatId, appendOnly: { $ne: true } } } }, { $set: { 'formats.$.appendOnly': true } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new ConflictException('Data format changed. Refresh and try again');
     return updated;
   }
@@ -116,7 +116,7 @@ export class LedgerService {
     const token = randomUUID();
     const now = new Date();
     const locked = await this.heads.findOneAndUpdate({ ownerId, collectionId, formatId, lockedUntil: { $lte: now } },
-      { $set: { token, lockedUntil: new Date(now.getTime() + 60_000) } }, { new: true }).exec();
+      { $set: { token, lockedUntil: new Date(now.getTime() + 60_000) } }, { returnDocument: 'after' }).exec();
     if (!locked) throw new ConflictException('Register is being updated. Try again');
     return token;
   }

@@ -111,7 +111,7 @@ export class CollectionsService {
     const updated = await this.collections.findOneAndUpdate(
       { _id: collection.id, ownerId: collection.ownerId, 'formats.0': { $exists: false } },
       { $set: { formats: [{ id: formatId, name: 'General', color: formatColors[0], fields: collection.fields }] } },
-      { new: true },
+      { returnDocument: 'after' },
     ).exec() ?? await this.collections.findById(collection.id).exec();
     if (!updated) throw new NotFoundException('Collection not found');
     await this.entries.updateMany(
@@ -194,8 +194,8 @@ export class CollectionsService {
     this.checkUnit(unit, units, collection.formats);
     for (const item of units) resolveUnit(item.id, units);
     const updated = current
-      ? await this.collections.findOneAndUpdate({ _id: collectionId, units: { $elemMatch: { id: current.id, version: current.version } } }, { $set: { 'units.$': unit } }, { new: true, runValidators: true }).exec()
-      : await this.collections.findOneAndUpdate({ _id: collectionId }, { $push: { units: unit } }, { new: true, runValidators: true }).exec();
+      ? await this.collections.findOneAndUpdate({ _id: collectionId, units: { $elemMatch: { id: current.id, version: current.version } } }, { $set: { 'units.$': unit } }, { returnDocument: 'after', runValidators: true }).exec()
+      : await this.collections.findOneAndUpdate({ _id: collectionId }, { $push: { units: unit } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new BadRequestException('Unit changed. Refresh and try again');
     return updated;
   }
@@ -210,7 +210,7 @@ export class CollectionsService {
     decimal(input.rate, true);
     const effectiveAt = new Date(input.effectiveAt);
     if (Number.isNaN(effectiveAt.getTime()) || !/^\d{4}-\d{2}-\d{2}T/.test(input.effectiveAt)) throw new BadRequestException('Use a valid exchange rate date');
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId }, { $push: { exchangeRates: { id: randomUUID(), from: input.from, to: input.to, rate: input.rate, effectiveAt } } }, { new: true, runValidators: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId }, { $push: { exchangeRates: { id: randomUUID(), from: input.from, to: input.to, rate: input.rate, effectiveAt } } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new NotFoundException('Collection not found');
     return updated;
   }
@@ -392,7 +392,7 @@ export class CollectionsService {
       throw new BadRequestException('Each data format needs a different color');
     }
     const updated = await this.collections.findOneAndUpdate(
-      { _id: id }, { $push: { formats: format } }, { new: true, runValidators: true },
+      { _id: id }, { $push: { formats: format } }, { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!updated) throw new NotFoundException('Collection not found');
     await this.collaboration.logAction(id, ownerId, 'UPDATE_FORMAT', `Added data format ${format.name}`);
@@ -412,7 +412,7 @@ export class CollectionsService {
     const updated = await this.collections.findOneAndUpdate(
       { _id: id, 'formats.id': formatId },
       { $set: { 'formats.$.color': color } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!updated) throw new NotFoundException('Data format not found in this collection');
     return updated;
@@ -501,7 +501,7 @@ export class CollectionsService {
     const updated = await this.collections.findOneAndUpdate(
       filter,
       { $set: changes },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!updated) throw new BadRequestException('Data format changed. Refresh and try again');
     await this.collaboration.logAction(id, ownerId, 'UPDATE_FORMAT', `Updated data format ${name}`);
@@ -515,7 +515,7 @@ export class CollectionsService {
     const trimmed = name.trim();
     if (!trimmed || trimmed.length > 80) throw new BadRequestException('Collection name must be 1 to 80 characters');
     const updated = await this.collections.findOneAndUpdate(
-      { _id: id }, { $set: { name: trimmed } }, { new: true, runValidators: true },
+      { _id: id }, { $set: { name: trimmed } }, { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!updated) throw new NotFoundException('Collection not found');
     return this.ensureFormats(updated);
@@ -541,7 +541,7 @@ export class CollectionsService {
     if (!enabled && collection.formats.some((item) => item.fields.some((field) => field.kind === FieldKind.OBJECT_REF && field.targetObjectFormatId === formatId))) {
       throw new BadRequestException('This object model is used by an object reference field');
     }
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, formats: { $elemMatch: { id: formatId, version: expectedVersion === 1 ? { $in: [null, 1] } : expectedVersion } } }, { $set: { 'formats.$.objectModel': enabled, 'formats.$.version': expectedVersion + 1 } }, { new: true, runValidators: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, formats: { $elemMatch: { id: formatId, version: expectedVersion === 1 ? { $in: [null, 1] } : expectedVersion } } }, { $set: { 'formats.$.objectModel': enabled, 'formats.$.version': expectedVersion + 1 } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new BadRequestException('Data format changed. Refresh and try again');
     return updated;
   }
@@ -627,7 +627,7 @@ export class CollectionsService {
     if (!viewId && collection.savedViews.length >= 30) throw new BadRequestException('This collection has 30 saved views');
     const view: SavedCollectionView = { id: viewId ?? randomUUID(), name, layout: input.layout, formatIds, columnFieldIds, search: input.search?.trim() ?? '', filterFieldId: input.filterFieldId, filterOperator: input.filterOperator, filterValue: input.filterValue?.trim(), sort: input.sort, manualOrderFieldIds, groupByFormat: input.groupByFormat, taskDoneFieldId: input.layout === 'TASKS' ? input.taskDoneFieldId : undefined, taskDueFieldId: input.layout === 'TASKS' ? input.taskDueFieldId : undefined, taskCompletedFieldId: input.layout === 'TASKS' ? input.taskCompletedFieldId : undefined, taskPriorityFieldId: input.layout === 'TASKS' ? input.taskPriorityFieldId : undefined, calendarStartFieldId: input.layout === 'CALENDAR' ? input.calendarStartFieldId : undefined, calendarEndFieldId: input.layout === 'CALENDAR' ? input.calendarEndFieldId : undefined, calendarTimeZone: input.layout === 'CALENDAR' ? input.calendarTimeZone : undefined };
     const savedViews = viewId ? collection.savedViews.map((item) => item.id === viewId ? view : item) : [...collection.savedViews, view];
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId }, { $set: { savedViews } }, { new: true, runValidators: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId }, { $set: { savedViews } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new NotFoundException('Collection not found');
     return updated;
   }
@@ -636,7 +636,7 @@ export class CollectionsService {
     const collection = await this.one(collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
     if (!collection.savedViews.some((item) => item.id === viewId)) throw new NotFoundException('View not found');
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId }, { $pull: { savedViews: { id: viewId } } }, { new: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId }, { $pull: { savedViews: { id: viewId } } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Collection not found');
     return updated;
   }
@@ -656,7 +656,7 @@ export class CollectionsService {
       const now = new Date().toISOString();
       values.push({ fieldId: view.taskCompletedFieldId, value: now, dateTimeValue: now });
     }
-    const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt, movingOperationId: null }, { $set: { values }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } }, { new: true, runValidators: true }).exec();
+    const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt, movingOperationId: null }, { $set: { values }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new BadRequestException('Task changed. Refresh and try again');
     await this.collaboration.logAction(collection.id, ownerId, 'UPDATE_ENTRY', `Updated task completion in entry ${entryId}`);
     return updated;
@@ -672,7 +672,7 @@ export class CollectionsService {
     if (!entry) throw new NotFoundException('Event not found');
     if (entry.ledgerHash || collection.formats.find((item) => item.id === entry.formatId)?.appendOnly) throw new BadRequestException('A register writing cannot be edited');
     if (!input) {
-      const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $unset: { recurrence: '' } }, { new: true }).exec();
+      const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $unset: { recurrence: '' } }, { returnDocument: 'after' }).exec();
       if (!updated) throw new BadRequestException('Event changed. Refresh and try again');
       await this.collaboration.logAction(collection.id, ownerId, 'UPDATE_ENTRY', `Removed event recurrence in entry ${entryId}`);
       return updated;
@@ -687,7 +687,7 @@ export class CollectionsService {
     if (input.untilDate && (!validDate(input.untilDate) || input.untilDate < startDate)) throw new BadRequestException('Recurrence end must follow the first event');
     if (input.excludedDates.length > 500 || input.excludedDates.some((date) => !validDate(date) || date < startDate)) throw new BadRequestException('Invalid recurrence exception date');
     const recurrence = { startFieldId: view.calendarStartFieldId, endFieldId: view.calendarEndFieldId, timeZone: input.timeZone, frequency: input.frequency, interval: input.interval, untilDate: input.untilDate, excludedDates: [...new Set(input.excludedDates)] };
-    const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $set: { recurrence } }, { new: true, runValidators: true }).exec();
+    const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $set: { recurrence } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new BadRequestException('Event changed. Refresh and try again');
     await this.collaboration.logAction(collection.id, ownerId, 'UPDATE_ENTRY', `Updated event recurrence in entry ${entryId}`);
     return updated;
@@ -1192,7 +1192,7 @@ export class CollectionsService {
     this.assertObjectTitle(format, validated);
     const saved = await this.entries.findOneAndUpdate(
       { _id: id, movingOperationId: null, ...(expectedUpdatedAt || format.workflow ? { updatedAt: entry.updatedAt } : {}) }, { $set: { formatId: savedFormatId, formatVersion: format.version ?? 1, values: validated, ...(clientMutationId ? { lastMutationId: clientMutationId } : {}) }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!saved) throw new BadRequestException('This entry changed elsewhere. Review the conflict before syncing');
     await this.collaboration.logAction(collection.id, ownerId, 'UPDATE_ENTRY', `Updated entry in format ${format.name}`);

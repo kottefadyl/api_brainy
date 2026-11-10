@@ -127,7 +127,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
     const collection = await this.access(source.collectionId, actorId, CollectionRole.OWNER);
     if (input.formatId !== source.formatId) throw new BadRequestException('The target data format of a data source cannot change; create another source');
     const format = this.validate(collection, input);
-    const saved = await this.sources.findByIdAndUpdate(sourceId, { $set: this.clean(input, format) }, { new: true }).exec();
+    const saved = await this.sources.findByIdAndUpdate(sourceId, { $set: this.clean(input, format) }, { returnDocument: 'after' }).exec();
     await this.collaboration.logAction(source.collectionId, actorId, 'UPDATE_DATA_SOURCE', `Data source ${sourceId}`);
     return saved!;
   }
@@ -151,7 +151,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
     const source = await this.source(sourceId);
     await this.access(source.collectionId, actorId, CollectionRole.OWNER);
     const key = newKey();
-    const saved = await this.sources.findByIdAndUpdate(sourceId, { $set: { keyHash: digest(key), keyHint: key.slice(-4), keyCreatedAt: new Date(), rateCount: 0, rateWindowAt: new Date() } }, { new: true }).exec();
+    const saved = await this.sources.findByIdAndUpdate(sourceId, { $set: { keyHash: digest(key), keyHint: key.slice(-4), keyCreatedAt: new Date(), rateCount: 0, rateWindowAt: new Date() } }, { returnDocument: 'after' }).exec();
     await this.collaboration.logAction(source.collectionId, actorId, 'ROTATE_DATA_SOURCE_KEY', `Data source ${sourceId}`);
     return { source: saved!, key };
   }
@@ -159,7 +159,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
   async revokeKey(sourceId: string, actorId: string): Promise<DataSource> {
     const source = await this.source(sourceId);
     await this.access(source.collectionId, actorId, CollectionRole.OWNER);
-    const saved = await this.sources.findByIdAndUpdate(sourceId, { $unset: { keyHash: '', keyHint: '', keyCreatedAt: '' } }, { new: true }).exec();
+    const saved = await this.sources.findByIdAndUpdate(sourceId, { $unset: { keyHash: '', keyHint: '', keyCreatedAt: '' } }, { returnDocument: 'after' }).exec();
     await this.collaboration.logAction(source.collectionId, actorId, 'REVOKE_DATA_SOURCE_KEY', `Data source ${sourceId}`);
     return saved!;
   }
@@ -216,7 +216,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
       { _id: source.id, keyHash: source.keyHash, $or: [{ rateWindowAt: { $lt: windowStart } }, { rateWindowAt: null }, { rateCount: { $lt: maxPushPerHour } }] },
       // A missing window sorts before any date, so it also starts a new window.
       [{ $set: { rateCount: { $cond: [{ $lt: ['$rateWindowAt', windowStart] }, 1, { $add: ['$rateCount', 1] }] }, rateWindowAt: { $cond: [{ $lt: ['$rateWindowAt', windowStart] }, new Date(), '$rateWindowAt'] } } }],
-      { new: true, updatePipeline: true },
+      { returnDocument: 'after', updatePipeline: true },
     ).exec();
     if (!allowed) throw new HttpException(`At most ${maxPushPerHour} deliveries per hour for one key`, HttpStatus.TOO_MANY_REQUESTS);
     const collection = await this.collections.one(source.collectionId, source.ownerId);
@@ -248,7 +248,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
   async resume(runId: string, actorId: string): Promise<DataSourceRun> {
     assertNotFrozen('dataSources');
     await this.runFor(runId, actorId);
-    const run = await this.runs.findOneAndUpdate({ _id: runId, state: { $in: ['CANCELLED', 'FAILED'] } }, { $set: { state: 'QUEUED', cancelRequested: false }, $unset: { failure: '', expiresAt: '', leaseUntil: '', workerId: '', finishedAt: '' } }, { new: true }).select('-content').exec();
+    const run = await this.runs.findOneAndUpdate({ _id: runId, state: { $in: ['CANCELLED', 'FAILED'] } }, { $set: { state: 'QUEUED', cancelRequested: false }, $unset: { failure: '', expiresAt: '', leaseUntil: '', workerId: '', finishedAt: '' } }, { returnDocument: 'after' }).select('-content').exec();
     if (!run) throw new BadRequestException('Only cancelled or failed deliveries can be resumed');
     void this.tick();
     return run;
@@ -288,7 +288,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
         const run = await this.runs.findOneAndUpdate(
           { sourceId: { $nin: busy }, $or: [{ state: 'QUEUED' }, { state: 'RUNNING', leaseUntil: { $lt: now } }] },
           { $set: { state: 'RUNNING', workerId: this.workerId, leaseUntil: new Date(now.getTime() + leaseMs) } },
-          { sort: { createdAt: 1 }, new: true },
+          { sort: { createdAt: 1 }, returnDocument: 'after' },
         ).exec();
         if (!run) return;
         // One delivery per source at a time keeps record versions in order.

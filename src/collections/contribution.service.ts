@@ -68,7 +68,7 @@ export class ContributionService {
     const link = await this.links.findById(id).exec();
     if (!link) throw new NotFoundException('Contribution link not found');
     await this.owned(link.collectionId, actorId);
-    return (await this.links.findOneAndUpdate({ _id: id, revokedAt: null }, { $set: { revokedAt: new Date() } }, { new: true }).exec()) ?? link;
+    return (await this.links.findOneAndUpdate({ _id: id, revokedAt: null }, { $set: { revokedAt: new Date() } }, { returnDocument: 'after' }).exec()) ?? link;
   }
 
   async form(token: string): Promise<PublicContributionForm> {
@@ -92,7 +92,7 @@ export class ContributionService {
     const now = new Date();
     const cutoff = new Date(now.getTime() - 60000);
     await this.links.updateOne({ _id: link.id, rateWindowAt: { $lte: cutoff } }, { $set: { rateWindowAt: now, rateCount: 0 } }).exec();
-    const allowed = await this.links.findOneAndUpdate({ _id: link.id, revokedAt: null, expiresAt: { $gt: now }, rateWindowAt: { $gt: cutoff }, rateCount: { $lt: 10 } }, { $inc: { rateCount: 1 } }, { new: true }).exec();
+    const allowed = await this.links.findOneAndUpdate({ _id: link.id, revokedAt: null, expiresAt: { $gt: now }, rateWindowAt: { $gt: cutoff }, rateCount: { $lt: 10 } }, { $inc: { rateCount: 1 } }, { returnDocument: 'after' }).exec();
     if (!allowed) throw new HttpException('Too many submissions or link unavailable', 429);
     const collection = await this.collections.findById(link.collectionId).exec();
     const format = collection?.formats.find((item) => item.id === link.formatId);
@@ -117,7 +117,7 @@ export class ContributionService {
     const format = collection.formats.find((item) => item.id === submission.formatId);
     if (!link || !format || values.some((item) => !link.fieldIds.includes(item.fieldId) || !format.fields.some((field) => field.id === item.fieldId && supported.has(field.kind))) || JSON.stringify(values).length > 16384) throw new BadRequestException('Invalid public field');
     const validated = await this.collectionService.validateContributionValues(collection, submission.formatId, values);
-    const updated = await this.submissions.findOneAndUpdate({ _id: id, status: 'PENDING' }, { $set: { values: validated }, $push: { events: { kind: 'CORRECTED', at: new Date(), actorId } } }, { new: true }).exec();
+    const updated = await this.submissions.findOneAndUpdate({ _id: id, status: 'PENDING' }, { $set: { values: validated }, $push: { events: { kind: 'CORRECTED', at: new Date(), actorId } } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new BadRequestException('Submission already reviewed');
     return updated;
   }
@@ -130,17 +130,17 @@ export class ContributionService {
       if (submission.status === 'ACCEPTED') return submission;
       if (submission.status !== 'PENDING' && submission.status !== 'ACCEPTING') throw new BadRequestException('Submission already reviewed');
       if (submission.status === 'PENDING') {
-        const claimed = await this.submissions.findOneAndUpdate({ _id: id, status: 'PENDING' }, { $set: { status: 'ACCEPTING' } }, { new: true }).exec();
+        const claimed = await this.submissions.findOneAndUpdate({ _id: id, status: 'PENDING' }, { $set: { status: 'ACCEPTING' } }, { returnDocument: 'after' }).exec();
         if (!claimed) return this.review(id, action, actorId, duplicateOf);
       }
       const entry = await this.collectionService.createEntry(submission.collectionId, submission.values.map((item) => ({ fieldId: item.fieldId, value: item.value })), submission.formatId, collection.ownerId, `contribution-${id}`, { linkId: submission.linkId, receivedAt: submission.receivedAt });
-      return (await this.submissions.findOneAndUpdate({ _id: id, status: 'ACCEPTING' }, { $set: { status: 'ACCEPTED', acceptedEntryId: entry.id }, $push: { events: { kind: 'ACCEPTED', at: new Date(), actorId } } }, { new: true }).exec()) ?? await this.submissions.findById(id).exec() ?? submission;
+      return (await this.submissions.findOneAndUpdate({ _id: id, status: 'ACCEPTING' }, { $set: { status: 'ACCEPTED', acceptedEntryId: entry.id }, $push: { events: { kind: 'ACCEPTED', at: new Date(), actorId } } }, { returnDocument: 'after' }).exec()) ?? await this.submissions.findById(id).exec() ?? submission;
     }
     if (action !== 'REJECT') throw new BadRequestException('Invalid review action');
     if (duplicateOf) {
       if (duplicateOf === id || !Types.ObjectId.isValid(duplicateOf) || !await this.submissions.exists({ _id: duplicateOf, collectionId: submission.collectionId })) throw new BadRequestException('Duplicate target not found');
     }
-    const updated = await this.submissions.findOneAndUpdate({ _id: id, status: 'PENDING' }, { $set: { status: 'REJECTED', duplicateOf }, $push: { events: { kind: duplicateOf ? 'DUPLICATE_REJECTED' : 'REJECTED', at: new Date(), actorId } } }, { new: true }).exec();
+    const updated = await this.submissions.findOneAndUpdate({ _id: id, status: 'PENDING' }, { $set: { status: 'REJECTED', duplicateOf }, $push: { events: { kind: duplicateOf ? 'DUPLICATE_REJECTED' : 'REJECTED', at: new Date(), actorId } } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new BadRequestException('Submission already reviewed');
     return updated;
   }

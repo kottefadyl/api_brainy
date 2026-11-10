@@ -21,7 +21,7 @@ export class NotesService {
   }
 
   async update(id: string, input: UpdateNoteInput, ownerId: string): Promise<Note | null> {
-    return this.notes.findOneAndUpdate({ _id: id, ownerId }, input, { new: true, runValidators: true }).exec();
+    return this.notes.findOneAndUpdate({ _id: id, ownerId }, input, { returnDocument: 'after', runValidators: true }).exec();
   }
 
   async remove(id: string, ownerId: string): Promise<boolean> {

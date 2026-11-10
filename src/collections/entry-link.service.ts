@@ -28,7 +28,7 @@ export class EntryLinkService {
     const existing = await this.links.findOne({ ownerId, collectionId, fromEntryId, toEntryId }).exec();
     if (existing) {
       if (!existing.deletedAt) return existing;
-      const restored = await this.links.findOneAndUpdate({ _id: existing.id, ownerId }, { $set: { label }, $unset: { deletedAt: '' } }, { new: true }).exec();
+      const restored = await this.links.findOneAndUpdate({ _id: existing.id, ownerId }, { $set: { label }, $unset: { deletedAt: '' } }, { returnDocument: 'after' }).exec();
       return restored!;
     }
     return this.links.create({ ownerId, collectionId, fromEntryId, toEntryId, label, createdAt: new Date() });
@@ -39,7 +39,7 @@ export class EntryLinkService {
     const link = await this.links.findOne({ _id: linkId, ownerId, collectionId }).exec();
     if (!link) throw new NotFoundException('Link not found');
     if (restore) await this.context(collectionId, ownerId, link.fromEntryId, link.toEntryId);
-    const updated = await this.links.findOneAndUpdate({ _id: linkId, ownerId, collectionId }, restore ? { $unset: { deletedAt: '' } } : { $set: { deletedAt: new Date() } }, { new: true }).exec();
+    const updated = await this.links.findOneAndUpdate({ _id: linkId, ownerId, collectionId }, restore ? { $unset: { deletedAt: '' } } : { $set: { deletedAt: new Date() } }, { returnDocument: 'after' }).exec();
     return updated!;
   }
 

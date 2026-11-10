@@ -92,7 +92,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     await this.reminders.findOneAndUpdate(
       { ownerId: entry.ownerId, entryId: entry.id, fieldId, state: 'ACTIVE' },
       { $set: { ownerId: entry.ownerId, recipientUserId, collectionId: entry.collectionId, entryId: entry.id, fieldId, workflowKind: kind, timeZone: 'UTC', minutesBefore, channels, state: 'ACTIVE', occurrenceAt, nextAt, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } },
-      { upsert: true, new: true, runValidators: true },
+      { upsert: true, returnDocument: 'after', runValidators: true },
     ).exec();
   }
 
@@ -105,7 +105,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     const existing = await this.devices.findOne({ token }).exec();
     if (!existing && await this.devices.countDocuments({ ownerId }) >= 10) throw new BadRequestException('Remove an old push device before adding another');
     if (existing && existing.ownerId !== ownerId && await this.devices.countDocuments({ ownerId }) >= 10) throw new BadRequestException('Remove an old push device before adding another');
-    const updated = await this.devices.findOneAndUpdate({ token }, { $set: { ownerId, platform, targetKind, label: label.trim(), lastSeenAt: new Date() }, $setOnInsert: { token } }, { new: true, upsert: true, runValidators: true }).exec();
+    const updated = await this.devices.findOneAndUpdate({ token }, { $set: { ownerId, platform, targetKind, label: label.trim(), lastSeenAt: new Date() }, $setOnInsert: { token } }, { returnDocument: 'after', upsert: true, runValidators: true }).exec();
     return updated!;
   }
 
@@ -152,7 +152,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     if (reminderId && !Types.ObjectId.isValid(reminderId)) throw new BadRequestException('Invalid reminder ID');
     const existing = reminderId ? await this.reminders.findOne({ _id: reminderId, ownerId, entryId, state: { $ne: 'CANCELLED' } }).exec() : undefined;
     if (reminderId && !existing) throw new NotFoundException('Reminder not found');
-    const updated = await this.reminders.findOneAndUpdate(existing ? { _id: reminderId, ownerId, entryId } : { ownerId, entryId, fieldId: input.fieldId, state: 'ACTIVE' }, { $set: { ownerId, collectionId: collection.id, entryId, fieldId: input.fieldId, viewId: input.viewId, timeZone: input.timeZone, timeOfDay: field.kind === FieldKind.DATE ? input.timeOfDay ?? '09:00' : undefined, minutesBefore: input.minutesBefore, channels, state: 'ACTIVE', nextAt, occurrenceAt, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } }, { new: true, upsert: !existing, runValidators: true }).exec();
+    const updated = await this.reminders.findOneAndUpdate(existing ? { _id: reminderId, ownerId, entryId } : { ownerId, entryId, fieldId: input.fieldId, state: 'ACTIVE' }, { $set: { ownerId, collectionId: collection.id, entryId, fieldId: input.fieldId, viewId: input.viewId, timeZone: input.timeZone, timeOfDay: field.kind === FieldKind.DATE ? input.timeOfDay ?? '09:00' : undefined, minutesBefore: input.minutesBefore, channels, state: 'ACTIVE', nextAt, occurrenceAt, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } }, { returnDocument: 'after', upsert: !existing, runValidators: true }).exec();
     return updated!;
   }
 
@@ -221,7 +221,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     if (current?.state === 'SENT') return true;
     if (current?.state === 'SENDING' && current.claimUntil && current.claimUntil > now) return false;
     const claimUntil = new Date(now.getTime() + 120_000);
-    const claimed = await this.deliveries.findOneAndUpdate({ key, $or: [{ state: { $in: ['PENDING', 'FAILED'] } }, { state: 'SENDING', claimUntil: { $lte: now } }, { state: { $exists: false } }] }, { $set: { key, reminderId: reminder.id, ownerId: reminder.ownerId, channel, state: 'SENDING', claimUntil }, $unset: { failure: '' } }, { upsert: !current, new: true }).exec();
+    const claimed = await this.deliveries.findOneAndUpdate({ key, $or: [{ state: { $in: ['PENDING', 'FAILED'] } }, { state: 'SENDING', claimUntil: { $lte: now } }, { state: { $exists: false } }] }, { $set: { key, reminderId: reminder.id, ownerId: reminder.ownerId, channel, state: 'SENDING', claimUntil }, $unset: { failure: '' } }, { upsert: !current, returnDocument: 'after' }).exec();
     if (!claimed) return false;
     try {
       await this.send(channel, reminder, key.replace(/[^a-zA-Z0-9.-]/g, '-'), device);
@@ -239,7 +239,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     try {
       for (let index = 0; index < 50; index++) {
         const now = new Date(), token = randomUUID();
-        const reminder = await this.reminders.findOneAndUpdate({ state: 'ACTIVE', nextAt: { $lte: now }, $or: [{ lockedUntil: null }, { lockedUntil: { $lt: now } }] }, { $set: { lockedUntil: new Date(now.getTime() + 120_000), lockToken: token } }, { sort: { nextAt: 1 }, new: true }).exec();
+        const reminder = await this.reminders.findOneAndUpdate({ state: 'ACTIVE', nextAt: { $lte: now }, $or: [{ lockedUntil: null }, { lockedUntil: { $lt: now } }] }, { $set: { lockedUntil: new Date(now.getTime() + 120_000), lockToken: token } }, { sort: { nextAt: 1 }, returnDocument: 'after' }).exec();
         if (!reminder) break;
         try {
           const pushDevices = reminder.channels.includes('PUSH') ? await this.devices.find({ ownerId: reminder.recipientUserId ?? reminder.ownerId }).exec() : [];

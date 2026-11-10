@@ -94,7 +94,7 @@ export class DomainPackageService {
       const keys = [...plan.keys].map(([compound, id]) => { const at = compound.indexOf(':'); return { kind: compound.slice(0, at), key: compound.slice(at + 1), id }; });
       const fields = { packageId: plan.pkg.id, version: plan.pkg.version, name: localized(plan.pkg.name, language), author: plan.pkg.provenance.author, license: plan.pkg.provenance.license, publishedAt: plan.pkg.provenance.publishedAt, signatureStatus: plan.signature.status, keyFingerprint: plan.signature.fingerprint, keys };
       const record = plan.install
-        ? await this.installs.findOneAndUpdate({ _id: plan.install._id, version: plan.install.version, detachedAt: { $exists: false } }, { $set: { ...fields, updatedFrom: plan.install.version } }, { new: true }).exec()
+        ? await this.installs.findOneAndUpdate({ _id: plan.install._id, version: plan.install.version, detachedAt: { $exists: false } }, { $set: { ...fields, updatedFrom: plan.install.version } }, { returnDocument: 'after' }).exec()
         : await this.installs.create({ ...fields, collectionId: targetId, ownerId: userId, installedAt: new Date() });
       if (!record) throw new BadRequestException('Package installation changed. Refresh and try again');
       return { collectionId: targetId, installId: record.id, mode: plan.mode, version: plan.pkg.version, addedDataFormats: plan.formats.length, addedFields: plan.fields.length, exampleObjects: plan.objects.length };

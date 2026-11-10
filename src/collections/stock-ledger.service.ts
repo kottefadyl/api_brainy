@@ -76,7 +76,7 @@ export class StockLedgerService {
     const token = randomUUID();
     const now = new Date();
     const head = await this.heads.findOneAndUpdate({ ...key, lockedUntil: { $lte: now } },
-      { $set: { token, lockedUntil: new Date(now.getTime() + 60_000) } }, { new: true }).exec();
+      { $set: { token, lockedUntil: new Date(now.getTime() + 60_000) } }, { returnDocument: 'after' }).exec();
     if (!head) throw new ConflictException('Stock history is being sealed. Try again');
     try {
       let previous = '';

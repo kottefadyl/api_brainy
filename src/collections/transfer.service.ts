@@ -266,7 +266,7 @@ export class TransferService implements OnApplicationBootstrap {
     if (move) await move.prepared(rootObjectId ? entryIds.get(rootObjectId)! : '', [...formatIds.values()], [...unitIds.values()]);
     const targetId = plan.target.id;
     const targetUpdatedAt = (plan.target as Collection & { updatedAt?: Date }).updatedAt;
-    const target = await this.collections.findOneAndUpdate({ _id: targetId, ownerId: (plan.target as Collection & { ownerId: string }).ownerId, ...(targetUpdatedAt ? { updatedAt: targetUpdatedAt } : {}) }, { $push: { formats: { $each: copiedFormats }, units: { $each: copiedUnits }, codeLists: { $each: copiedCodeLists }, formulas: { $each: copiedFormulas } } }, { new: true, runValidators: true }).exec();
+    const target = await this.collections.findOneAndUpdate({ _id: targetId, ownerId: (plan.target as Collection & { ownerId: string }).ownerId, ...(targetUpdatedAt ? { updatedAt: targetUpdatedAt } : {}) }, { $push: { formats: { $each: copiedFormats }, units: { $each: copiedUnits }, codeLists: { $each: copiedCodeLists }, formulas: { $each: copiedFormulas } } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!target) throw new BadRequestException('Target collection changed. Review the copy again');
     try {
       const documents = plan.entries.map((entry) => ({ _id: new Types.ObjectId(entryIds.get(entry.id)!), ownerId: entry.ownerId, collectionId: targetId, formatId: formatIds.get(entry.formatId!), formatVersion: 1, values: entry.values.map((value) => this.remapValue(value, fieldIds, entryIds, unitIds, formatIds)), workflow: entry.workflow ? { history: entry.workflow.history } : undefined, recurrence: entry.recurrence ? { startFieldId: fieldIds.get(entry.recurrence.startFieldId), endFieldId: fieldIds.get(entry.recurrence.endFieldId), timeZone: entry.recurrence.timeZone, frequency: entry.recurrence.frequency, interval: entry.recurrence.interval, untilDate: entry.recurrence.untilDate, excludedDates: entry.recurrence.excludedDates } : undefined, revisions: entry.revisions.map((revision) => ({ at: revision.at, formatVersion: revision.formatVersion, values: revision.values.map((value) => this.remapValue(value, fieldIds, entryIds, unitIds, formatIds)) })), sourceObjectId: entry.sourceObjectId ? entryIds.get(entry.sourceObjectId) : undefined, copiedFromCollectionId: plan.source.id, copiedFromEntryId: entry.id, transferKey, createdAt: entry.createdAt, updatedAt: entry.updatedAt }));
@@ -357,7 +357,7 @@ export class TransferService implements OnApplicationBootstrap {
     const targetVersion = (current.version ?? 1) + 1;
     const changes: Record<string, unknown> = { 'formats.$.name': source.name, 'formats.$.fields': fields, 'formats.$.version': targetVersion, 'formats.$.objectModel': source.objectModel, 'formats.$.linkedSource.acceptedVersion': preview.sourceVersion, 'formats.$.linkedSource.targetVersion': targetVersion };
     if (target.formats[0].id === targetFormatId) changes.fields = fields;
-    const updated = await this.collections.findOneAndUpdate({ _id: targetCollectionId, ownerId, formats: { $elemMatch: { id: targetFormatId, version: current.version ?? 1 } } }, { $set: changes }, { new: true, runValidators: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: targetCollectionId, ownerId, formats: { $elemMatch: { id: targetFormatId, version: current.version ?? 1 } } }, { $set: changes }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new BadRequestException('Target data format changed. Review again');
     return updated;
   }
@@ -366,7 +366,7 @@ export class TransferService implements OnApplicationBootstrap {
     const target = await this.collection(targetCollectionId, ownerId);
     const format = target.formats.find((item) => item.id === targetFormatId && item.linkedSource);
     if (!format) throw new NotFoundException('Linked data format not found');
-    const updated = await this.collections.findOneAndUpdate({ _id: targetCollectionId, ownerId, formats: { $elemMatch: { id: targetFormatId, version: format.version ?? 1 } } }, { $unset: { 'formats.$.linkedSource': '' } }, { new: true, runValidators: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: targetCollectionId, ownerId, formats: { $elemMatch: { id: targetFormatId, version: format.version ?? 1 } } }, { $unset: { 'formats.$.linkedSource': '' } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new BadRequestException('Data format changed. Refresh and try again');
     return updated;
   }

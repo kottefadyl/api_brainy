@@ -115,15 +115,15 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
 
   async cancel(jobId: string, userId: string): Promise<BackgroundJob> {
     const job = await this.one(jobId, userId);
-    if (job.state === 'QUEUED') return (await this.jobs.findOneAndUpdate({ _id: jobId, ownerId: userId, state: 'QUEUED' }, { $set: { state: 'CANCELLED', expiresAt: new Date(Date.now() + expiryMs) } }, { new: true }).exec()) ?? this.cancel(jobId, userId);
-    if (job.state === 'RUNNING') return (await this.jobs.findOneAndUpdate({ _id: jobId, ownerId: userId, state: 'RUNNING' }, { $set: { cancelRequested: true } }, { new: true }).exec()) ?? this.cancel(jobId, userId);
+    if (job.state === 'QUEUED') return (await this.jobs.findOneAndUpdate({ _id: jobId, ownerId: userId, state: 'QUEUED' }, { $set: { state: 'CANCELLED', expiresAt: new Date(Date.now() + expiryMs) } }, { returnDocument: 'after' }).exec()) ?? this.cancel(jobId, userId);
+    if (job.state === 'RUNNING') return (await this.jobs.findOneAndUpdate({ _id: jobId, ownerId: userId, state: 'RUNNING' }, { $set: { cancelRequested: true } }, { returnDocument: 'after' }).exec()) ?? this.cancel(jobId, userId);
     return job;
   }
 
   async resume(jobId: string, userId: string): Promise<BackgroundJob> {
     assertNotFrozen('backgroundJobs');
     await this.one(jobId, userId);
-    const job = await this.jobs.findOneAndUpdate({ _id: jobId, ownerId: userId, state: { $in: ['CANCELLED', 'FAILED'] } }, { $set: { state: 'QUEUED', cancelRequested: false }, $unset: { failure: '', expiresAt: '', leaseUntil: '', workerId: '' } }, { new: true }).exec();
+    const job = await this.jobs.findOneAndUpdate({ _id: jobId, ownerId: userId, state: { $in: ['CANCELLED', 'FAILED'] } }, { $set: { state: 'QUEUED', cancelRequested: false }, $unset: { failure: '', expiresAt: '', leaseUntil: '', workerId: '' } }, { returnDocument: 'after' }).exec();
     if (!job) throw new BadRequestException('Only cancelled or failed tasks can be resumed');
     void this.tick();
     return job;
@@ -137,7 +137,7 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
       const job = await this.jobs.findOneAndUpdate(
         { $or: [{ state: 'QUEUED' }, { state: 'RUNNING', leaseUntil: { $lt: now } }] },
         { $set: { state: 'RUNNING', workerId: this.workerId, leaseUntil: new Date(now.getTime() + leaseMs) } },
-        { sort: { createdAt: 1 }, new: true },
+        { sort: { createdAt: 1 }, returnDocument: 'after' },
       ).exec();
       if (job) await this.run(job);
     } catch (error) { this.logger.error(error); }

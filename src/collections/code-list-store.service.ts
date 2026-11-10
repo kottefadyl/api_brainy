@@ -83,12 +83,12 @@ export class CodeListStore {
         ? await this.collections.findOneAndUpdate(
           { _id: collectionId, codeLists: { $elemMatch: { id, version: prior.version } } },
           { $set: { 'codeLists.$.name': cleanName, 'codeLists.$.codes': [], 'codeLists.$.version': version, 'codeLists.$.external': true, 'codeLists.$.codeCount': meta.codeCount, 'codeLists.$.levels': meta.levels } },
-          { new: true },
+          { returnDocument: 'after' },
         ).exec()
         : await this.collections.findOneAndUpdate(
           { _id: collectionId, 'codeLists.name': { $ne: cleanName } },
           { $push: { codeLists: { id, name: cleanName, version, codes: [], ...meta } } },
-          { new: true },
+          { returnDocument: 'after' },
         ).exec();
       if (!result) throw new BadRequestException('Code lists changed. Refresh and try again');
       await this.codes.deleteMany({ listId: id, version: { $ne: version } }).exec();

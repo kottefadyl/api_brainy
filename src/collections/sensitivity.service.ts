@@ -33,7 +33,7 @@ export class SensitivityService {
     const format = this.format(collection, formatId, expectedVersion);
     const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId: collection.ownerId,
       formats: { $elemMatch: { id: formatId, version: this.versionFilter(expectedVersion) } } },
-      { $set: { 'formats.$.sensitivity': level, 'formats.$.version': expectedVersion + 1 } }, { new: true }).exec();
+      { $set: { 'formats.$.sensitivity': level, 'formats.$.version': expectedVersion + 1 } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new ConflictException('Data format changed. Refresh and try again');
     await this.collaboration.logAction(collectionId, actorId, 'SET_SENSITIVITY', `Data format ${format.id}: ${level}`);
     return updated;
@@ -49,7 +49,7 @@ export class SensitivityService {
     const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId: collection.ownerId,
       formats: { $elemMatch: { id: formatId, version: this.versionFilter(expectedVersion) } } },
       { $set: { 'formats.$.fields': fields, 'formats.$.version': expectedVersion + 1,
-        ...(collection.formats[0].id === formatId ? { fields } : {}) } }, { new: true }).exec();
+        ...(collection.formats[0].id === formatId ? { fields } : {}) } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new ConflictException('Data format changed. Refresh and try again');
     await this.collaboration.logAction(collectionId, actorId, 'SET_SENSITIVITY', `Field ${fieldId} in data format ${formatId}: ${level}`);
     return updated;
@@ -58,7 +58,7 @@ export class SensitivityService {
   async setMinimum(collectionId: string, minimum: number, actorId: string): Promise<Collection> {
     if (!Number.isInteger(minimum) || minimum < 2 || minimum > 100) throw new BadRequestException('Choose a minimum from 2 to 100 observations');
     const collection = await this.context(collectionId, actorId);
-    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId: collection.ownerId }, { $set: { minAggregateSize: minimum } }, { new: true }).exec();
+    const updated = await this.collections.findOneAndUpdate({ _id: collectionId, ownerId: collection.ownerId }, { $set: { minAggregateSize: minimum } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new ConflictException('Collection changed. Refresh and try again');
     await this.collaboration.logAction(collectionId, actorId, 'SET_AGGREGATE_MINIMUM', `Minimum observations: ${minimum}`);
     return updated;

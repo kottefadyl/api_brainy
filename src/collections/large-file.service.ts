@@ -99,7 +99,7 @@ export class LargeFileService implements OnApplicationBootstrap, OnApplicationSh
     if (known?.sha256 === hash) return this.view(file);
     const etag = await this.storage.uploadPart(file.objectKey, file.uploadId!, partNumber, data, hash);
     await this.files.updateOne({ _id: file.id, state: 'UPLOADING' }, { $pull: { parts: { partNumber } } }).exec();
-    const saved = await this.files.findOneAndUpdate({ _id: file.id, state: 'UPLOADING' }, { $push: { parts: { partNumber, size: data.length, sha256: hash, etag } } }, { new: true }).exec();
+    const saved = await this.files.findOneAndUpdate({ _id: file.id, state: 'UPLOADING' }, { $push: { parts: { partNumber, size: data.length, sha256: hash, etag } } }, { returnDocument: 'after' }).exec();
     if (!saved) throw new BadRequestException('This upload is already finished');
     return this.view(saved);
   }
@@ -117,7 +117,7 @@ export class LargeFileService implements OnApplicationBootstrap, OnApplicationSh
     const stored = await this.storage.head(file.objectKey);
     if (stored !== file.size) throw new BadRequestException('Stored file size differs from the upload');
     const now = new Date();
-    const saved = await this.files.findOneAndUpdate({ _id: file.id, state: 'UPLOADING' }, { $set: { state: 'COMPLETE', sha256: digest, completedAt: now, checkedAt: now, unreferencedSince: now }, $unset: { uploadId: '' } }, { new: true }).exec();
+    const saved = await this.files.findOneAndUpdate({ _id: file.id, state: 'UPLOADING' }, { $set: { state: 'COMPLETE', sha256: digest, completedAt: now, checkedAt: now, unreferencedSince: now }, $unset: { uploadId: '' } }, { returnDocument: 'after' }).exec();
     return this.view(saved ?? (await this.own(uploadId, userId)));
   }
 

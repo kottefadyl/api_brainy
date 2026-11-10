@@ -78,7 +78,7 @@ export class RelationService {
       decimal(value.numberValue ?? value.value);
       snapshot = { snapshotFieldId, snapshotValue: value.numberValue ?? value.value, snapshotUnit: value.unitSnapshot?.id ?? field.unit };
     }
-    if (existing) return (await this.relations.findByIdAndUpdate(existing.id, { $set: { label, quantity, unit, ...snapshot, createdBy: userId }, $unset: { deletedAt: '' } }, { new: true }).exec())!;
+    if (existing) return (await this.relations.findByIdAndUpdate(existing.id, { $set: { label, quantity, unit, ...snapshot, createdBy: userId }, $unset: { deletedAt: '' } }, { returnDocument: 'after' }).exec())!;
     return this.relations.create({ collectionId, ownerId: collection.ownerId, fromEntryId, toEntryId, kind, label, quantity, unit, ...snapshot, createdBy: userId });
     } finally { await this.unlock(collectionId, token); }
   }

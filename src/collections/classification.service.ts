@@ -40,7 +40,7 @@ export class ClassificationService {
       if (codes.some((code) => code.mergedInto)) throw new BadRequestException('Use the merge action to replace a code');
       if ((collection.codeLists ?? []).length >= 100) throw new BadRequestException('Too many code lists');
       const created: ClassificationList = { id: randomUUID(), name: cleanName, version: 1, codes };
-      const result = await this.collections.findOneAndUpdate({ _id: collectionId, 'codeLists.name': { $ne: cleanName } }, { $push: { codeLists: created } }, { new: true, runValidators: true }).exec();
+      const result = await this.collections.findOneAndUpdate({ _id: collectionId, 'codeLists.name': { $ne: cleanName } }, { $push: { codeLists: created } }, { returnDocument: 'after', runValidators: true }).exec();
       if (!result) throw new BadRequestException('Code lists changed. Refresh and try again');
       return result;
     }
@@ -57,7 +57,7 @@ export class ClassificationService {
     const result = await this.collections.findOneAndUpdate(
       { _id: collectionId, codeLists: { $elemMatch: { id: listId, version: expectedVersion } } },
       { $set: { 'codeLists.$.name': cleanName, 'codeLists.$.codes': codes, 'codeLists.$.version': prior.version + 1 } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!result) throw new BadRequestException('Code list changed. Refresh and try again');
     return result;
@@ -91,7 +91,7 @@ export class ClassificationService {
     const result = await this.collections.findOneAndUpdate(
       { _id: targetId, 'codeLists.name': { $ne: list.name } },
       { $push: { codeLists: { id: randomUUID(), name: list.name, version: 1, codes: list.codes.map((item) => ({ ...item })), copiedFromListId: list.id } } },
-      { new: true, runValidators: true },
+      { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!result) throw new BadRequestException('Target changed. Refresh and try again');
     return result;
