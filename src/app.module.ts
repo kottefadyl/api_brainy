@@ -1,3 +1,4 @@
+import { PlatformResolver } from './platform.resolver';
 import { join } from 'node:path';
 import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { Module } from '@nestjs/common';
@@ -24,6 +25,6 @@ import { NotesModule } from './notes/notes.module';
     CollectionsModule,
     NotesModule,
   ],
-  providers: [HealthResolver],
+  providers: [HealthResolver, PlatformResolver],
 })
 export class AppModule {}

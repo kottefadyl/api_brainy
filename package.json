@@ -19,7 +19,8 @@
     "smoke:data-sources": "node --env-file-if-exists=.env scripts/data-source-smoke.mjs",
     "smoke:large-files": "node --env-file-if-exists=.env scripts/large-file-smoke.mjs",
     "smoke:kt-personal": "node --env-file-if-exists=.env scripts/kt-personal-smoke.mjs",
-    "smoke:web": "node --env-file-if-exists=.env scripts/web-smoke.mjs"
+    "smoke:web": "node --env-file-if-exists=.env scripts/web-smoke.mjs",
+    "smoke:platform-freeze": "node --env-file-if-exists=.env scripts/platform-freeze-smoke.mjs"
   },
   "dependencies": {
     "@apollo/server": "^5.0.0",

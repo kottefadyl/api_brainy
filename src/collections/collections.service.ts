@@ -19,6 +19,7 @@ import { CollectionRole } from './collaboration.schema';
 import { parsePosition, parseZone } from './geo.logic';
 import { assertWorkflowEdit, importedWorkflowHistory, prepareWorkflowCreate, prepareWorkflowImport } from './workflow.rules';
 import { protectedFields, validSensitivity } from './sensitivity.logic';
+import { maxEntryAttachmentBytes } from '../platform';
 
 export const formatColors = [
   '#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF',
@@ -1264,7 +1265,7 @@ export class CollectionsService {
             throw new BadRequestException(`${field.name} needs a file`);
           }
           totalAttachmentBytes += data.length;
-          if (totalAttachmentBytes > 8_388_608) throw new BadRequestException('Attachments in one entry cannot exceed 8 MB');
+          if (totalAttachmentBytes > maxEntryAttachmentBytes()) throw new BadRequestException(`Attachments in one entry cannot exceed ${maxEntryAttachmentBytes() / 1_048_576} MB`);
           const mimeType = input.attachmentMimeType ?? previous?.attachmentMimeType ?? 'application/octet-stream';
           if (mimeType.length > 100 || !/^[\w.+-]+\/[\w.+-]+$/.test(mimeType)) throw new BadRequestException(`${field.name} needs a valid file type`);
           return { fieldId, value: text, attachmentSize: data.length, attachmentMimeType: mimeType, attachmentData: data };

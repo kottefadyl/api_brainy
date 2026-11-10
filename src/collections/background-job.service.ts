@@ -14,6 +14,7 @@ import { CollaborationService } from './collaboration.service';
 import { protectedFields } from './sensitivity.logic';
 import { EntryValue } from './entry.schema';
 import { LargeFileService } from './large-file.service';
+import { assertNotFrozen, isFrozen } from '../platform';
 
 type ImportPayload = Pick<ImportEntriesInput, 'formatId' | 'rows'>;
 type ExportPayload = { formatId: string; limit?: number; includeSensitive?: boolean };
@@ -38,6 +39,7 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
   ) {}
 
   onApplicationBootstrap() {
+    if (isFrozen('backgroundJobs')) return;
     this.timer = setInterval(() => { void this.tick(); }, 1000);
     void this.tick();
   }
@@ -51,6 +53,7 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
   }
 
   async start(collectionId: string, userId: string, input: StartBackgroundJobInput): Promise<BackgroundJob> {
+    assertNotFrozen('backgroundJobs');
     const collection = await this.ownedCollection(collectionId, userId);
     if (!kinds.includes(input.kind as typeof kinds[number])) throw new BadRequestException('Choose a supported task');
     if (!/^[\w.-]{1,80}$/.test(input.requestKey)) throw new BadRequestException('Invalid task key');
@@ -118,6 +121,7 @@ export class BackgroundJobService implements OnApplicationBootstrap, OnApplicati
   }
 
   async resume(jobId: string, userId: string): Promise<BackgroundJob> {
+    assertNotFrozen('backgroundJobs');
     await this.one(jobId, userId);
     const job = await this.jobs.findOneAndUpdate({ _id: jobId, ownerId: userId, state: { $in: ['CANCELLED', 'FAILED'] } }, { $set: { state: 'QUEUED', cancelRequested: false }, $unset: { failure: '', expiresAt: '', leaseUntil: '', workerId: '' } }, { new: true }).exec();
     if (!job) throw new BadRequestException('Only cancelled or failed tasks can be resumed');

@@ -10,6 +10,7 @@ import { Collection, FieldKind } from './collection.schema';
 import { Entry, EntryValue } from './entry.schema';
 import { LARGE_FILE_CHUNK, LARGE_FILE_MAX, LARGE_FILE_THRESHOLD, LargeFile, LargeFileLink, LargeFileStatus, LargeFileUpload, StartLargeFileUploadInput } from './large-file.schema';
 import { S3Error, S3Storage } from './large-file.s3';
+import { assertNotFrozen, isFrozen } from '../platform';
 
 const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
 /** File fingerprint: SHA-256 of the part SHA-256 list (hex, one per line, in order). Same rule on every client. */
@@ -36,7 +37,7 @@ export class LargeFileService implements OnApplicationBootstrap, OnApplicationSh
   /** CollectionsService registers itself here (it depends on this service, not the other way round). */
   useCollections(collections: CollectionAccess) { this.collections = collections; }
 
-  onApplicationBootstrap() { this.timer = setInterval(() => { void this.cleanup().catch((error) => this.logger.error(error)); }, 10 * 60_000); }
+  onApplicationBootstrap() { if (isFrozen('largeFiles')) return; this.timer = setInterval(() => { void this.cleanup().catch((error) => this.logger.error(error)); }, 10 * 60_000); }
   onApplicationShutdown() { if (this.timer) clearInterval(this.timer); }
 
   private ready() { if (!this.storage.configured) throw new ServiceUnavailableException('Large file storage is not configured'); }
@@ -62,6 +63,7 @@ export class LargeFileService implements OnApplicationBootstrap, OnApplicationSh
   // ---- upload ----
 
   async start(collectionId: string, input: StartLargeFileUploadInput, userId: string): Promise<LargeFileUpload> {
+    assertNotFrozen('largeFiles');
     this.ready();
     const { collection } = await this.collection(collectionId, userId, CollectionRole.EDITOR);
     const name = input.fileName?.trim() ?? '';
@@ -82,6 +84,7 @@ export class LargeFileService implements OnApplicationBootstrap, OnApplicationSh
   async status(uploadId: string, userId: string): Promise<LargeFileUpload> { return this.view(await this.own(uploadId, userId)); }
 
   async uploadPart(uploadId: string, partNumber: number, base64: string, hash: string, userId: string): Promise<LargeFileUpload> {
+    assertNotFrozen('largeFiles');
     this.ready();
     const file = await this.own(uploadId, userId);
     if (file.state !== 'UPLOADING') throw new BadRequestException('This upload is already finished');
@@ -102,6 +105,7 @@ export class LargeFileService implements OnApplicationBootstrap, OnApplicationSh
   }
 
   async complete(uploadId: string, hash: string, userId: string): Promise<LargeFileUpload> {
+    assertNotFrozen('largeFiles');
     this.ready();
     const file = await this.own(uploadId, userId);
     if (file.state !== 'UPLOADING') return this.view(file);

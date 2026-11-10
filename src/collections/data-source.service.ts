@@ -12,6 +12,7 @@ import { DataSource, DataSourceInput, DataSourceKey, DataSourceRejection, DataSo
 import { Entry, EntryValue } from './entry.schema';
 import { StockMovement } from './stock.schema';
 import { protectedFields } from './sensitivity.logic';
+import { assertNotFrozen, isFrozen } from '../platform';
 
 const batchSize = 200;
 const leaseMs = 120_000;
@@ -41,6 +42,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
   ) {}
 
   onApplicationBootstrap() {
+    if (isFrozen('dataSources')) return;
     this.timer = setInterval(() => { void this.tick(); }, 1000);
   }
 
@@ -110,6 +112,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
   }
 
   async create(collectionId: string, input: DataSourceInput, actorId: string): Promise<DataSource> {
+    assertNotFrozen('dataSources');
     const collection = await this.access(collectionId, actorId, CollectionRole.OWNER);
     const format = this.validate(collection, input);
     if (await this.sources.countDocuments({ collectionId }).exec() >= maxSourcesPerCollection) throw new BadRequestException(`A collection can have up to ${maxSourcesPerCollection} data sources`);
@@ -119,6 +122,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
   }
 
   async update(sourceId: string, input: DataSourceInput, actorId: string): Promise<DataSource> {
+    assertNotFrozen('dataSources');
     const source = await this.source(sourceId);
     const collection = await this.access(source.collectionId, actorId, CollectionRole.OWNER);
     if (input.formatId !== source.formatId) throw new BadRequestException('The target data format of a data source cannot change; create another source');
@@ -196,12 +200,14 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
   }
 
   async upload(sourceId: string, deliveryId: string, content: string, contentType: string, actorId: string): Promise<DataSourceRun> {
+    assertNotFrozen('dataSources');
     const source = await this.source(sourceId);
     const collection = await this.sourceAccess(source, actorId);
     return this.enqueue(source, collection, deliveryId, content, contentType, 'UPLOAD', actorId);
   }
 
   async push(key: string, deliveryId: string, content: string, contentType: string): Promise<DataSourceRun> {
+    assertNotFrozen('dataSources');
     if (!validKey(key)) throw new NotFoundException('Data source key unavailable');
     const source = await this.sources.findOne({ keyHash: digest(key) }).exec();
     if (!source) throw new NotFoundException('Data source key unavailable');
@@ -240,6 +246,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
   }
 
   async resume(runId: string, actorId: string): Promise<DataSourceRun> {
+    assertNotFrozen('dataSources');
     await this.runFor(runId, actorId);
     const run = await this.runs.findOneAndUpdate({ _id: runId, state: { $in: ['CANCELLED', 'FAILED'] } }, { $set: { state: 'QUEUED', cancelRequested: false }, $unset: { failure: '', expiresAt: '', leaseUntil: '', workerId: '', finishedAt: '' } }, { new: true }).select('-content').exec();
     if (!run) throw new BadRequestException('Only cancelled or failed deliveries can be resumed');
@@ -249,6 +256,7 @@ export class DataSourceService implements OnApplicationBootstrap, OnApplicationS
 
   /** Re-send only the rejected rows (as stored) once the source or data format has been fixed. */
   async retryRejections(runId: string, actorId: string): Promise<DataSourceRun> {
+    assertNotFrozen('dataSources');
     const run = await this.runFor(runId, actorId, true);
     if (!['COMPLETED', 'FAILED', 'CANCELLED'].includes(run.state)) throw new BadRequestException('Wait for the delivery to finish');
     const rows = run.rejections.filter((item) => item.cells.length).map((item) => item.cells);

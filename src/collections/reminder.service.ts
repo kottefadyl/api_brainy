@@ -12,6 +12,7 @@ import { Collection, FieldKind } from './collection.schema';
 import { Entry } from './entry.schema';
 import { EntryReminder, PushDevice, ReminderCapabilities, ReminderDelivery } from './reminder.schema';
 import { localToInstant, nextRecurrenceStart, validTimeZone } from './time_math';
+import { assertNotFrozen, isFrozen } from '../platform';
 
 @Injectable()
 export class ReminderService implements OnApplicationBootstrap, OnApplicationShutdown {
@@ -30,6 +31,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
   ) {}
 
   capabilities(): ReminderCapabilities {
+    if (isFrozen('reminders')) return { email: false, push: false };
     const smtpPort = Number(process.env.SMTP_PORT ?? '587');
     let firebaseAccount = false;
     try {
@@ -48,6 +50,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
   }
 
   onApplicationBootstrap(): void {
+    if (isFrozen('reminders')) return;
     this.timer = setInterval(() => { void this.processDue(); }, 15_000);
     this.timer.unref();
     void this.processDue();
@@ -69,6 +72,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
   }
 
   async scheduleWorkflow(entry: Entry, recipientUserId: string | undefined, dueAt?: Date, minutesBefore = 60, kind: 'ASSIGNMENT' | 'DUE' = 'DUE'): Promise<void> {
+    if (isFrozen('reminders')) return;
     const fieldId = kind === 'DUE' ? 'workflow:due' : 'workflow:assignment';
     if (!recipientUserId || (kind === 'DUE' && !dueAt)) {
       await this.reminders.updateMany({ ownerId: entry.ownerId, entryId: entry.id, fieldId, state: 'ACTIVE' }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec();
@@ -95,6 +99,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
   async devicesFor(ownerId: string): Promise<PushDevice[]> { return this.devices.find({ ownerId }).sort({ lastSeenAt: -1 }).exec(); }
 
   async registerDevice(ownerId: string, token: string, platform: string, label: string, targetKind = 'TOKEN'): Promise<PushDevice> {
+    assertNotFrozen('reminders');
     if (!this.capabilities().push) throw new ServiceUnavailableException('Push notifications are not configured');
     if (!['TOKEN', 'FID'].includes(targetKind) || token.length < (targetKind === 'FID' ? 15 : 50) || token.length > 4096 || /\s/.test(token) || !['WEB', 'ANDROID', 'IOS'].includes(platform) || !label.trim() || label.length > 80) throw new BadRequestException('Invalid push device');
     const existing = await this.devices.findOne({ token }).exec();
@@ -125,6 +130,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
   }
 
   async save(entryId: string, ownerId: string, input: EntryReminderInput, reminderId?: string): Promise<EntryReminder> {
+    assertNotFrozen('reminders');
     const { entry, collection } = await this.ownedEntry(entryId, ownerId);
     if (entry.movingOperationId) throw new BadRequestException('This object is being moved');
     const format = collection.formats.find((item) => item.id === entry.formatId);
