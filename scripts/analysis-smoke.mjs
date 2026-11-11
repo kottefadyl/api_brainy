@@ -24,13 +24,13 @@ try {
   const book = bookTemplate.createCollectionFromTemplate;
   ids.push(book.id);
   const orderView = book.savedViews.find((view) => view.sort === 'MANUAL');
-  assert.equal(orderView.manualOrderFieldIds.length, 2);
+  assert.equal(orderView.manualOrderFieldIds.length, 5);
   const bookEntry = async (formatName, title, order) => {
     const definition = book.formats.find((item) => item.name === formatName);
     return (await gql('mutation($id:String!,$input:SaveEntryInput!) { createEntry(collectionId:$id,input:$input) { id } }', { id: book.id, input: { formatId: definition.id, values: [{ fieldId: definition.fields.find((field) => field.kind === 'TITLE').id, value: title }, { fieldId: definition.fields.find((field) => field.kind === 'NUMBER').id, value: order }] } })).createEntry.id;
   };
   const secondChapter = await bookEntry('Chapter', 'Chapter two', '2');
-  const firstScene = await bookEntry('Scene', 'Scene one', '1.1');
+  const firstScene = await bookEntry('Section', 'Scene one', '1.1');
   const firstChapter = await bookEntry('Chapter', 'Chapter one', '1');
   const manualPage = async (after) => (await gql('query($id:String!,$viewId:String!,$after:String) { collectionEntriesPage(collectionId:$id,first:1,viewId:$viewId,after:$after) { entries { id } nextCursor hasMore } }', { id: book.id, viewId: orderView.id, after })).collectionEntriesPage;
   const firstPage = await manualPage(null);
@@ -40,7 +40,7 @@ try {
   const restoredBook = (await gql('mutation { createCollectionFromTemplate(templateId:"book",name:"Restored manuscript",language:"en") { id formats { id name fields { id name kind } } savedViews { id sort } } }')).createCollectionFromTemplate;
   ids.push(restoredBook.id);
   const restoredChapter = restoredBook.formats.find((item) => item.name === 'Chapter');
-  const restoredScene = restoredBook.formats.find((item) => item.name === 'Scene');
+  const restoredScene = restoredBook.formats.find((item) => item.name === 'Section');
   const restoredImportKey = `book-${randomUUID()}`;
   const stamp = new Date().toISOString();
   const restoreRows = async (format, rows) => gql('mutation($id:String!,$input:ImportEntriesInput!) { importEntriesBatch(collectionId:$id,input:$input) { createdCount errors { message } } }', { id: restoredBook.id, input: { formatId: format.id, importKey: restoredImportKey, dryRun: false, rows: rows.map(([sourceId, title, order]) => ({ sourceId, createdAt: stamp, updatedAt: stamp, values: [{ fieldId: format.fields.find((field) => field.kind === 'TITLE').id, value: title }, { fieldId: format.fields.find((field) => field.kind === 'NUMBER').id, value: order }] })) } });

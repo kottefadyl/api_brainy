@@ -1,6 +1,7 @@
 import { Field, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { CollectionExchangeRate, CollectionExchangeRateSchema, CollectionUnit, CollectionUnitSchema } from './unit.schema';
+import { BookViewSettings, BookViewSettingsSchema } from './book-view.schema';
 import { ObjectPropertySnapshot, ObjectPropertySnapshotSchema } from './entry.schema';
 import { StockRule, StockRuleSchema } from './stock.schema';
 import { CollectionMember, CollectionMemberSchema } from './collaboration.schema';
@@ -135,6 +136,10 @@ export class CollectionFormat {
   @Field({ nullable: true }) @Prop() copiedFromFormatId?: string;
   @Field(() => LinkedFormatSource, { nullable: true }) @Prop({ type: LinkedFormatSourceSchema }) linkedSource?: LinkedFormatSource;
   @Field(() => WorkflowDefinition, { nullable: true }) @Prop({ type: WorkflowDefinitionSchema }) workflow?: WorkflowDefinition;
+  /** T47: at most one entry may use this data format. */
+  @Field({ nullable: true }) @Prop({ default: false }) singleEntry?: boolean;
+  /** T47: when set, a parent relation from an entry of this format must point to one of these formats. */
+  @Field(() => [String], { nullable: true }) @Prop({ type: [String], default: undefined }) parentFormatIds?: string[];
 }
 
 export const CollectionFormatSchema = SchemaFactory.createForClass(CollectionFormat);
@@ -306,6 +311,9 @@ const CollectionPeriodTotalsSchema = SchemaFactory.createForClass(CollectionPeri
 @ObjectType()
 @Schema({ timestamps: true })
 export class Collection {
+  /** T47: provenance only (starter template id); never a permanent collection type. */
+  @Field({ nullable: true }) @Prop() templateId?: string;
+  @Field(() => BookViewSettings, { nullable: true }) @Prop({ type: BookViewSettingsSchema }) bookView?: BookViewSettings;
   @Field(() => CollectionPeriodTotals, { nullable: true })
   @Prop({ type: CollectionPeriodTotalsSchema })
   periodTotals?: CollectionPeriodTotals;

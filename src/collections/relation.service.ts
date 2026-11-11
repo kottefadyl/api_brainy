@@ -8,6 +8,7 @@ import { CollaborationService } from './collaboration.service';
 import { Entry } from './entry.schema';
 import { EntryRelation, RelationImpact, RelationKind, RelationTotal } from './relation.schema';
 import { graphNodes, validateNewEdge } from './relation-graph';
+import { assertParentAllowed } from './format-entry-rules';
 import { decimal, fractionText, multiply, resolveUnit, type Rational } from './unit_math';
 
 @Injectable()
@@ -65,6 +66,10 @@ export class RelationService {
     const token = await this.lock(collectionId);
     try {
     await this.assertEntries(collectionId, [fromEntryId, toEntryId]);
+    if (kind === RelationKind.PARENT) {
+      const [child, parent] = await Promise.all([this.entries.findById(fromEntryId).select('formatId').exec(), this.entries.findById(toEntryId).select('formatId').exec()]);
+      assertParentAllowed(collection, child?.formatId ?? '', parent?.formatId ?? '');
+    }
     const active = await this.edges(collectionId);
     validateNewEdge(active, { fromEntryId, toEntryId, kind });
     const existing = await this.relations.findOne({ collectionId, kind, fromEntryId, toEntryId }).exec();

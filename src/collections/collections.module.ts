@@ -17,6 +17,7 @@ import { EntryLink, EntryLinkSchema } from './entry-link.schema';
 import { EntryLinkResolver } from './entry-link.resolver';
 import { EntryLinkService } from './entry-link.service';
 import { StarterTemplateResolver } from './starter-template.resolver';
+import { BookResolver } from './book.resolver';
 import { StockLedgerHead, StockLedgerHeadSchema, StockLock, StockLockSchema, StockMovement, StockMovementSchema } from './stock.schema';
 import { StockService } from './stock.service';
 import { StockLedgerService } from './stock-ledger.service';
@@ -94,7 +95,7 @@ import { CodeListStoreResolver } from './code-list-store.resolver';
       { name: LargeFile.name, schema: LargeFileSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, CodeListStore, CodeListStoreResolver, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, CodeListStore, CodeListStoreResolver, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, BookResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}

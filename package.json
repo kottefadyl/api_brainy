@@ -21,6 +21,7 @@
     "smoke:kt-personal": "node --env-file-if-exists=.env scripts/kt-personal-smoke.mjs",
     "smoke:web": "node --env-file-if-exists=.env scripts/web-smoke.mjs",
     "smoke:platform-freeze": "node --env-file-if-exists=.env scripts/platform-freeze-smoke.mjs",
+    "smoke:book": "node --env-file-if-exists=.env scripts/book-smoke.mjs",
     "smoke:referentials": "node --env-file-if-exists=.env scripts/referential-smoke.mjs"
   },
   "dependencies": {

@@ -21,6 +21,7 @@ import { assertWorkflowEdit, importedWorkflowHistory, prepareWorkflowCreate, pre
 import { protectedFields, validSensitivity } from './sensitivity.logic';
 import { maxEntryAttachmentBytes } from '../platform';
 import { CodeListStore } from './code-list-store.service';
+import { assertRoomForEntries } from './format-entry-rules';
 
 export const formatColors = [
   '#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF',
@@ -876,6 +877,7 @@ export class CollectionsService {
     if (format.appendOnly) throw new BadRequestException('Import into a register is not supported; add writings through the register');
     if (!input.importKey || input.importKey.length > 100 || !/^[\w.-]+$/.test(input.importKey)) throw new BadRequestException('Invalid import key');
     if (!input.rows.length || input.rows.length > 50) throw new BadRequestException('Import 1 to 50 rows at a time');
+    if (!input.dryRun) await assertRoomForEntries(this.entries, collection, format, input.rows.length);
     const seen = new Set<string>();
     const errors: { sourceId: string; message: string }[] = [];
     const rows: { sourceId: string; values: EntryValue[]; createdAt: Date; updatedAt: Date; workflow?: { history: ReturnType<typeof importedWorkflowHistory> } }[] = [];
@@ -963,6 +965,7 @@ export class CollectionsService {
     await this.largeFiles.bind(collection, validated);
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
+    await assertRoomForEntries(this.entries, collection, format);
     let entry: Entry;
     try { entry = format.appendOnly
       ? await this.ledger.append(collection, format, validated, ownerId, clientMutationId, correctionOf)

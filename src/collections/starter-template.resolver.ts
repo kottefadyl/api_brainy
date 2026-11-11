@@ -6,6 +6,8 @@ import { AuthService } from '../auth/auth.service';
 import { Collection, FieldKind, SensitivityLevel } from './collection.schema';
 import { CollectionsService } from './collections.service';
 import { StockService } from './stock.service';
+import { bookTemplateFormats } from './book-template';
+import { defaultBookView } from './book-view.schema';
 
 @ObjectType()
 class StarterTemplate {
@@ -57,11 +59,7 @@ function templates(language: string): TemplateDefinition[] {
         { name: fr ? 'Notes' : 'Notes', kind: FieldKind.LONG_TEXT },
       ] },
     ] },
-    { id: 'book', name: fr ? 'Livre' : 'Book', description: fr ? 'Chapitres, scènes et notes reliables, avec ordre manuel.' : 'Linkable chapters, scenes and notes with manual order.', formats: [
-      { name: fr ? 'Chapitre' : 'Chapter', color: '#EEF5FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Ordre' : 'Order', kind: FieldKind.NUMBER }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.LONG_TEXT }] },
-      { name: fr ? 'Scène' : 'Scene', color: '#EDF9F3', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Ordre' : 'Order', kind: FieldKind.NUMBER }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.LONG_TEXT }] },
-      { name: fr ? 'Note' : 'Note', color: '#FFF5EB', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.LONG_TEXT }] },
-    ] },
+    { id: 'book', name: fr ? 'Livre' : 'Book', description: fr ? 'Couverture, pages liminaires, parties, chapitres, sections et pages finales, avec une vue livre à mettre en page.' : 'Cover, front matter, parts, chapters, sections and back matter, with a book view to lay out.', formats: bookTemplateFormats(fr).map(({ name, color, fields }) => ({ name, color, fields })) },
   ];
 }
 
@@ -94,6 +92,11 @@ export class StarterTemplateResolver {
       collection = (await this.collectionModel.findOneAndUpdate({ _id: collection.id, ownerId }, { $set: { periodTotals } }, { returnDocument: 'after' }).exec())!;
     }
     if (template.id === 'book') {
+      const definitions = bookTemplateFormats(language === 'fr');
+      const idOf = (role: string) => collection.formats[definitions.findIndex((item) => item.role === role)].id;
+      const formats = collection.formats.map((format, index) => ({ ...(format as unknown as { toObject?: () => object }).toObject?.() ?? format, singleEntry: definitions[index].single, parentFormatIds: definitions[index].parent ? [idOf(definitions[index].parent!)] : undefined }));
+      const roles = definitions.map((item, index) => ({ formatId: collection.formats[index].id, role: item.role }));
+      collection = (await this.collectionModel.findOneAndUpdate({ _id: collection.id, ownerId }, { $set: { formats, templateId: 'book', bookView: defaultBookView(roles) } }, { returnDocument: 'after' }).exec())!;
       const ordered = collection.formats.filter((item) => item.fields.some((field) => field.kind === FieldKind.NUMBER));
       collection = await this.collections.saveView(collection.id, ownerId, { name: language === 'fr' ? 'Manuscrit' : 'Manuscript', layout: 'LIST', formatIds: ordered.map((item) => item.id), columnFieldIds: ordered.flatMap((item) => item.fields.filter((field) => [FieldKind.TITLE, FieldKind.NUMBER].includes(field.kind)).map((field) => field.id)), sort: 'MANUAL', manualOrderFieldIds: ordered.map((item) => item.fields.find((field) => field.kind === FieldKind.NUMBER)!.id), groupByFormat: false });
     }
