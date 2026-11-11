@@ -2,6 +2,7 @@ import { Field, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { CollectionExchangeRate, CollectionExchangeRateSchema, CollectionUnit, CollectionUnitSchema } from './unit.schema';
 import { BookViewSettings, BookViewSettingsSchema } from './book-view.schema';
+import { TaskPlanner, TaskPlannerSchema } from './task-planner.schema';
 import { ObjectPropertySnapshot, ObjectPropertySnapshotSchema } from './entry.schema';
 import { StockRule, StockRuleSchema } from './stock.schema';
 import { CollectionMember, CollectionMemberSchema } from './collaboration.schema';
@@ -264,7 +265,7 @@ export const SharedObjectGrantSchema = SchemaFactory.createForClass(SharedObject
 export class SavedCollectionView {
   @Field() @Prop({ required: true }) id!: string;
   @Field() @Prop({ required: true }) name!: string;
-  @Field() @Prop({ required: true, enum: ['LIST', 'TABLE', 'CARDS', 'TASKS', 'CALENDAR'] }) layout!: string;
+  @Field() @Prop({ required: true, enum: ['LIST', 'TABLE', 'CARDS', 'TASKS', 'CALENDAR', 'TASK_DAY', 'TASK_CALENDAR'] }) layout!: string;
   @Field(() => [String]) @Prop({ type: [String], default: [] }) formatIds!: string[];
   @Field(() => [String]) @Prop({ type: [String], default: [] }) columnFieldIds!: string[];
   @Field() @Prop({ default: '' }) search!: string;
@@ -314,6 +315,8 @@ export class Collection {
   /** T47: provenance only (starter template id); never a permanent collection type. */
   @Field({ nullable: true }) @Prop() templateId?: string;
   @Field(() => BookViewSettings, { nullable: true }) @Prop({ type: BookViewSettingsSchema }) bookView?: BookViewSettings;
+  /** T49: Day and Calendar task views (Task list template only). */
+  @Field(() => TaskPlanner, { nullable: true }) @Prop({ type: TaskPlannerSchema }) taskPlanner?: TaskPlanner;
   @Field(() => CollectionPeriodTotals, { nullable: true })
   @Prop({ type: CollectionPeriodTotalsSchema })
   periodTotals?: CollectionPeriodTotals;

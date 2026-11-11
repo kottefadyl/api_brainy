@@ -22,6 +22,7 @@ import { protectedFields, validSensitivity } from './sensitivity.logic';
 import { maxEntryAttachmentBytes } from '../platform';
 import { CodeListStore } from './code-list-store.service';
 import { assertRoomForEntries } from './format-entry-rules';
+import { assertTaskPlannerView } from './task-planner.rules';
 
 export const formatColors = [
   '#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF',
@@ -588,7 +589,8 @@ export class CollectionsService {
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
     const name = input.name.trim();
     if (!name || name.length > 80) throw new BadRequestException('View name must be 1 to 80 characters');
-    if (!['LIST', 'TABLE', 'CARDS', 'TASKS', 'CALENDAR'].includes(input.layout)) throw new BadRequestException('Invalid view layout');
+    if (!['LIST', 'TABLE', 'CARDS', 'TASKS', 'CALENDAR', 'TASK_DAY', 'TASK_CALENDAR'].includes(input.layout)) throw new BadRequestException('Invalid view layout');
+    assertTaskPlannerView(collection, input);
     if (!['NEWEST', 'OLDEST', 'MANUAL'].includes(input.sort)) throw new BadRequestException('Invalid view sort');
     if ((input.search?.length ?? 0) > 200) throw new BadRequestException('View search is too long');
     const formatIds = [...new Set(input.formatIds)];

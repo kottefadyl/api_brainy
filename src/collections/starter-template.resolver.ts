@@ -6,6 +6,7 @@ import { AuthService } from '../auth/auth.service';
 import { Collection, FieldKind, SensitivityLevel } from './collection.schema';
 import { CollectionsService } from './collections.service';
 import { StockService } from './stock.service';
+import { TaskPlannerService, taskTemplateFields } from './task-planner.service';
 import { bookTemplateFormats } from './book-template';
 import { defaultBookView } from './book-view.schema';
 
@@ -29,7 +30,7 @@ function templates(language: string): TemplateDefinition[] {
     { id: 'notes', name: fr ? 'Notes et écriture' : 'Notes and writing', description: fr ? 'Des notes longues, datées et faciles à rechercher.' : 'Dated, searchable long-form notes.', formats: [{ name: fr ? 'Note' : 'Note', color: '#EEF5FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Contenu' : 'Content', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Date' : 'Date', kind: FieldKind.DATE }] }] },
     { id: 'links', name: fr ? 'Liens conservés' : 'Saved links', description: fr ? 'URL, commentaire, catégorie et date de sauvegarde.' : 'URL, comment, category and saved date.', formats: [{ name: fr ? 'Lien' : 'Link', color: '#EDF9F3', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: 'URL', kind: FieldKind.LINK }, { name: fr ? 'Commentaire' : 'Comment', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Catégorie' : 'Category', kind: FieldKind.TEXT }, { name: fr ? 'Enregistré le' : 'Saved on', kind: FieldKind.DATE }] }] },
     { id: 'capture', name: fr ? 'Captures rapides' : 'Quick captures', description: fr ? 'Liens, textes et fichiers avec une note de contexte.' : 'Links, text and files with a context note.', formats: [{ name: fr ? 'Capture' : 'Capture', color: '#EAF8FA', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Lien' : 'Link', kind: FieldKind.LINK }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.TEXT }, { name: fr ? 'Note' : 'Note', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Source' : 'Source', kind: FieldKind.TEXT }, { name: fr ? 'Pièce jointe' : 'Attachment', kind: FieldKind.ATTACHMENT }] }] },
-    { id: 'tasks', name: fr ? 'Liste de tâches' : 'Task list', description: fr ? 'Suivre les échéances et les tâches terminées.' : 'Track due dates and completed tasks.', formats: [{ name: fr ? 'Tâche' : 'Task', color: '#FFF5EB', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Terminée' : 'Done', kind: FieldKind.BOOLEAN }, { name: fr ? 'Échéance' : 'Due', kind: FieldKind.DATE }, { name: fr ? 'Terminée le' : 'Completed at', kind: FieldKind.DATETIME }] }], layout: 'TASKS' },
+    { id: 'tasks', name: fr ? 'Liste de tâches' : 'Task list', description: fr ? 'Tâches uniques ou qui reviennent, avec une vue du jour et un calendrier.' : 'One-off or repeating tasks, with a day view and a calendar.', formats: [{ name: fr ? 'Tâche' : 'Task', color: '#FFF5EB', fields: taskTemplateFields(fr) }], layout: 'TASKS' },
     { id: 'agenda', name: fr ? 'Agenda' : 'Calendar', description: fr ? 'Rendez-vous avec début, fin et lieu.' : 'Events with start, end and place.', formats: [{ name: fr ? 'Rendez-vous' : 'Event', color: '#F4F0FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Début' : 'Start', kind: FieldKind.DATETIME }, { name: fr ? 'Fin' : 'End', kind: FieldKind.DATETIME }, { name: fr ? 'Lieu' : 'Place', kind: FieldKind.TEXT }] }], layout: 'CALENDAR' },
     { id: 'expenses', name: fr ? 'Dépenses' : 'Expenses', description: fr ? 'Montant, catégorie et date ; analyses disponibles ensuite.' : 'Amount, category and date, ready for analysis.', formats: [{ name: fr ? 'Dépense' : 'Expense', color: '#FFF0F4', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Montant' : 'Amount', kind: FieldKind.NUMBER }, { name: fr ? 'Catégorie' : 'Category', kind: FieldKind.TEXT }, { name: fr ? 'Date' : 'Date', kind: FieldKind.DATE }, { name: fr ? 'Note' : 'Note', kind: FieldKind.LONG_TEXT }] }] },
     { id: 'shop', name: fr ? 'Commerce et stock' : 'Shop and stock', description: fr ? 'Produits, fournisseurs et mouvements avec validation explicite.' : 'Products, suppliers and explicitly confirmed stock movements.', formats: [
@@ -65,7 +66,7 @@ function templates(language: string): TemplateDefinition[] {
 
 @Resolver()
 export class StarterTemplateResolver {
-  constructor(private readonly collections: CollectionsService, private readonly auth: AuthService, private readonly stock: StockService, @InjectModel(Collection.name) private readonly collectionModel: Model<Collection>) {}
+  constructor(private readonly collections: CollectionsService, private readonly auth: AuthService, private readonly stock: StockService, private readonly planner: TaskPlannerService, @InjectModel(Collection.name) private readonly collectionModel: Model<Collection>) {}
 
   @Query(() => [StarterTemplate])
   starterTemplates(@Args('language', { type: () => String, nullable: true }) language?: string): StarterTemplate[] {
@@ -83,7 +84,9 @@ export class StarterTemplateResolver {
     const format = collection.formats[0];
     const byKind = (kind: FieldKind) => format.fields.find((field) => field.kind === kind)?.id;
     if (template.layout === 'TASKS') {
-      collection = await this.collections.saveView(collection.id, ownerId, { name: language === 'fr' ? 'À faire' : 'To do', layout: 'TASKS', formatIds: [format.id], columnFieldIds: format.fields.map((field) => field.id), sort: 'NEWEST', groupByFormat: false, taskDoneFieldId: byKind(FieldKind.BOOLEAN), taskDueFieldId: byKind(FieldKind.DATE), taskCompletedFieldId: byKind(FieldKind.DATETIME) });
+      const dates = format.fields.filter((field) => field.kind === FieldKind.DATE);
+      collection = await this.collections.saveView(collection.id, ownerId, { name: language === 'fr' ? 'À faire' : 'To do', layout: 'TASKS', formatIds: [format.id], columnFieldIds: format.fields.map((field) => field.id), sort: 'NEWEST', groupByFormat: false, taskDoneFieldId: byKind(FieldKind.BOOLEAN), taskDueFieldId: (dates[1] ?? dates[0])?.id, taskCompletedFieldId: byKind(FieldKind.DATETIME) });
+      if (template.id === 'tasks') collection = await this.planner.setUp(collection.id, format.id, ownerId, language);
     }
     if (template.layout === 'CALENDAR') {
       const dates = format.fields.filter((field) => field.kind === FieldKind.DATETIME);

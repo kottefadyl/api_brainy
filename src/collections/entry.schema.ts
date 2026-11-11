@@ -226,6 +226,11 @@ export class Entry {
   @Prop({ type: EntryRecurrenceSchema })
   recurrence?: EntryRecurrence;
 
+  /** T49: days (YYYY-MM-DD) on which a repeating task was checked. */
+  @Field(() => [String], { nullable: true })
+  @Prop({ type: [String], default: undefined })
+  taskCompletions?: string[];
+
   @Field(() => EntryWorkflow, { nullable: true })
   @Prop({ type: EntryWorkflowSchema })
   workflow?: EntryWorkflow;

@@ -244,6 +244,7 @@ type Collection {
   savedViews: [SavedCollectionView!]!
   sharedObjects: [SharedObjectGrant!]!
   stockRules: [StockRule!]!
+  taskPlanner: TaskPlanner
   templateId: String
   units: [CollectionUnit!]!
 }
@@ -638,6 +639,7 @@ type Entry {
   sourceObservedAt: DateTime
   sourceReceivedAt: DateTime
   sourceRunId: String
+  taskCompletions: [String!]
   updatedAt: DateTime!
   values: [EntryValue!]!
   workflow: EntryWorkflow
@@ -1134,6 +1136,7 @@ type Mutation {
   detachLinkedDataFormat(targetCollectionId: String!, targetFormatId: String!): Collection!
   duplicateCollectionObject(id: String!): Entry!
   enableLedger(collectionId: String!, formatId: String!): Collection!
+  enableTaskPlanner(collectionId: String!, language: String): Collection!
   eraseContribution(id: String!): Boolean!
   eraseContributionByReceipt(receipt: String!): Boolean!
   importCollectionRelations(collectionId: String!, importKey: String!, rows: [ImportedRelationInput!]!): Boolean!
@@ -1186,6 +1189,7 @@ type Mutation {
   setFormatSensitivity(collectionId: String!, expectedVersion: Int!, formatId: String!, level: SensitivityLevel!): Collection!
   setMinimumAggregateSize(collectionId: String!, minimum: Int!): Collection!
   setStockNegativePolicy(allowNegative: Boolean!, collectionId: String!): Collection!
+  setTaskDayDone(collectionId: String!, date: String!, done: Boolean!, entryId: String!, timeZone: String!): Entry!
   shareCollectionObject(includeSensitive: Boolean, mode: String!, objectId: String!, propertyFieldIds: [String!]!, targetCollectionId: String!): SharedObjectGrant!
   startBackgroundJob(collectionId: String!, input: StartBackgroundJobInput!): BackgroundJob!
   startLargeFileUpload(collectionId: String!, input: StartLargeFileUploadInput!): LargeFileUpload!
@@ -1362,6 +1366,7 @@ type Query {
   stockLedgerProof(collectionId: String!, productId: String!): String!
   stockMovements(before: String, collectionId: String!, limit: Int, productId: String): [StockMovement!]!
   stockPositions(collectionId: String!): [StockPosition!]!
+  taskAgenda(collectionId: String!, from: String!, timeZone: String!, to: String!, today: String!): TaskAgenda!
   verifyLedger(collectionId: String!, formatId: String!): LedgerIntegrity!
   verifyStockLedger(collectionId: String!, productId: String!): LedgerIntegrity!
   workflowNotifications: [WorkflowNotification!]!
@@ -1642,6 +1647,30 @@ input SubmitContributionInput {
   respondentEmail: String
   values: [EntryValueInput!]!
   website: String
+}
+
+type TaskAgenda {
+  entries: [Entry!]!
+  occurrences: [TaskOccurrence!]!
+}
+
+type TaskOccurrence {
+  date: String!
+  done: Boolean!
+  entryId: String!
+  overdue: Boolean!
+  repeating: Boolean!
+}
+
+type TaskPlanner {
+  completedFieldId: String
+  doneFieldId: String!
+  endFieldId: String!
+  formatId: String!
+  intervalFieldId: String!
+  repeatFieldId: String!
+  startFieldId: String!
+  weekdaysFieldId: String!
 }
 
 type TransferPreview {
