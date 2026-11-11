@@ -227,6 +227,20 @@ type ClassificationMergePreview {
   allowed: Boolean!
 }
 
+type CollaborationInvitePreview {
+  alreadyCollaborator: Boolean!
+  inviterName: String!
+  isSelf: Boolean!
+}
+
+type Collaborator {
+  email: String!
+  hasPhoto: Boolean!
+  name: String!
+  since: DateTime!
+  userId: ID!
+}
+
 type Collection {
   allowNegativeStock: Boolean!
   bookView: BookViewSettings
@@ -242,6 +256,9 @@ type Collection {
   ownerId: String!
   periodTotals: CollectionPeriodTotals
   savedViews: [SavedCollectionView!]!
+
+  """Owner of a collection shared with me; null for my own collections."""
+  sharedBy: CollectionOwnerSummary
   sharedObjects: [SharedObjectGrant!]!
   stockRules: [StockRule!]!
   taskPlanner: TaskPlanner
@@ -338,6 +355,11 @@ type CollectionMember {
   sensitiveFieldIds: [String!]
   sharedFieldIds: [String!]
   userId: String!
+}
+
+type CollectionOwnerSummary {
+  name: String!
+  userId: ID!
 }
 
 type CollectionPeriodTotals {
@@ -1098,9 +1120,10 @@ type MoveOperationStatus {
 
 type Mutation {
   abortLargeFileUpload(uploadId: String!): Boolean!
+  acceptCollaboration(token: String!): Collaborator!
   acceptLinkedDataFormatVersion(expectedSourceVersion: Int!, targetCollectionId: String!, targetFormatId: String!): Collection!
   addCollectionFormat(collectionId: String!, input: CollectionFormatInput!): Collection!
-  addCollectionMember(collectionId: String!, email: String!, role: CollectionRole!, sensitiveFieldIds: [String!], sharedFieldIds: [String!]): Collection!
+  addCollectionMember(collectionId: String!, email: String, memberUserId: String, role: CollectionRole!, sensitiveFieldIds: [String!], sharedFieldIds: [String!]): Collection!
   addCollectionWorkflowTemplate(collectionId: String!, color: String!, language: String, templateId: String!): Collection!
   addObjectModelFromTemplate(collectionId: String!, color: String!, language: String, name: String!, templateId: String!): Collection!
   assignWorkflowEntry(entryId: String!, input: WorkflowAssignmentInput!): Entry!
@@ -1137,6 +1160,9 @@ type Mutation {
   duplicateCollectionObject(id: String!): Entry!
   enableLedger(collectionId: String!, formatId: String!): Collection!
   enableTaskPlanner(collectionId: String!, language: String): Collection!
+
+  """Ends the collaboration and removes every share between both people."""
+  endCollaboration(userId: String!): Boolean!
   eraseContribution(id: String!): Boolean!
   eraseContributionByReceipt(receipt: String!): Boolean!
   importCollectionRelations(collectionId: String!, importKey: String!, rows: [ImportedRelationInput!]!): Boolean!
@@ -1156,6 +1182,9 @@ type Mutation {
   recordCollectionExchangeRate(collectionId: String!, input: CollectionExchangeRateInput!): Collection!
   recoverCollectionMove(operationId: String!): MoveOperationStatus!
   redactLedgerFields(collectionId: String!, entryId: String!, fieldIds: [String!]!, formatId: String!, reason: String!): LedgerIntegrity!
+
+  """New collaboration link token; the previous link stops working."""
+  regenerateCollaborationInvite: String!
   register(input: RegisterInput!): AuthPayload!
   registerPushDevice(label: String!, platform: String!, targetKind: String, token: String!): PushDevice!
   removeCollectionMember(collectionId: String!, memberUserId: String!): Collection!
@@ -1296,6 +1325,14 @@ type Query {
   classificationCodesByValue(codes: [String!]!, collectionId: String!, listId: String!): [ClassificationCode!]!
   classificationCopyPreview(collectionId: String!, listId: String!, targetCollectionId: String!): ClassificationCopyPreview!
   classificationMergePreview(collectionId: String!, fromCode: String!, listId: String!, toCode: String!): ClassificationMergePreview!
+
+  """Readable without signing in: shows only the inviter name."""
+  collaborationInvite(token: String!): CollaborationInvitePreview!
+
+  """Token of my personal collaboration link."""
+  collaborationInviteToken: String!
+  collaboratorPhoto(userId: String!): String
+  collaborators: [Collaborator!]!
   collectionAuditLogs(collectionId: String!): [AuditLog!]!
   collectionAvailableUnits(collectionId: String!): [CollectionUnit!]!
   collectionCalendarOccurrences(collectionId: String!, from: String!, to: String!, viewId: String!): [CalendarOccurrence!]!
