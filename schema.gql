@@ -1188,6 +1188,7 @@ type Mutation {
   setFormatEntryRules(collectionId: String!, formatId: String!, parentFormatIds: [String!]!, singleEntry: Boolean!): Collection!
   setFormatSensitivity(collectionId: String!, expectedVersion: Int!, formatId: String!, level: SensitivityLevel!): Collection!
   setMinimumAggregateSize(collectionId: String!, minimum: Int!): Collection!
+  setOnboardingCompleted(completed: Boolean!): User!
   setStockNegativePolicy(allowNegative: Boolean!, collectionId: String!): Collection!
   setTaskDayDone(collectionId: String!, date: String!, done: Boolean!, entryId: String!, timeZone: String!): Entry!
   shareCollectionObject(includeSensitive: Boolean, mode: String!, objectId: String!, propertyFieldIds: [String!]!, targetCollectionId: String!): SharedObjectGrant!
@@ -1754,6 +1755,7 @@ type User {
   interests: [String!]!
   job: String
   name: String!
+  onboardingCompleted: Boolean!
   profession: String
   profileCompleted: Boolean!
 }

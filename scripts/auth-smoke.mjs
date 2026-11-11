@@ -50,6 +50,13 @@ try {
   })).errors?.length, 'anonymous profile updates must fail');
   assert.ok((await graphql(register, { input: firstInput })).errors?.length, 'duplicate email should fail');
 
+  // T50: the welcome guide is shown once per account, and can be reopened.
+  const guide = 'mutation($done: Boolean!) { setOnboardingCompleted(completed: $done) { id onboardingCompleted } }';
+  assert.equal(data(await graphql('query { me { onboardingCompleted } }', {}, first.token)).me.onboardingCompleted, false);
+  assert.equal(data(await graphql(guide, { done: true }, first.token)).setOnboardingCompleted.onboardingCompleted, true);
+  assert.equal(data(await graphql('query { me { onboardingCompleted } }', {}, first.token)).me.onboardingCompleted, true);
+  assert.ok((await graphql(guide, { done: true })).errors?.length, 'anonymous guide changes must fail');
+
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
   const setPhoto = 'mutation($photo: String) { updateProfilePhoto(photo: $photo) { id hasProfilePhoto } }';
   assert.equal(data(await graphql(setPhoto, { photo: png }, first.token)).updateProfilePhoto.hasProfilePhoto, true);

@@ -52,4 +52,10 @@ export class AuthResolver {
     const user = await this.auth.currentUser(request.headers.authorization);
     return this.auth.updateProfile(user.id, input);
   }
+
+  @Mutation(() => User)
+  async setOnboardingCompleted(@Args('completed') completed: boolean, @Context('req') request: GraphqlRequest): Promise<User> {
+    const user = await this.auth.currentUser(request.headers.authorization);
+    return this.auth.setOnboardingCompleted(user.id, completed);
+  }
 }

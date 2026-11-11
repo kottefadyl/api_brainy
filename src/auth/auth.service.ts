@@ -180,6 +180,13 @@ export class AuthService {
     return user;
   }
 
+  /** T50: remembers that the welcome guide was seen. `false` lets the person see it again. */
+  async setOnboardingCompleted(userId: string, completed: boolean): Promise<User> {
+    const user = await this.users.findByIdAndUpdate(userId, { $set: { onboardingCompleted: completed } }, { returnDocument: 'after' }).exec();
+    if (!user) throw new UnauthorizedException('Invalid session');
+    return user;
+  }
+
   private validateCredentials(email: string, password: string): void {
     if (email.length > 254 || !emailPattern.test(email)) {
       throw new BadRequestException('Enter a valid email address');

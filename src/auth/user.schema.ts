@@ -52,6 +52,11 @@ export class User {
   @Field()
   @Prop({ default: false })
   hasProfilePhoto!: boolean;
+
+  /** T50: the welcome guide was finished or skipped (shown once per account, on every device). */
+  @Field()
+  @Prop({ default: false })
+  onboardingCompleted!: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
