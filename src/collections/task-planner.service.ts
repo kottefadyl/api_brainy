@@ -6,9 +6,11 @@ import { CollectionRole } from './collaboration.schema';
 import { CollaborationService } from './collaboration.service';
 import { CollectionsService } from './collections.service';
 import { Entry } from './entry.schema';
-import { occurrences, parseRepeat, parseWeekdays, repeatLabels, validDay, weekdayLabels, dayDiff, occursOn, type TaskRule } from './task-planner.logic';
+import { occurrences, repeatLabels, validDay, weekdayLabels, dayDiff, occursOn, type TaskRule } from './task-planner.logic';
 import { TaskAgenda, TaskPlanner } from './task-planner.schema';
 import { localDate, localTime, validTimeZone } from './time_math';
+import { taskRule } from './task-planner.rule';
+import { ReminderService } from './reminder.service';
 
 type TemplateField = { name: string; kind: FieldKind; options?: string[] };
 
@@ -33,6 +35,7 @@ export class TaskPlannerService {
     private readonly collaboration: CollaborationService,
     @InjectModel(Collection.name) private readonly collectionModel: Model<Collection>,
     @InjectModel(Entry.name) private readonly entries: Model<Entry>,
+    private readonly reminders: ReminderService,
   ) {}
 
   /** Records the planner on the collection and adds the Day and Calendar views. */
@@ -89,24 +92,7 @@ export class TaskPlannerService {
     return { collection, planner: collection.taskPlanner };
   }
 
-  private rule(entry: Entry, planner: TaskPlanner, timeZone: string): TaskRule {
-    const value = (id?: string) => id ? entry.values.find((item) => item.fieldId === id) : undefined;
-    const day = (id: string) => { const text = value(id)?.value; return validDay(text) ? text : undefined; };
-    const completedAt = value(planner.completedFieldId)?.value;
-    const created = (entry as unknown as { createdAt: Date }).createdAt;
-    return {
-      id: String((entry as unknown as { _id: unknown })._id ?? entry.id),
-      repeat: parseRepeat(value(planner.repeatFieldId)?.value),
-      start: day(planner.startFieldId),
-      end: day(planner.endFieldId),
-      interval: Math.min(365, Math.max(1, Math.floor(Number(value(planner.intervalFieldId)?.value) || 1))),
-      weekdays: parseWeekdays(value(planner.weekdaysFieldId)?.selectedValues ?? []),
-      done: value(planner.doneFieldId)?.value === 'true',
-      doneDate: completedAt && !Number.isNaN(Date.parse(completedAt)) ? localDate(localTime(new Date(completedAt), timeZone)) : undefined,
-      completions: entry.taskCompletions ?? [],
-      createdDate: localDate(localTime(new Date(created), timeZone)),
-    };
-  }
+  private rule(entry: Entry, planner: TaskPlanner, timeZone: string): TaskRule { return taskRule(entry, planner, timeZone); }
 
   async agenda(collectionId: string, userId: string, from: string, to: string, today: string, timeZone: string): Promise<TaskAgenda> {
     const { collection, planner } = await this.context(collectionId, userId, CollectionRole.READER);
@@ -135,7 +121,7 @@ export class TaskPlannerService {
         const stamp = localDate(localTime(now, timeZone)) === date ? now.toISOString() : new Date(`${date}T12:00:00Z`).toISOString();
         values.push({ fieldId: planner.completedFieldId, value: stamp, dateTimeValue: stamp } as never);
       }
-      update = { $set: { values }, $push: { revisions: { $each: [{ at: (entry as unknown as { updatedAt: Date }).updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } };
+      update = { $set: { values, ...(done ? { taskCompletions: [date] } : {}) }, ...(done ? {} : { $unset: { taskCompletions: '' } }), $push: { revisions: { $each: [{ at: (entry as unknown as { updatedAt: Date }).updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } };
     } else {
       if (!occursOn(rule, date)) throw new BadRequestException('This task is not planned on that day');
       if (done && (entry.taskCompletions?.length ?? 0) >= 5000) throw new BadRequestException('This task has too many checked days');
@@ -144,6 +130,7 @@ export class TaskPlannerService {
     const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId: collection.id }, update, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Task not found');
     await this.collaboration.logAction(collection.id, userId, 'UPDATE_ENTRY', `${done ? 'Checked' : 'Unchecked'} task ${entryId} on ${date}`);
+    await this.reminders.refreshEntry(entryId, userId).catch(() => undefined);
     return updated;
   }
 }

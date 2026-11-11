@@ -104,7 +104,28 @@ try {
   assert.equal(calls.get(firstDevice.id), 1, 'successful first device is not notified twice');
   assert.equal(calls.get(secondDevice.id), 2, 'only failed device is retried');
   assert.equal((await Reminder.findById(pushReminder.id)).state, 'DONE');
-  console.log('SMTP scheduling, date edit, late reminder, push retry ledger, account isolation, and one delivery per occurrence passed.');
+  delete service.send; // back to the real email delivery replaced by the push test above
+  // T49: a reminder on the start of a repeating task comes back at each open occurrence and skips checked days.
+  const taskCollectionId = new mongoose.Types.ObjectId().toString(), taskEntryId = new mongoose.Types.ObjectId().toString();
+  const taskFormat = randomUUID(), [titleId, doneId, startId, endId, repeatId, everyId, daysId] = Array.from({ length: 7 }, () => randomUUID());
+  await mongoose.connection.collection('collections').insertOne({ _id: new mongoose.Types.ObjectId(taskCollectionId), ownerId, name: 'Tasks', templateId: 'tasks', taskPlanner: { formatId: taskFormat, doneFieldId: doneId, startFieldId: startId, endFieldId: endId, repeatFieldId: repeatId, intervalFieldId: everyId, weekdaysFieldId: daysId }, formats: [{ id: taskFormat, name: 'Task', color: '#FFF5EB', version: 1, fields: [{ id: titleId, name: 'Title', kind: 'TITLE' }, { id: doneId, name: 'Done', kind: 'BOOLEAN' }, { id: startId, name: 'Start', kind: 'DATE' }, { id: endId, name: 'End', kind: 'DATE' }, { id: repeatId, name: 'Repeat', kind: 'SELECT', options: ['Once', 'Every day'] }, { id: everyId, name: 'Every', kind: 'NUMBER' }, { id: daysId, name: 'Days', kind: 'MULTI_SELECT', options: ['Monday'] }] }] });
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const nextDay = (day) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+  await mongoose.connection.collection('entries').insertOne({ _id: new mongoose.Types.ObjectId(taskEntryId), ownerId, collectionId: taskCollectionId, formatId: taskFormat, createdAt: new Date(), values: [{ fieldId: titleId, value: 'Water' }, { fieldId: startId, value: todayUtc }, { fieldId: repeatId, value: 'Every day' }] });
+  const taskReminder = await service.save(taskEntryId, ownerId, { fieldId: startId, minutesBefore: 0, timeZone: 'UTC', timeOfDay: '23:59', channels: ['EMAIL'] });
+  const firstDay = Date.now() < Date.parse(`${todayUtc}T23:59:00Z`) ? todayUtc : nextDay(todayUtc);
+  assert.equal(taskReminder.occurrenceAt.toISOString(), `${firstDay}T23:59:00.000Z`, 'first open occurrence at the chosen time');
+  await Entry.updateOne({ _id: taskEntryId }, { $set: { taskCompletions: [firstDay] } });
+  await service.refreshEntry(taskEntryId, ownerId);
+  assert.equal((await Reminder.findById(taskReminder.id)).occurrenceAt.toISOString(), `${nextDay(firstDay)}T23:59:00.000Z`, 'a checked day is skipped');
+  await Reminder.updateOne({ _id: taskReminder.id }, { $set: { nextAt: new Date(Date.now() - 1000) } });
+  const sentBefore = messages.length;
+  await service.processDue();
+  assert.equal(messages.length, sentBefore + 1, 'the task reminder is sent');
+  const rescheduled = await Reminder.findById(taskReminder.id);
+  assert.equal(rescheduled.state, 'ACTIVE');
+  assert.equal(rescheduled.occurrenceAt.toISOString(), `${nextDay(nextDay(firstDay))}T23:59:00.000Z`, 'the reminder comes back the next day');
+  console.log('SMTP scheduling, date edit, late reminder, push retry ledger, account isolation, one delivery per occurrence and repeating task reminders passed.');
 } finally {
   await Delivery.deleteMany({ ownerId });
   await Reminder.deleteMany({ ownerId });

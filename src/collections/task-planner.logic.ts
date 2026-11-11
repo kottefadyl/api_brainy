@@ -85,3 +85,13 @@ export function occurrences(rules: TaskRule[], from: string, to: string, today: 
   }
   return result;
 }
+
+/** First open (not yet checked) occurrence of a repeating task on or after a day, within about two years. */
+export function nextOccurrenceDay(rule: TaskRule, fromDay: string, limit = 800): string | undefined {
+  if (rule.repeat === 'ONCE') return undefined;
+  for (let index = 0, day = fromDay; index < limit; index++, day = addDays(day, 1)) {
+    if (rule.end && day > rule.end) return undefined;
+    if (occursOn(rule, day) && !rule.completions.includes(day)) return day;
+  }
+  return undefined;
+}

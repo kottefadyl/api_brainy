@@ -11,7 +11,9 @@ import { EntryReminderInput } from './collection.input';
 import { Collection, FieldKind } from './collection.schema';
 import { Entry } from './entry.schema';
 import { EntryReminder, PushDevice, ReminderCapabilities, ReminderDelivery } from './reminder.schema';
-import { localToInstant, nextRecurrenceStart, validTimeZone } from './time_math';
+import { localDate, localTime, localToInstant, nextRecurrenceStart, validTimeZone } from './time_math';
+import { addDays, nextOccurrenceDay } from './task-planner.logic';
+import { taskRule } from './task-planner.rule';
 import { assertNotFrozen, isFrozen } from '../platform';
 
 @Injectable()
@@ -114,7 +116,27 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     return (await this.devices.deleteOne({ _id: id, ownerId }).exec()).deletedCount > 0;
   }
 
-  private occurrence(entry: Entry, fieldId: string, timeZone: string, timeOfDay: string | undefined, minutesBefore: number, after: Date): Date | undefined {
+  /** T49: a reminder on the start of a repeating task comes back at every open occurrence. */
+  private repeatingTask(entry: Entry, fieldId: string, collection?: Collection | null): boolean {
+    const planner = collection?.taskPlanner;
+    return !!planner && entry.formatId === planner.formatId && fieldId === planner.startFieldId && taskRule(entry, planner, 'UTC').repeat !== 'ONCE';
+  }
+
+  private occurrence(entry: Entry, fieldId: string, timeZone: string, timeOfDay: string | undefined, minutesBefore: number, after: Date, collection?: Collection | null): Date | undefined {
+    if (this.repeatingTask(entry, fieldId, collection)) {
+      const rule = taskRule(entry, collection!.taskPlanner!, timeZone);
+      const [hour, minute] = (timeOfDay ?? '09:00').split(':').map(Number);
+      let from = localDate(localTime(after, timeZone));
+      for (let guard = 0; guard < 3; guard++) {
+        const day = nextOccurrenceDay(rule, from);
+        if (!day) return undefined;
+        const [year, month, date] = day.split('-').map(Number);
+        const at = localToInstant({ year, month, day: date, hour, minute, second: 0 }, timeZone);
+        if (at > after) return at;
+        from = addDays(day, 1);
+      }
+      return undefined;
+    }
     const value = entry.values.find((item) => item.fieldId === fieldId)?.value;
     if (!value) return;
     let base: Date;
@@ -146,7 +168,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     if (channels.includes('EMAIL') && !capabilities.email) throw new ServiceUnavailableException('Email reminders are not configured');
     if (channels.includes('PUSH') && (!capabilities.push || await this.devices.countDocuments({ ownerId }) === 0)) throw new ServiceUnavailableException('Register a push device before enabling push reminders');
     if (input.viewId && !collection.savedViews.some((item) => item.id === input.viewId && item.layout === 'CALENDAR' && item.calendarStartFieldId === input.fieldId)) throw new BadRequestException('Choose a calendar view for recurring reminders');
-    const occurrenceAt = this.occurrence(entry, input.fieldId, input.timeZone, input.timeOfDay, input.minutesBefore, new Date());
+    const occurrenceAt = this.occurrence(entry, input.fieldId, input.timeZone, input.timeOfDay, input.minutesBefore, new Date(), collection);
     if (!occurrenceAt) throw new BadRequestException('Choose a future reminder date or recurrence');
     const nextAt = new Date(Math.max(Date.now(), occurrenceAt.getTime() - input.minutesBefore * 60_000));
     if (reminderId && !Types.ObjectId.isValid(reminderId)) throw new BadRequestException('Invalid reminder ID');
@@ -163,10 +185,10 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
   }
 
   async refreshEntry(entryId: string, ownerId: string): Promise<void> {
-    const { entry } = await this.ownedEntry(entryId, ownerId);
+    const { entry, collection } = await this.ownedEntry(entryId, ownerId);
     const reminders = await this.reminders.find({ entryId, ownerId, state: 'ACTIVE' }).exec();
     for (const reminder of reminders) {
-      const occurrenceAt = this.occurrence(entry, reminder.fieldId, reminder.timeZone, reminder.timeOfDay, reminder.minutesBefore, new Date());
+      const occurrenceAt = this.occurrence(entry, reminder.fieldId, reminder.timeZone, reminder.timeOfDay, reminder.minutesBefore, new Date(), collection);
       if (!occurrenceAt) await this.reminders.updateOne({ _id: reminder.id, ownerId }, { $set: { state: 'DONE', failure: 'The reminder date is no longer in the future' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec();
       else await this.reminders.updateOne({ _id: reminder.id, ownerId }, { $set: { occurrenceAt, nextAt: new Date(Math.max(Date.now(), occurrenceAt.getTime() - reminder.minutesBefore * 60_000)), attempts: 0, failure: undefined } }).exec();
     }
@@ -256,8 +278,9 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
             continue;
           }
           const entry = await this.entries.findOne({ _id: reminder.entryId, ownerId: reminder.ownerId }).exec();
-          const next = entry?.recurrence?.startFieldId === reminder.fieldId && reminder.occurrenceAt
-            ? this.occurrence(entry, reminder.fieldId, reminder.timeZone, reminder.timeOfDay, reminder.minutesBefore, reminder.occurrenceAt)
+          const owner = entry ? await this.collections.findById(reminder.collectionId).exec() : null;
+          const next = entry && reminder.occurrenceAt && (entry.recurrence?.startFieldId === reminder.fieldId || this.repeatingTask(entry, reminder.fieldId, owner))
+            ? this.occurrence(entry, reminder.fieldId, reminder.timeZone, reminder.timeOfDay, reminder.minutesBefore, reminder.occurrenceAt, owner)
             : undefined;
           await this.reminders.updateOne({ _id: reminder.id, lockToken: token }, next ? { $set: { state: 'ACTIVE', nextAt: new Date(next.getTime() - reminder.minutesBefore * 60_000), occurrenceAt: next, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } } : { $set: { state: 'DONE', attempts: 0, failure: undefined }, $unset: { nextAt: '', occurrenceAt: '', lockedUntil: '', lockToken: '' } }).exec();
         } catch (error) {
