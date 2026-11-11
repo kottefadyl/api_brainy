@@ -1052,6 +1052,16 @@ type LedgerIntegrity {
   valid: Boolean!
 }
 
+type LinkPreview {
+  available: Boolean!
+  description: String
+  image: String
+  siteName: String
+  title: String
+  url: String!
+  video: Boolean!
+}
+
 type LinkedFormatSource {
   acceptedVersion: Float!
   sourceCollectionId: String!
@@ -1325,6 +1335,7 @@ type Query {
   largeFileUpload(uploadId: String!): LargeFileUpload!
   ledgerBalance(collectionId: String!, fieldId: String!, formatId: String!): String!
   ledgerProof(collectionId: String!, formatId: String!): String!
+  linkPreview(url: String!): LinkPreview!
   linkedDataFormatUpdatePreview(targetCollectionId: String!, targetFormatId: String!): LinkedFormatUpdatePreview!
   me: User!
   note(id: String!): Note

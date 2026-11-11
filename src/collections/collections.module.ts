@@ -18,6 +18,8 @@ import { EntryLinkResolver } from './entry-link.resolver';
 import { EntryLinkService } from './entry-link.service';
 import { StarterTemplateResolver } from './starter-template.resolver';
 import { BookResolver } from './book.resolver';
+import { LinkPreviewResolver } from './link-preview.resolver';
+import { LinkPreviewCache, LinkPreviewCacheSchema, LinkPreviewService } from './link-preview.service';
 import { StockLedgerHead, StockLedgerHeadSchema, StockLock, StockLockSchema, StockMovement, StockMovementSchema } from './stock.schema';
 import { StockService } from './stock.service';
 import { StockLedgerService } from './stock-ledger.service';
@@ -71,6 +73,7 @@ import { CodeListStoreResolver } from './code-list-store.resolver';
     MongooseModule.forFeature([
       { name: Collection.name, schema: CollectionSchema },
       { name: Entry.name, schema: EntrySchema },
+      { name: LinkPreviewCache.name, schema: LinkPreviewCacheSchema },
       { name: StoredCode.name, schema: StoredCodeSchema },
       { name: StockMovement.name, schema: StockMovementSchema },
       { name: StockLock.name, schema: StockLockSchema },
@@ -95,7 +98,7 @@ import { CodeListStoreResolver } from './code-list-store.resolver';
       { name: LargeFile.name, schema: LargeFileSchema },
     ]),
   ],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, CodeListStore, CodeListStoreResolver, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, BookResolver, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, CodeListStore, CodeListStoreResolver, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, BookResolver, LinkPreviewResolver, LinkPreviewService, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}

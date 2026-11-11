@@ -22,6 +22,7 @@
     "smoke:web": "node --env-file-if-exists=.env scripts/web-smoke.mjs",
     "smoke:platform-freeze": "node --env-file-if-exists=.env scripts/platform-freeze-smoke.mjs",
     "smoke:book": "node --env-file-if-exists=.env scripts/book-smoke.mjs",
+    "smoke:link-preview": "node --env-file-if-exists=.env scripts/link-preview-smoke.mjs",
     "smoke:referentials": "node --env-file-if-exists=.env scripts/referential-smoke.mjs"
   },
   "dependencies": {

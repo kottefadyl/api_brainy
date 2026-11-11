@@ -78,6 +78,8 @@ export class StarterTemplateResolver {
     const template = templates(language ?? 'en').find((item) => item.id === templateId);
     if (!template) throw new BadRequestException('Unknown template');
     let collection = await this.collections.create({ name, formats: template.formats }, ownerId);
+    // T47/T48: keep the starting template as provenance only (never a permanent collection type).
+    collection = (await this.collectionModel.findOneAndUpdate({ _id: collection.id, ownerId }, { $set: { templateId: template.id } }, { returnDocument: 'after' }).exec())!;
     const format = collection.formats[0];
     const byKind = (kind: FieldKind) => format.fields.find((field) => field.kind === kind)?.id;
     if (template.layout === 'TASKS') {
