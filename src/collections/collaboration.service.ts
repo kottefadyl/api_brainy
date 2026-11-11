@@ -6,6 +6,7 @@ import { AuditLog, CollectionMember, CollectionRole } from './collaboration.sche
 import { User } from '../auth/user.schema';
 import { Entry, EntryValue } from './entry.schema';
 import { protectedFields } from './sensitivity.logic';
+import { CollaboratorsService } from '../collaborators/collaborators.service';
 
 @Injectable()
 export class CollaborationService {
@@ -13,6 +14,7 @@ export class CollaborationService {
     @InjectModel(Collection.name) private readonly collections: Model<Collection>,
     @InjectModel(AuditLog.name) private readonly auditLogsModel: Model<AuditLog>,
     @InjectModel(User.name) private readonly users: Model<User>,
+    private readonly collaborators: CollaboratorsService,
   ) {}
 
   checkAccess(
@@ -96,7 +98,7 @@ export class CollaborationService {
 
   async addOrUpdateMember(
     collectionId: string,
-    email: string,
+    target: { email?: string; userId?: string },
     role: CollectionRole,
     sharedFieldIds: string[] | undefined,
     sensitiveFieldIds: string[] | undefined,
@@ -108,11 +110,18 @@ export class CollaborationService {
 
     this.checkAccess(collection, operatorUserId, CollectionRole.OWNER);
 
-    const targetUser = await this.users.findOne({ email: email.trim().toLowerCase() }).exec();
-    if (!targetUser) throw new NotFoundException('User with this email not found');
+    if (role === CollectionRole.OWNER) throw new BadRequestException('Choose read only or read and write');
+    const targetUser = target.userId && Types.ObjectId.isValid(target.userId)
+      ? await this.users.findById(target.userId).exec()
+      : target.email ? await this.users.findOne({ email: target.email.trim().toLowerCase() }).exec() : null;
+    if (!targetUser) throw new NotFoundException('User not found');
 
     if (targetUser.id === collection.ownerId) {
       throw new BadRequestException('The collection owner cannot be added as a collaborator');
+    }
+    // T52: a collection can only be shared with a collaborator (personal link accepted).
+    if (!(await this.collaborators.isCollaborator(collection.ownerId, targetUser.id))) {
+      throw new ForbiddenException('Share only with your collaborators: send them your collaboration link first');
     }
 
     const existingMembers = collection.members ?? [];

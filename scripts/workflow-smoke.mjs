@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
+import { collaborate } from './collaborate-helper.mjs';
 
 assert.ok(process.env.MONGODB_URI, 'Set MONGODB_URI for cleanup');
 await mongoose.connect(process.env.MONGODB_URI);
@@ -33,6 +34,7 @@ try {
   const editor = await register('workflow-editor');
   const reader = await register('workflow-reader');
   const collection = ok(await call('mutation($input:CreateCollectionInput!){createCollection(input:$input){id formats{id fields{id name kind options}}}}', { input: { name: 'Workflow T40', formats: [{ name: 'Notes', color: '#EEF5FF', fields: [{ name: 'Title', kind: 'TITLE' }] }, { name: 'Custom', color: '#F4F0FF', fields: [{ name: 'Title', kind: 'TITLE' }, { name: 'State', kind: 'SELECT', options: ['New', 'Done'] }] }] } }, owner.token)).createCollection;
+  await collaborate(owner.token, editor.token, reader.token);
   ok(await call('mutation($id:String!,$email:String!,$role:CollectionRole!){addCollectionMember(collectionId:$id,email:$email,role:$role){id}}', { id: collection.id, email: editor.user.email, role: 'EDITOR' }, owner.token));
   ok(await call('mutation($id:String!,$email:String!,$role:CollectionRole!){addCollectionMember(collectionId:$id,email:$email,role:$role){id}}', { id: collection.id, email: reader.user.email, role: 'READER' }, owner.token));
   const note = ok(await call(createEntry, { id: collection.id, input: { formatId: collection.formats[0].id, values: [{ fieldId: collection.formats[0].fields[0].id, value: 'Plain note' }] } }, owner.token)).createEntry;

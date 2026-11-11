@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import mongoose from 'mongoose';
+import { collaborate } from './collaborate-helper.mjs';
 
 const endpoint = `http://localhost:${process.env.PORT ?? 3000}/graphql`;
 assert.ok(process.env.MONGODB_URI, 'Set MONGODB_URI for cleanup');
@@ -53,6 +54,7 @@ try {
   ] } }, owner.token)).createCollection;
   const format = collection.formats[0];
   const field = Object.fromEntries(format.fields.map((item) => [item.name, item.id]));
+  await collaborate(owner.token, editor.token);
   data(await call('mutation($c:String!,$e:String!,$r:CollectionRole!){addCollectionMember(collectionId:$c,email:$e,role:$r){id}}', { c: collection.id, e: editor.email, r: 'EDITOR' }, owner.token));
 
   const input = {

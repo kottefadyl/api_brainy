@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
+import { collaborate } from './collaborate-helper.mjs';
 
 const endpoint = `http://localhost:${process.env.PORT ?? 3000}/graphql`;
 assert.ok(process.env.MONGODB_URI, 'Set MONGODB_URI for cleanup');
@@ -80,6 +81,8 @@ try {
   const titleField = format.fields.find((f) => f.name === 'Titre');
   const secretField = format.fields.find((f) => f.name === 'Note secrète');
   assert.ok(titleField && secretField, 'Fields created');
+
+  await collaborate(alice.token, bob.token, charlie.token);
 
   // 3. Alice adds Bob as EDITOR
   const addBobRes = data(

@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
+import { collaborate } from './collaborate-helper.mjs';
 
 const endpoint = `http://localhost:${process.env.PORT ?? 3000}/graphql`;
 assert.ok(process.env.MONGODB_URI, 'Set MONGODB_URI for checks and cleanup');
@@ -45,6 +46,7 @@ try {
   const collection = data(await call('mutation($i:CreateCollectionInput!){createCollection(input:$i){id formats{id fields{id name kind}}}}', { i: { name: 'Échantillons R6', formats: [{ name: 'Séquençage', color: '#EEF5FF', fields: [{ name: 'Échantillon', kind: 'TITLE' }, { name: 'Données brutes', kind: 'ATTACHMENT' }] }] } }, owner.token)).createCollection;
   const format = collection.formats[0];
   const [titleId, fileFieldId] = format.fields.map((field) => field.id);
+  await collaborate(owner.token, editor.token, reader.token);
   for (const [user, role] of [[editor, 'EDITOR'], [reader, 'READER']]) data(await call('mutation($c:String!,$e:String!,$r:CollectionRole!){addCollectionMember(collectionId:$c,email:$e,role:$r){id}}', { c: collection.id, e: user.email, r: role }, owner.token));
 
   const START = `mutation($c:String!,$i:StartLargeFileUploadInput!){startLargeFileUpload(collectionId:$c,input:$i){${UPLOAD}}}`;

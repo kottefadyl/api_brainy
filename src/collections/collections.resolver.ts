@@ -360,13 +360,14 @@ export class CollectionsResolver {
   @Mutation(() => Collection)
   async addCollectionMember(
     @Args('collectionId') collectionId: string,
-    @Args('email') email: string,
+    @Args('email', { type: () => String, nullable: true }) email: string | undefined,
     @Args('role', { type: () => CollectionRole }) role: CollectionRole,
     @Args('sharedFieldIds', { type: () => [String], nullable: true }) sharedFieldIds: string[] | undefined,
     @Args('sensitiveFieldIds', { type: () => [String], nullable: true }) sensitiveFieldIds: string[] | undefined,
     @Context('req') request: Request,
+    @Args('memberUserId', { type: () => String, nullable: true }) memberUserId?: string,
   ): Promise<Collection> {
-    return this.collaboration.addOrUpdateMember(collectionId, email, role, sharedFieldIds, sensitiveFieldIds, await this.ownerId(request));
+    return this.collaboration.addOrUpdateMember(collectionId, { email, userId: memberUserId }, role, sharedFieldIds, sensitiveFieldIds, await this.ownerId(request));
   }
 
   @Mutation(() => Collection)

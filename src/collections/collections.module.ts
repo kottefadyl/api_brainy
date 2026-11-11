@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
+import { CollaboratorsModule } from '../collaborators/collaborators.module';
 import { Collection, CollectionSchema } from './collection.schema';
 import { CollectionsResolver } from './collections.resolver';
 import { CollectionsService } from './collections.service';
@@ -72,6 +73,7 @@ import { CodeListStoreResolver } from './code-list-store.resolver';
 @Module({
   imports: [
     AuthModule,
+    CollaboratorsModule,
     MongooseModule.forFeature([
       { name: Collection.name, schema: CollectionSchema },
       { name: Entry.name, schema: EntrySchema },

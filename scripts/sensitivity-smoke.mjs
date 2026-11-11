@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
+import { collaborate } from './collaborate-helper.mjs';
 
 const url = `http://localhost:${process.env.PORT ?? 3000}/graphql`;
 assert.ok(process.env.MONGODB_URI, 'Set MONGODB_URI for cleanup');
@@ -15,6 +16,7 @@ try {
   const memberEmail = email('privacy-member');
   const member = data(await graphql(register, { input: { name: 'Privacy member', email: memberEmail, password: 'test-password-123' } })).register;
   owners.push(owner.user.id, member.user.id);
+  await collaborate(owner.token, member.token);
   const create = 'mutation($input:CreateCollectionInput!){createCollection(input:$input){id minAggregateSize formats{id version sensitivity fields{id name sensitivity}}}}';
   const setLevel = 'mutation($collectionId:String!,$formatId:String!,$fieldId:String!,$level:SensitivityLevel!,$expectedVersion:Int!){setFieldSensitivity(collectionId:$collectionId,formatId:$formatId,fieldId:$fieldId,level:$level,expectedVersion:$expectedVersion){formats{id version fields{id sensitivity}}}}';
   const add = 'mutation($id:String!,$input:SaveEntryInput!){createEntry(collectionId:$id,input:$input){id}}';
