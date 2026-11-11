@@ -648,6 +648,9 @@ type Entry {
   copiedFromEntryId: String
   correctionOf: String
   createdAt: DateTime!
+
+  """Person who created the entry (the owner for older entries)."""
+  createdBy: PersonSummary
   dataSourceId: String
   formatId: String
   formatVersion: Float
@@ -663,6 +666,9 @@ type Entry {
   sourceRunId: String
   taskCompletions: [String!]
   updatedAt: DateTime!
+
+  """Last person who changed the entry."""
+  updatedBy: PersonSummary
   values: [EntryValue!]!
   workflow: EntryWorkflow
 }
@@ -1267,6 +1273,12 @@ type ObjectReferenceSnapshot {
   properties: [ObjectPropertySnapshot!]!
 }
 
+type PersonSummary {
+  hasPhoto: Boolean!
+  name: String!
+  userId: ID!
+}
+
 type PlatformCapabilities {
   frozenModules: [String!]!
   maxEntryAttachmentBytes: Int!
@@ -1386,6 +1398,7 @@ type Query {
   objectModelTemplates(language: String): [ObjectModelTemplate!]!
   objectMovePreview(objectId: String!, targetCollectionId: String!): TransferPreview!
   objectVariableProperty(entryId: String!, objectId: String, propertyFieldId: String!, variableName: String!): ResolvedObjectVariable!
+  personPhoto(userId: String!): String
   platformCapabilities: PlatformCapabilities!
   previewClassificationCsv(csv: String!): ClassificationCsvPreview!
   previewCollectionFormula(collectionId: String!, expression: String!, formatId: String!): FormulaPreview

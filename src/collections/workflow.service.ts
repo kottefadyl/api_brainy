@@ -120,7 +120,7 @@ export class WorkflowService {
     const event: WorkflowEvent = { kind: 'TRANSITION', from, to, actorUserId, at: new Date(), assigneeUserId: entry.workflow?.assigneeUserId, dueAt: entry.workflow?.dueAt };
     const updated = await this.entries.findOneAndUpdate(
       { _id: entryId, ownerId: collection.ownerId, updatedAt: entry.updatedAt, values: { $elemMatch: { fieldId: format.workflow!.stateFieldId, value: from } } },
-      { $set: { 'values.$[state].value': to }, $push: { 'workflow.history': event } },
+      { $set: { 'values.$[state].value': to, updatedBy: actorUserId }, $push: { 'workflow.history': event } },
       { returnDocument: 'after', runValidators: true, arrayFilters: [{ 'state.fieldId': format.workflow!.stateFieldId }] },
     ).exec();
     if (!updated) throw new BadRequestException('This entry changed elsewhere. Refresh and try again');
@@ -150,7 +150,7 @@ export class WorkflowService {
     const event: WorkflowEvent = { kind: 'ASSIGNMENT', from, to: from, actorUserId, at: new Date(), assigneeUserId, dueAt };
     const updated = await this.entries.findOneAndUpdate(
       { _id: entryId, ownerId: collection.ownerId, updatedAt: entry.updatedAt },
-      { $set: { 'workflow.assigneeUserId': assigneeUserId, 'workflow.dueAt': dueAt, 'workflow.reminderMinutesBefore': reminderMinutesBefore }, $push: { 'workflow.history': event } },
+      { $set: { 'workflow.assigneeUserId': assigneeUserId, 'workflow.dueAt': dueAt, 'workflow.reminderMinutesBefore': reminderMinutesBefore, updatedBy: actorUserId }, $push: { 'workflow.history': event } },
       { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!updated) throw new BadRequestException('This entry changed elsewhere. Refresh and try again');

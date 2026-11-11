@@ -7,6 +7,7 @@ import { Collection, CollectionSchema } from '../collections/collection.schema';
 import { AuditLog, AuditLogSchema } from '../collections/collaboration.schema';
 import { Collaboration, CollaborationSchema, CollaboratorInvite, CollaboratorInviteSchema } from './collaborator.schema';
 import { CollaboratorsResolver, CollectionOwnerResolver } from './collaborators.resolver';
+import { EntryAuthorsResolver } from './entry-authors.resolver';
 import { CollaboratorsService } from './collaborators.service';
 
 @Module({
@@ -20,7 +21,7 @@ import { CollaboratorsService } from './collaborators.service';
       { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],
-  providers: [CollaboratorsService, CollaboratorsResolver, CollectionOwnerResolver],
+  providers: [CollaboratorsService, CollaboratorsResolver, CollectionOwnerResolver, EntryAuthorsResolver],
   exports: [CollaboratorsService],
 })
 export class CollaboratorsModule {}

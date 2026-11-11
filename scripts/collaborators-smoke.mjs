@@ -68,6 +68,22 @@ try {
   // Read and write: entries only.
   data(await call(share, { c: house.id, u: bruno.user.id, r: 'EDITOR' }, awa.token));
   const written = data(await call(entry, { c: house.id, i: values }, bruno.token)).createEntry.id;
+
+  // T53: creator and last person who changed the entry.
+  const authors = 'query($c:String!,$e:String!){collectionEntry(collectionId:$c,entryId:$e){createdBy{userId name hasPhoto} updatedBy{userId name}}}';
+  let seenEntry = data(await call(authors, { c: house.id, e: written }, awa.token)).collectionEntry;
+  assert.deepEqual([seenEntry.createdBy.name, seenEntry.updatedBy.name, seenEntry.createdBy.hasPhoto], ['Bruno', 'Bruno', false]);
+  data(await call('mutation($id:String!,$i:SaveEntryInput!){updateEntry(id:$id,input:$i){id}}', { id: written, i: { formatId: format.id, values: [{ fieldId: format.fields[0].id, value: 'Facture payée' }] } }, awa.token));
+  seenEntry = data(await call(authors, { c: house.id, e: written }, bruno.token)).collectionEntry;
+  assert.deepEqual([seenEntry.createdBy.userId, seenEntry.updatedBy.userId], [bruno.user.id, awa.user.id]);
+  await mongoose.connection.db.collection('entries').updateOne({ _id: new mongoose.Types.ObjectId(written) }, { $unset: { createdBy: '', updatedBy: '' } });
+  seenEntry = data(await call(authors, { c: house.id, e: written }, bruno.token)).collectionEntry;
+  assert.deepEqual([seenEntry.createdBy.userId, seenEntry.updatedBy.userId], [awa.user.id, awa.user.id], 'older entries belong to the owner');
+  const photo = 'query($u:String!){personPhoto(userId:$u)}';
+  data(await call('mutation($p:String){updateProfilePhoto(photo:$p){id}}', { p: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' }, awa.token));
+  assert.match(data(await call(photo, { u: awa.user.id }, bruno.token)).personPhoto, /^data:image\/png/, 'a collaborator sees the photo');
+  assert.equal(data(await call(photo, { u: awa.user.id }, chloe.token)).personPhoto, null, 'a stranger does not');
+  assert.equal(data(await call(authors, { c: house.id, e: written }, bruno.token)).collectionEntry.createdBy.hasPhoto, true);
   data(await call('mutation($id:String!){deleteEntry(id:$id)}', { id: written }, bruno.token));
   denied(await call('mutation($id:String!,$n:String!){renameCollection(id:$id,name:$n){id}}', { id: house.id, n: 'Renamed' }, bruno.token), /owner|Only/i);
   denied(await call('mutation($id:String!){deleteCollection(id:$id)}', { id: house.id }, bruno.token), /owner|Only|not found/i);

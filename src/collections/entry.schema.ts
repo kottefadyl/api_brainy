@@ -194,6 +194,9 @@ export const EntryRecurrenceSchema = SchemaFactory.createForClass(EntryRecurrenc
 @ObjectType()
 @Schema({ timestamps: true })
 export class Entry {
+  /** T53: person who created the entry, then the last person who changed it (absent on older entries: the owner). */
+  @Prop() createdBy?: string;
+  @Prop() updatedBy?: string;
   @Prop() clientMutationId?: string;
   @Prop() lastMutationId?: string;
   @Field(() => ID)

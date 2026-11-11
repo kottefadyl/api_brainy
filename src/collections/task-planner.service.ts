@@ -112,7 +112,7 @@ export class TaskPlannerService {
     const entry = await this.entries.findOne({ _id: entryId, collectionId: collection.id, formatId: planner.formatId, movingOperationId: null }).exec();
     if (!entry) throw new NotFoundException('Task not found');
     const rule = this.rule(entry, planner, timeZone);
-    let update: object;
+    let update: Record<string, unknown>;
     if (rule.repeat === 'ONCE') {
       const values = entry.values.filter((item) => item.fieldId !== planner.doneFieldId && item.fieldId !== planner.completedFieldId);
       values.push({ fieldId: planner.doneFieldId, value: done ? 'true' : 'false', booleanValue: done } as never);
@@ -127,6 +127,7 @@ export class TaskPlannerService {
       if (done && (entry.taskCompletions?.length ?? 0) >= 5000) throw new BadRequestException('This task has too many checked days');
       update = done ? { $addToSet: { taskCompletions: date } } : { $pull: { taskCompletions: date } };
     }
+    update.$set = { ...(update.$set as Record<string, unknown> | undefined), updatedBy: userId };
     const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId: collection.id }, update, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Task not found');
     await this.collaboration.logAction(collection.id, userId, 'UPDATE_ENTRY', `${done ? 'Checked' : 'Unchecked'} task ${entryId} on ${date}`);

@@ -659,7 +659,7 @@ export class CollectionsService {
       const now = new Date().toISOString();
       values.push({ fieldId: view.taskCompletedFieldId, value: now, dateTimeValue: now });
     }
-    const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt, movingOperationId: null }, { $set: { values }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } }, { returnDocument: 'after', runValidators: true }).exec();
+    const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt, movingOperationId: null }, { $set: { values, updatedBy: ownerId }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new BadRequestException('Task changed. Refresh and try again');
     await this.collaboration.logAction(collection.id, ownerId, 'UPDATE_ENTRY', `Updated task completion in entry ${entryId}`);
     return updated;
@@ -675,7 +675,7 @@ export class CollectionsService {
     if (!entry) throw new NotFoundException('Event not found');
     if (entry.ledgerHash || collection.formats.find((item) => item.id === entry.formatId)?.appendOnly) throw new BadRequestException('A register writing cannot be edited');
     if (!input) {
-      const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $unset: { recurrence: '' } }, { returnDocument: 'after' }).exec();
+      const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $unset: { recurrence: '' }, $set: { updatedBy: ownerId } }, { returnDocument: 'after' }).exec();
       if (!updated) throw new BadRequestException('Event changed. Refresh and try again');
       await this.collaboration.logAction(collection.id, ownerId, 'UPDATE_ENTRY', `Removed event recurrence in entry ${entryId}`);
       return updated;
@@ -690,7 +690,7 @@ export class CollectionsService {
     if (input.untilDate && (!validDate(input.untilDate) || input.untilDate < startDate)) throw new BadRequestException('Recurrence end must follow the first event');
     if (input.excludedDates.length > 500 || input.excludedDates.some((date) => !validDate(date) || date < startDate)) throw new BadRequestException('Invalid recurrence exception date');
     const recurrence = { startFieldId: view.calendarStartFieldId, endFieldId: view.calendarEndFieldId, timeZone: input.timeZone, frequency: input.frequency, interval: input.interval, untilDate: input.untilDate, excludedDates: [...new Set(input.excludedDates)] };
-    const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $set: { recurrence } }, { returnDocument: 'after', runValidators: true }).exec();
+    const updated = await this.entries.findOneAndUpdate({ _id: entryId, collectionId, updatedAt: entry.updatedAt }, { $set: { recurrence, updatedBy: ownerId } }, { returnDocument: 'after', runValidators: true }).exec();
     if (!updated) throw new BadRequestException('Event changed. Refresh and try again');
     await this.collaboration.logAction(collection.id, ownerId, 'UPDATE_ENTRY', `Updated event recurrence in entry ${entryId}`);
     return updated;
@@ -905,7 +905,7 @@ export class CollectionsService {
     if (input.dryRun) return { validCount: rows.length, createdCount: 0, skippedCount, errors: [] };
     const result = await this.entries.bulkWrite(rows.map((row) => ({ updateOne: {
       filter: { ownerId, collectionId, importKey: input.importKey, sourceId: row.sourceId },
-      update: { $setOnInsert: { ownerId, collectionId, importKey: input.importKey, sourceId: row.sourceId, formatId: format.id, formatVersion: format.version ?? 1, values: row.values, workflow: row.workflow, createdAt: row.createdAt, updatedAt: row.updatedAt } },
+      update: { $setOnInsert: { ownerId, createdBy: ownerId, updatedBy: ownerId, collectionId, importKey: input.importKey, sourceId: row.sourceId, formatId: format.id, formatVersion: format.version ?? 1, values: row.values, workflow: row.workflow, createdAt: row.createdAt, updatedAt: row.updatedAt } },
       upsert: true,
       timestamps: false,
     } })), { ordered: false, timestamps: false });
@@ -971,7 +971,7 @@ export class CollectionsService {
     let entry: Entry;
     try { entry = format.appendOnly
       ? await this.ledger.append(collection, format, validated, ownerId, clientMutationId, correctionOf)
-      : await this.entries.create({ collectionId, ownerId: collection.ownerId, formatId: format.id, formatVersion: format.version ?? 1, values: validated, clientMutationId, contributionLinkId: contribution?.linkId, contributionReceivedAt: contribution?.receivedAt }); }
+      : await this.entries.create({ collectionId, ownerId: collection.ownerId, createdBy: ownerId, updatedBy: ownerId, formatId: format.id, formatVersion: format.version ?? 1, values: validated, clientMutationId, contributionLinkId: contribution?.linkId, contributionReceivedAt: contribution?.receivedAt }); }
     catch (error) {
       if (clientMutationId && (error as { code?: number }).code === 11000) {
         const existing = await this.entries.findOne({ collectionId, ownerId: collection.ownerId, clientMutationId }).exec();
@@ -1143,7 +1143,7 @@ export class CollectionsService {
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
     const format = collection.formats.find((item) => item.id === source.formatId)!;
     const values = source.values.map((item) => ({ fieldId: item.fieldId, value: item.value, numberValue: item.numberValue, booleanValue: item.booleanValue, selectedValues: item.selectedValues, durationSeconds: item.durationSeconds, dateTimeValue: item.dateTimeValue, dateValue: item.dateValue, attachmentSize: item.attachmentSize, attachmentMimeType: item.attachmentMimeType, attachmentData: item.attachmentData, unitSnapshot: item.unitSnapshot, objectIds: item.objectIds, objectSnapshots: item.objectSnapshots }));
-    const created = await this.entries.create({ ownerId: collection.ownerId, collectionId: source.collectionId, formatId: format.id, formatVersion: format.version ?? 1, values });
+    const created = await this.entries.create({ ownerId: collection.ownerId, createdBy: ownerId, updatedBy: ownerId, collectionId: source.collectionId, formatId: format.id, formatVersion: format.version ?? 1, values });
     await this.collaboration.logAction(collection.id, ownerId, 'CREATE_ENTRY', `Duplicated object ${id}`);
     return created;
   }
@@ -1169,7 +1169,7 @@ export class CollectionsService {
     if (!summary || summary.length > (field.kind === FieldKind.LONG_TEXT ? 50000 : 10000)) throw new BadRequestException('Object is too long for this field');
     const values = this.validateValues([{ fieldId: field.id, value: summary }], target.fields, [], collection.units);
     this.assertObjectTitle(target, values);
-    const created = await this.entries.create({ ownerId: collection.ownerId, collectionId: source.collectionId, formatId: target.id, formatVersion: target.version ?? 1, sourceObjectId: source.id, values });
+    const created = await this.entries.create({ ownerId: collection.ownerId, createdBy: ownerId, updatedBy: ownerId, collectionId: source.collectionId, formatId: target.id, formatVersion: target.version ?? 1, sourceObjectId: source.id, values });
     await this.collaboration.logAction(collection.id, ownerId, 'CREATE_ENTRY', `Created entry using object ${objectId}`);
     return created;
   }
@@ -1196,7 +1196,7 @@ export class CollectionsService {
     await this.validateReferences(collection, format, validated, collection.ownerId, entry.id, entry.values);
     this.assertObjectTitle(format, validated);
     const saved = await this.entries.findOneAndUpdate(
-      { _id: id, movingOperationId: null, ...(expectedUpdatedAt || format.workflow ? { updatedAt: entry.updatedAt } : {}) }, { $set: { formatId: savedFormatId, formatVersion: format.version ?? 1, values: validated, ...(clientMutationId ? { lastMutationId: clientMutationId } : {}) }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } },
+      { _id: id, movingOperationId: null, ...(expectedUpdatedAt || format.workflow ? { updatedAt: entry.updatedAt } : {}) }, { $set: { formatId: savedFormatId, formatVersion: format.version ?? 1, values: validated, updatedBy: ownerId, ...(clientMutationId ? { lastMutationId: clientMutationId } : {}) }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } },
       { returnDocument: 'after', runValidators: true },
     ).exec();
     if (!saved) throw new BadRequestException('This entry changed elsewhere. Review the conflict before syncing');

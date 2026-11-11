@@ -145,7 +145,7 @@ export class LedgerService {
       if (!integrity.valid) throw new ConflictException(`Register integrity failed: ${integrity.problem}`);
       const head = await this.heads.findOne({ ownerId: collection.ownerId, collectionId: collection.id, formatId: format.id, token }).exec();
       if (!head) throw new ConflictException('Register lock expired');
-      const entry = await this.entries.create({ ownerId: collection.ownerId, collectionId: collection.id, formatId: format.id,
+      const entry = await this.entries.create({ ownerId: collection.ownerId, createdBy: actorId, updatedBy: actorId, collectionId: collection.id, formatId: format.id,
         formatVersion: format.version ?? 1, values, clientMutationId, correctionOf,
         ledgerSequence: head.count + 1, ledgerPreviousHash: head.hash });
       entry.ledgerValueHashes = Array.from(entry.values, hashValue);
