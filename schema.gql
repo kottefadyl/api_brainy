@@ -117,6 +117,42 @@ type BackgroundJobLog {
   row: Int!
 }
 
+type BookFormatRole {
+  formatId: String!
+  role: String!
+}
+
+type BookViewSettings {
+  bodyFont: String!
+  chapterOnNewPage: Boolean!
+  enabled: Boolean!
+  firstLineIndent: Float!
+  fontSize: Float!
+  headingFont: String!
+  lineHeight: Float!
+  marginMm: Float!
+  pageSize: String!
+  paragraphSpacing: Float!
+  roles: [BookFormatRole!]!
+  showRuler: Boolean!
+  textAlign: String!
+}
+
+input BookViewSettingsInput {
+  bodyFont: String!
+  chapterOnNewPage: Boolean!
+  enabled: Boolean!
+  firstLineIndent: Float!
+  fontSize: Float!
+  headingFont: String!
+  lineHeight: Float!
+  marginMm: Float!
+  pageSize: String!
+  paragraphSpacing: Float!
+  showRuler: Boolean!
+  textAlign: String!
+}
+
 type CalendarOccurrence {
   endAt: String!
   entry: Entry!
@@ -193,6 +229,7 @@ type ClassificationMergePreview {
 
 type Collection {
   allowNegativeStock: Boolean!
+  bookView: BookViewSettings
   codeLists: [ClassificationList!]!
   exchangeRates: [CollectionExchangeRate!]!
   fields: [CollectionField!]!
@@ -207,6 +244,7 @@ type Collection {
   savedViews: [SavedCollectionView!]!
   sharedObjects: [SharedObjectGrant!]!
   stockRules: [StockRule!]!
+  templateId: String
   units: [CollectionUnit!]!
 }
 
@@ -262,7 +300,9 @@ type CollectionFormat {
   linkedSource: LinkedFormatSource
   name: String!
   objectModel: Boolean!
+  parentFormatIds: [String!]
   sensitivity: SensitivityLevel
+  singleEntry: Boolean
   version: Float
   workflow: WorkflowDefinition
 }
@@ -1124,6 +1164,7 @@ type Mutation {
   saveEntryReminder(entryId: String!, input: EntryReminderInput!, reminderId: String): EntryReminder!
   saveStockRule(collectionId: String!, input: StockRuleInput!, ruleId: String): Collection!
   sealStockHistory(collectionId: String!, productId: String!): LedgerIntegrity!
+  setBookView(collectionId: String!, input: BookViewSettingsInput!): Collection!
   setCollectionEntryLinkActive(active: Boolean!, collectionId: String!, linkId: String!): EntryLink!
   setCollectionEntryRecurrence(collectionId: String!, entryId: String!, input: EntryRecurrenceInput, viewId: String!): Entry!
   setCollectionFormatColor(collectionId: String!, color: String!, formatId: String!): Collection!
@@ -1131,6 +1172,7 @@ type Mutation {
   setCollectionFormatWorkflow(collectionId: String!, formatId: String!, input: WorkflowDefinitionInput!): Collection!
   setCollectionTaskCompleted(collectionId: String!, done: Boolean!, entryId: String!, viewId: String!): Entry!
   setFieldSensitivity(collectionId: String!, expectedVersion: Int!, fieldId: String!, formatId: String!, level: SensitivityLevel!): Collection!
+  setFormatEntryRules(collectionId: String!, formatId: String!, parentFormatIds: [String!]!, singleEntry: Boolean!): Collection!
   setFormatSensitivity(collectionId: String!, expectedVersion: Int!, formatId: String!, level: SensitivityLevel!): Collection!
   setMinimumAggregateSize(collectionId: String!, minimum: Int!): Collection!
   setStockNegativePolicy(allowNegative: Boolean!, collectionId: String!): Collection!
@@ -1255,6 +1297,7 @@ type Query {
   collectionMoveStatus(operationId: String!): MoveOperationStatus!
   collectionObject(id: String!): Entry!
   collectionObjectsPage(after: String, collectionId: String!, first: Int! = 30, formatId: String!, search: String): EntryPage!
+  collectionParentRelations(collectionId: String!): [EntryRelation!]!
   collectionQuantityConversion(amount: String!, asOf: String, collectionId: String!, from: String!, to: String!): QuantityConversion!
   collectionRelationImpact(collectionId: String!, entryId: String!, replacementId: String): RelationImpact!
   collectionRelationTotal(collectionId: String!, fieldName: String!, kind: RelationKind!, rootId: String!): RelationTotal!
