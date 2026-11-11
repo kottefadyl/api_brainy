@@ -22,7 +22,7 @@ const register = async (name) => {
   return auth;
 };
 const share = 'mutation($c:String!,$u:String,$r:CollectionRole!){addCollectionMember(collectionId:$c,memberUserId:$u,role:$r){id members{userId role}}}';
-const list = 'query{collectionsList{id name sharedBy{userId name}}}';
+const list = 'query{collectionsList{id name sharedBy{userId name} members{userId}}}';
 const create = (name, token) => call('mutation($i:CreateCollectionInput!){createCollection(input:$i){id formats{id version fields{id name}}}}', { i: { name, formats: [{ name: 'Notes', color: '#EEF5FF', fields: [{ name: 'Title', kind: 'TITLE' }] }] } }, token);
 
 try {
@@ -53,6 +53,12 @@ try {
   data(await call(share, { c: house.id, u: bruno.user.id, r: 'READER' }, awa.token));
   const seen = data(await call(list, {}, bruno.token)).collectionsList.find((item) => item.id === house.id);
   assert.deepEqual(seen.sharedBy, { userId: awa.user.id, name: 'Awa' });
+  const dan = await register('Dan');
+  const { collaborationInviteToken: awaLink } = data(await call('query{collaborationInviteToken}', {}, awa.token));
+  data(await call('mutation($t:String!){acceptCollaboration(token:$t){userId}}', { t: awaLink }, dan.token));
+  data(await call(share, { c: house.id, u: dan.user.id, r: 'READER' }, awa.token));
+  assert.deepEqual(data(await call(list, {}, bruno.token)).collectionsList.find((item) => item.id === house.id).members, [{ userId: bruno.user.id }], 'a collaborator never sees the other members');
+  assert.equal(data(await call(list, {}, awa.token)).collectionsList.find((item) => item.id === house.id).members.length, 2);
   assert.equal(data(await call(list, {}, awa.token)).collectionsList.find((item) => item.id === house.id).sharedBy, null);
   const format = house.formats[0];
   const entry = 'mutation($c:String!,$i:SaveEntryInput!){createEntry(collectionId:$c,input:$i){id}}';
@@ -84,7 +90,7 @@ try {
   assert.equal(data(await call('mutation($u:String!){endCollaboration(userId:$u)}', { u: awa.user.id }, bruno.token)).endCollaboration, true);
   assert.ok(!data(await call(list, {}, awa.token)).collectionsList.some((item) => item.id === garage.id), 'share from Bruno removed');
   assert.ok(!data(await call(list, {}, bruno.token)).collectionsList.some((item) => item.id === house.id), 'share from Awa removed');
-  assert.deepEqual(data(await call('query{collaborators{userId}}', {}, awa.token)).collaborators, []);
+  assert.deepEqual(data(await call('query{collaborators{userId}}', {}, awa.token)).collaborators, [{ userId: dan.user.id }], 'only Bruno left');
   denied(await call(share, { c: house.id, u: bruno.user.id, r: 'READER' }, awa.token), /collaborators/);
   denied(await call('mutation($u:String!){endCollaboration(userId:$u)}', { u: awa.user.id }, bruno.token), /not found/);
 

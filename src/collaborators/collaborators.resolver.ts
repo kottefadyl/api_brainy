@@ -2,10 +2,11 @@
 import { Args, Context, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { AuthService } from '../auth/auth.service';
 import { Collection } from '../collections/collection.schema';
+import { CollectionMember } from '../collections/collaboration.schema';
 import { CollaborationInvitePreview, Collaborator, CollectionOwnerSummary } from './collaborator.schema';
 import { CollaboratorsService } from './collaborators.service';
 
-type Request = { headers: { authorization?: string } };
+type Request = { headers: { authorization?: string }; brainyViewerId?: Promise<string> };
 
 @Resolver()
 export class CollaboratorsResolver {
@@ -56,8 +57,22 @@ export class CollaboratorsResolver {
 export class CollectionOwnerResolver {
   constructor(private readonly auth: AuthService, private readonly service: CollaboratorsService) {}
 
+  /** The viewer, resolved once per request for every collection of a list. */
+  private viewer(request: Request): Promise<string> {
+    request.brainyViewerId ??= this.auth.currentUser(request.headers.authorization).then((user) => user.id);
+    return request.brainyViewerId;
+  }
+
   @ResolveField(() => CollectionOwnerSummary, { nullable: true, description: 'Owner of a collection shared with me; null for my own collections.' })
   async sharedBy(@Parent() collection: Collection, @Context('req') request: Request): Promise<CollectionOwnerSummary | null> {
-    return this.service.owner(collection, (await this.auth.currentUser(request.headers.authorization)).id);
+    return this.service.owner(collection, await this.viewer(request));
+  }
+
+  /** The owner sees every member; a collaborator only sees their own access, never the other people. */
+  @ResolveField(() => [CollectionMember], { nullable: true })
+  async members(@Parent() collection: Collection, @Context('req') request: Request): Promise<CollectionMember[]> {
+    const viewerId = await this.viewer(request);
+    const members = collection.members ?? [];
+    return collection.ownerId === viewerId ? members : members.filter((member) => member.userId === viewerId);
   }
 }
