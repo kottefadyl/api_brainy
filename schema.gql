@@ -1419,6 +1419,11 @@ type Query {
   profilePhoto: String
   publicContributionForm(token: String!): PublicContributionForm!
   pushDevices: [PushDevice!]!
+
+  """
+  Firebase custom token to listen to the change signals of my collections; null when real-time sync is off.
+  """
+  realtimeToken: String
   reminderCapabilities: ReminderCapabilities!
   searchClassificationCodes(collectionId: String!, includeInactive: Boolean, language: String, limit: Int, listId: String!, parentCode: String, query: String): [FoundClassificationCode!]!
   starterTemplates(language: String): [StarterTemplate!]!

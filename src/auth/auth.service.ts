@@ -100,6 +100,21 @@ export class AuthService {
     return { user, token: this.sign(user.id) };
   }
 
+  /** Identifier of a valid, unexpired session token, without reading the database; null otherwise. */
+  userIdFromToken(authorization?: string): string | null {
+    const token = authorization?.match(/^Bearer (\S+)$/i)?.[1];
+    const [header, payload, signature] = token?.split('.') ?? [];
+    if (!header || !payload || !signature) return null;
+    const expected = createHmac('sha256', this.secret).update(`${header}.${payload}`).digest();
+    const provided = Buffer.from(signature, 'base64url');
+    if (provided.length !== expected.length || !timingSafeEqual(provided, expected)) return null;
+    try {
+      const tokenHeader = JSON.parse(Buffer.from(header, 'base64url').toString()) as { alg?: string };
+      const claims = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { sub?: string; exp?: number };
+      return tokenHeader.alg === 'HS256' && typeof claims.sub === 'string' && typeof claims.exp === 'number' && claims.exp > Math.floor(Date.now() / 1000) ? claims.sub : null;
+    } catch { return null; }
+  }
+
   async currentUser(authorization?: string): Promise<User> {
     const token = authorization?.match(/^Bearer (\S+)$/i)?.[1];
     if (!token) throw new UnauthorizedException('Sign in to continue');

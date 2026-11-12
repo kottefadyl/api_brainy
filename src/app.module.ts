@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { CollectionsModule } from './collections/collections.module';
 import { HealthResolver } from './health.resolver';
 import { NotesModule } from './notes/notes.module';
+import { RealtimeModule } from './realtime/realtime.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { NotesModule } from './notes/notes.module';
     AuthModule,
     CollectionsModule,
     NotesModule,
+    RealtimeModule,
   ],
   providers: [HealthResolver, PlatformResolver],
 })
