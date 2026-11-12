@@ -24,6 +24,7 @@
     "smoke:book": "node --env-file-if-exists=.env scripts/book-smoke.mjs",
     "smoke:link-preview": "node --env-file-if-exists=.env scripts/link-preview-smoke.mjs",
     "smoke:task-planner": "node --env-file-if-exists=.env scripts/task-planner-smoke.mjs",
+    "seed:collab": "node --env-file-if-exists=.env scripts/collab-seed.mjs",
     "smoke:collaborators": "node --env-file-if-exists=.env scripts/collaborators-smoke.mjs",
     "smoke:referentials": "node --env-file-if-exists=.env scripts/referential-smoke.mjs"
   },

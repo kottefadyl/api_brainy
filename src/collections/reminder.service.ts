@@ -184,17 +184,28 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     return !!updated;
   }
 
-  async refreshEntry(entryId: string, ownerId: string): Promise<void> {
-    const { entry, collection } = await this.ownedEntry(entryId, ownerId);
-    const reminders = await this.reminders.find({ entryId, ownerId, state: 'ACTIVE' }).exec();
+  /**
+   * Recomputes every active reminder on an entry after it changed. The caller has already been
+   * authorized on the entry; in a shared collection (T52) the entry belongs to the collection owner
+   * and each person keeps their own reminders, so neither the entry nor the reminders are filtered
+   * by the caller.
+   */
+  async refreshEntry(entryId: string, _callerId: string): Promise<void> {
+    if (!Types.ObjectId.isValid(entryId)) return;
+    const reminders = await this.reminders.find({ entryId, state: 'ACTIVE' }).exec();
+    if (!reminders.length) return;
+    const entry = await this.entries.findOne({ _id: entryId }).exec();
+    const collection = entry && await this.collections.findOne({ _id: entry.collectionId }).exec();
+    if (!entry || !collection) return;
     for (const reminder of reminders) {
       const occurrenceAt = this.occurrence(entry, reminder.fieldId, reminder.timeZone, reminder.timeOfDay, reminder.minutesBefore, new Date(), collection);
-      if (!occurrenceAt) await this.reminders.updateOne({ _id: reminder.id, ownerId }, { $set: { state: 'DONE', failure: 'The reminder date is no longer in the future' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec();
-      else await this.reminders.updateOne({ _id: reminder.id, ownerId }, { $set: { occurrenceAt, nextAt: new Date(Math.max(Date.now(), occurrenceAt.getTime() - reminder.minutesBefore * 60_000)), attempts: 0, failure: undefined } }).exec();
+      if (!occurrenceAt) await this.reminders.updateOne({ _id: reminder.id }, { $set: { state: 'DONE', failure: 'The reminder date is no longer in the future' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec();
+      else await this.reminders.updateOne({ _id: reminder.id }, { $set: { occurrenceAt, nextAt: new Date(Math.max(Date.now(), occurrenceAt.getTime() - reminder.minutesBefore * 60_000)), attempts: 0, failure: undefined } }).exec();
     }
   }
 
-  async cancelEntry(entryId: string, ownerId: string): Promise<void> { await this.reminders.updateMany({ entryId, ownerId, state: 'ACTIVE' }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec(); }
+  /** The entry is gone or done for everyone who can see it (T52), so every person's reminder on it stops. */
+  async cancelEntry(entryId: string, _callerId: string): Promise<void> { await this.reminders.updateMany({ entryId, state: 'ACTIVE' }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec(); }
   async cancelCollection(collectionId: string, ownerId: string): Promise<void> { await this.reminders.updateMany({ collectionId, ownerId, state: 'ACTIVE' }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec(); }
 
   private async pushApp(): Promise<App> {

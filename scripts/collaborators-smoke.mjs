@@ -85,6 +85,11 @@ try {
   assert.equal(data(await call(photo, { u: awa.user.id }, chloe.token)).personPhoto, null, 'a stranger does not');
   assert.equal(data(await call(authors, { c: house.id, e: written }, bruno.token)).collectionEntry.createdBy.hasPhoto, true);
   data(await call('mutation($id:String!){deleteEntry(id:$id)}', { id: written }, bruno.token));
+  // A collaborator in read and write edits and deletes an entry written by the owner (regression: reminders were looked up by the editor).
+  const ownersEntry = data(await call(entry, { c: house.id, i: values }, awa.token)).createEntry.id;
+  data(await call('mutation($id:String!,$i:SaveEntryInput!){updateEntry(id:$id,input:$i){id}}', { id: ownersEntry, i: { formatId: format.id, values: [{ fieldId: format.fields[0].id, value: 'Facture relue' }] } }, bruno.token));
+  assert.equal(data(await call(authors, { c: house.id, e: ownersEntry }, awa.token)).collectionEntry.updatedBy.userId, bruno.user.id);
+  data(await call('mutation($id:String!){deleteEntry(id:$id)}', { id: ownersEntry }, bruno.token));
   denied(await call('mutation($id:String!,$n:String!){renameCollection(id:$id,name:$n){id}}', { id: house.id, n: 'Renamed' }, bruno.token), /owner|Only/i);
   denied(await call('mutation($id:String!){deleteCollection(id:$id)}', { id: house.id }, bruno.token), /owner|Only|not found/i);
   denied(await call(share, { c: house.id, u: chloe.user.id, r: 'READER' }, bruno.token), /owner|Only/i);
