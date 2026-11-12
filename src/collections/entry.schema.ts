@@ -156,6 +156,15 @@ export class EntryValue {
   @Prop({ type: [ObjectReferenceSnapshotSchema], default: undefined })
   objectSnapshots?: ObjectReferenceSnapshot[];
 
+  // T54 — people named by a collaborator field, with their names at saving time (same order).
+  @Field(() => [String], { nullable: true })
+  @Prop({ type: [String], default: undefined })
+  personIds?: string[];
+
+  @Field(() => [String], { nullable: true })
+  @Prop({ type: [String], default: undefined })
+  personNames?: string[];
+
   @Field(() => EntryMeasureValue, { nullable: true })
   @Prop({ type: EntryMeasureValueSchema })
   measureValue?: EntryMeasureValue;

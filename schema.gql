@@ -822,6 +822,8 @@ type EntryValue {
   numberValue: String
   objectIds: [String!]
   objectSnapshots: [ObjectReferenceSnapshot!]
+  personIds: [String!]
+  personNames: [String!]
   selectedValues: [String!]
   unitSnapshot: UnitSnapshot
   value: String!
@@ -849,6 +851,7 @@ enum FieldKind {
   BOOLEAN
   CHARACTER
   CODE
+  COLLABORATOR
   DATE
   DATETIME
   DURATION
@@ -1362,6 +1365,11 @@ type Query {
   collectionObject(id: String!): Entry!
   collectionObjectsPage(after: String, collectionId: String!, first: Int! = 30, formatId: String!, search: String): EntryPage!
   collectionParentRelations(collectionId: String!): [EntryRelation!]!
+
+  """
+  People a collaborator field of this collection can name: the owner, then the owner's collaborators.
+  """
+  collectionPeople(collectionId: ID!): [PersonSummary!]!
   collectionQuantityConversion(amount: String!, asOf: String, collectionId: String!, from: String!, to: String!): QuantityConversion!
   collectionRelationImpact(collectionId: String!, entryId: String!, replacementId: String): RelationImpact!
   collectionRelationTotal(collectionId: String!, fieldName: String!, kind: RelationKind!, rootId: String!): RelationTotal!

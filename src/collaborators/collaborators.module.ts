@@ -9,6 +9,8 @@ import { Collaboration, CollaborationSchema, CollaboratorInvite, CollaboratorInv
 import { CollaboratorsResolver, CollectionOwnerResolver } from './collaborators.resolver';
 import { EntryAuthorsResolver } from './entry-authors.resolver';
 import { CollaboratorsService } from './collaborators.service';
+import { PersonFieldResolver } from './person-field.resolver';
+import { PersonFieldService } from './person-field.service';
 
 @Module({
   imports: [
@@ -21,7 +23,7 @@ import { CollaboratorsService } from './collaborators.service';
       { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],
-  providers: [CollaboratorsService, CollaboratorsResolver, CollectionOwnerResolver, EntryAuthorsResolver],
-  exports: [CollaboratorsService],
+  providers: [CollaboratorsService, CollaboratorsResolver, CollectionOwnerResolver, EntryAuthorsResolver, PersonFieldService, PersonFieldResolver],
+  exports: [CollaboratorsService, PersonFieldService],
 })
 export class CollaboratorsModule {}

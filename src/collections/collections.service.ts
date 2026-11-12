@@ -23,6 +23,7 @@ import { maxEntryAttachmentBytes } from '../platform';
 import { CodeListStore } from './code-list-store.service';
 import { assertRoomForEntries } from './format-entry-rules';
 import { assertTaskPlannerView } from './task-planner.rules';
+import { PersonFieldService, parsePersonIds } from '../collaborators/person-field.service';
 
 export const formatColors = [
   '#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF',
@@ -69,6 +70,7 @@ export class CollectionsService {
     private readonly collaboration: CollaborationService,
     private readonly ledger: LedgerService,
     private readonly largeFiles: LargeFileService,
+    private readonly personFields: PersonFieldService,
   ) { largeFiles.useCollections(this); }
 
   private validId(id: string): void {
@@ -1019,6 +1021,7 @@ export class CollectionsService {
   }
 
   private async validateReferences(collection: Collection, format: CollectionFormat, values: EntryValue[], ownerId: string, updatingId?: string, previousValues: EntryValue[] = []): Promise<void> {
+    await this.personFields.bind(collection, format, values, previousValues);
     for (const value of values) {
       const field = format.fields.find((item) => item.id === value.fieldId);
       if (field?.kind !== FieldKind.OBJECT_REF) continue;
@@ -1142,7 +1145,7 @@ export class CollectionsService {
     const collection = await this.one(source.collectionId, ownerId);
     this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
     const format = collection.formats.find((item) => item.id === source.formatId)!;
-    const values = source.values.map((item) => ({ fieldId: item.fieldId, value: item.value, numberValue: item.numberValue, booleanValue: item.booleanValue, selectedValues: item.selectedValues, durationSeconds: item.durationSeconds, dateTimeValue: item.dateTimeValue, dateValue: item.dateValue, attachmentSize: item.attachmentSize, attachmentMimeType: item.attachmentMimeType, attachmentData: item.attachmentData, unitSnapshot: item.unitSnapshot, objectIds: item.objectIds, objectSnapshots: item.objectSnapshots }));
+    const values = source.values.map((item) => ({ fieldId: item.fieldId, value: item.value, numberValue: item.numberValue, booleanValue: item.booleanValue, selectedValues: item.selectedValues, durationSeconds: item.durationSeconds, dateTimeValue: item.dateTimeValue, dateValue: item.dateValue, attachmentSize: item.attachmentSize, attachmentMimeType: item.attachmentMimeType, attachmentData: item.attachmentData, unitSnapshot: item.unitSnapshot, objectIds: item.objectIds, objectSnapshots: item.objectSnapshots, personIds: item.personIds, personNames: item.personNames }));
     const created = await this.entries.create({ ownerId: collection.ownerId, createdBy: ownerId, updatedBy: ownerId, collectionId: source.collectionId, formatId: format.id, formatVersion: format.version ?? 1, values });
     await this.collaboration.logAction(collection.id, ownerId, 'CREATE_ENTRY', `Duplicated object ${id}`);
     return created;
@@ -1349,6 +1352,12 @@ export class CollectionsService {
             throw new BadRequestException(`${field.name} needs compatible objects`);
           }
           return { fieldId, value: JSON.stringify(ids), objectIds: ids as string[] };
+        }
+        case FieldKind.COLLABORATOR: { // T54: names are written by PersonFieldService.bind.
+          // A client resending the stored names unchanged keeps the same people.
+          const kept = existing.find((item) => item.fieldId === fieldId && item.value === text && item.personIds?.length);
+          if (kept) return { fieldId, value: text, personIds: [...kept.personIds!], personNames: [...(kept.personNames ?? [])] };
+          return { fieldId, value: text, personIds: parsePersonIds(text, field.name) };
         }
         case FieldKind.LINK:
           try {

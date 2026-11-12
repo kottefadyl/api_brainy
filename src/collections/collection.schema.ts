@@ -28,6 +28,7 @@ export enum FieldKind {
   CODE = 'CODE',
   POSITION = 'POSITION',
   ZONE = 'ZONE',
+  COLLABORATOR = 'COLLABORATOR',
 }
 
 registerEnumType(FieldKind, { name: 'FieldKind' });
