@@ -54,6 +54,8 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
 
   onApplicationBootstrap(): void {
     if (isFrozen('reminders')) return;
+    // A serverless host has no lasting process: GET /cron/reminders drives the sending there.
+    if (process.env.VERCEL) return;
     this.timer = setInterval(() => { void this.processDue(); }, 15_000);
     this.timer.unref();
     void this.processDue();
@@ -255,7 +257,7 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     }
     if (!device) throw new Error('No push device is registered');
     const messaging = getMessaging(await this.pushApp());
-    const payload = { notification: { title: reminder.workflowKind === 'ASSIGNMENT' ? 'Brainy assignment' : 'Brainy reminder', body }, data: { reminderId: reminder.id, occurrenceAt: reminder.occurrenceAt?.toISOString() ?? '', key }, android: { collapseKey: key.slice(0, 64) }, webpush: { notification: { tag: key, renotify: false } } };
+    const payload = { notification: { title: reminder.workflowKind === 'ASSIGNMENT' ? 'Brainy assignment' : 'Brainy reminder', body }, data: { reminderId: reminder.id, occurrenceAt: reminder.occurrenceAt?.toISOString() ?? '', key }, android: { collapseKey: key.slice(0, 64), priority: 'high' as const, notification: { channelId: 'brainy_reminders', sound: 'default', defaultSound: true, defaultVibrateTimings: true } }, apns: { payload: { aps: { sound: 'default' } } }, webpush: { notification: { tag: key, renotify: false } } };
     try {
       if (device.targetKind === 'FID') await messaging.send({ ...payload, fid: device.token });
       else await messaging.send({ ...payload, token: device.token });
