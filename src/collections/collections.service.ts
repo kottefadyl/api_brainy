@@ -588,7 +588,7 @@ export class CollectionsService {
 
   async saveView(collectionId: string, ownerId: string, input: SavedCollectionViewInput, viewId?: string): Promise<Collection> {
     const collection = await this.one(collectionId, ownerId);
-    this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
+    this.collaboration.checkAccess(collection, ownerId, CollectionRole.OWNER); // T52/2: collaborators see and use saved views; the owner manages them.
     const name = input.name.trim();
     if (!name || name.length > 80) throw new BadRequestException('View name must be 1 to 80 characters');
     if (!['LIST', 'TABLE', 'CARDS', 'TASKS', 'CALENDAR', 'TASK_DAY', 'TASK_CALENDAR'].includes(input.layout)) throw new BadRequestException('Invalid view layout');
@@ -639,7 +639,7 @@ export class CollectionsService {
 
   async deleteView(collectionId: string, ownerId: string, viewId: string): Promise<Collection> {
     const collection = await this.one(collectionId, ownerId);
-    this.collaboration.checkAccess(collection, ownerId, CollectionRole.EDITOR);
+    this.collaboration.checkAccess(collection, ownerId, CollectionRole.OWNER); // T52/2: collaborators see and use saved views; the owner manages them.
     if (!collection.savedViews.some((item) => item.id === viewId)) throw new NotFoundException('View not found');
     const updated = await this.collections.findOneAndUpdate({ _id: collectionId }, { $pull: { savedViews: { id: viewId } } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Collection not found');

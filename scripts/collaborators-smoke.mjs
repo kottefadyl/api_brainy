@@ -68,6 +68,21 @@ try {
   // Read and write: entries only.
   data(await call(share, { c: house.id, u: bruno.user.id, r: 'EDITOR' }, awa.token));
   const written = data(await call(entry, { c: house.id, i: values }, bruno.token)).createEntry.id;
+  // T52/2: the owner manages saved views; a collaborator sees and uses them but cannot change them.
+  const saveView = 'mutation($id:String!,$input:SavedCollectionViewInput!){saveCollectionView(collectionId:$id,input:$input){id savedViews{id name}}}';
+  const viewInput = { name: 'Toutes', layout: 'LIST', formatIds: [format.id], columnFieldIds: [format.fields[0].id], sort: 'NEWEST', groupByFormat: false };
+  denied(await call(saveView, { id: house.id, input: viewInput }, bruno.token), /owner/i);
+  const viewId = data(await call(saveView, { id: house.id, input: viewInput }, awa.token)).saveCollectionView.savedViews[0].id;
+  assert.equal(data(await call('query{collectionsList{id savedViews{id}}}', {}, bruno.token)).collectionsList.find((item) => item.id === house.id).savedViews[0].id, viewId);
+  data(await call('query($id:String!,$v:String){collectionEntriesPage(collectionId:$id,viewId:$v,first:5){entries{id}}}', { id: house.id, v: viewId }, bruno.token));
+  denied(await call('mutation($id:String!,$v:String!){deleteCollectionView(collectionId:$id,viewId:$v){id}}', { id: house.id, v: viewId }, bruno.token), /owner/i);
+  // T52/5: a collaborator with write access sets their own reminders; readers and strangers cannot.
+  const remind = 'mutation($e:String!,$i:EntryReminderInput!){saveEntryReminder(entryId:$e,input:$i){id}}';
+  const reminderInput = { fieldId: format.fields[0].id, minutesBefore: 0, channels: ['EMAIL'], timeZone: 'UTC' };
+  const brunoReminder = await call(remind, { e: written, i: reminderInput }, bruno.token);
+  assert.doesNotMatch(JSON.stringify(brunoReminder.errors ?? []), /Entry not found/, 'a write collaborator passes the access check');
+  denied(await call(remind, { e: written, i: reminderInput }, chloe.token), /Entry not found/);
+  assert.deepEqual(data(await call('query($e:String!){entryReminders(entryId:$e){id}}', { e: written }, bruno.token)).entryReminders, []);
 
   // T53: creator and last person who changed the entry.
   const authors = 'query($c:String!,$e:String!){collectionEntry(collectionId:$c,entryId:$e){createdBy{userId name hasPhoto} updatedBy{userId name}}}';

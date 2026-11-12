@@ -1,3 +1,4 @@
+import { CollectionRole } from './collaboration.schema';
 import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, ServiceUnavailableException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
@@ -59,18 +60,29 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
   }
   onApplicationShutdown(): void { if (this.timer) clearInterval(this.timer); }
 
-  private async ownedEntry(entryId: string, ownerId: string): Promise<{ entry: Entry; collection: Collection }> {
+  /**
+   * T52/5: the owner and a collaborator with read and write access can set reminders on an entry.
+   * Each person only sees and receives their own; a collaborator's reminder keeps the entry owner as
+   * ownerId (where the entry lives) and the collaborator as recipient.
+   */
+  private async ownedEntry(entryId: string, callerId: string, write = true): Promise<{ entry: Entry; collection: Collection }> {
     if (!Types.ObjectId.isValid(entryId)) throw new BadRequestException('Invalid entry ID');
-    const entry = await this.entries.findOne({ _id: entryId, ownerId }).exec();
-    if (!entry) throw new NotFoundException('Entry not found');
-    const collection = await this.collections.findOne({ _id: entry.collectionId, ownerId }).exec();
-    if (!collection) throw new NotFoundException('Collection not found');
+    const entry = await this.entries.findOne({ _id: entryId }).exec();
+    const collection = entry ? await this.collections.findOne({ _id: entry.collectionId, ownerId: entry.ownerId }).exec() : null;
+    const member = collection?.members?.find((item) => item.userId === callerId);
+    const allowed = collection && (collection.ownerId === callerId || (member && (!write || member.role === CollectionRole.EDITOR)));
+    if (!entry || !collection || !allowed) throw new NotFoundException('Entry not found');
     return { entry, collection };
   }
 
+  /** Reminders that belong to the caller: their own as owner, or the ones they set as a collaborator. */
+  private mine(callerId: string) {
+    return { $or: [{ recipientUserId: callerId }, { ownerId: callerId, recipientUserId: null }] };
+  }
+
   async list(entryId: string, ownerId: string): Promise<EntryReminder[]> {
-    await this.ownedEntry(entryId, ownerId);
-    return this.reminders.find({ entryId, ownerId, fieldId: { $not: /^workflow:/ }, state: { $ne: 'CANCELLED' } }).sort({ createdAt: -1 }).exec();
+    await this.ownedEntry(entryId, ownerId, false);
+    return this.reminders.find({ entryId, ...this.mine(ownerId), fieldId: { $not: /^workflow:/ }, state: { $ne: 'CANCELLED' } }).sort({ createdAt: -1 }).exec();
   }
 
   async scheduleWorkflow(entry: Entry, recipientUserId: string | undefined, dueAt?: Date, minutesBefore = 60, kind: 'ASSIGNMENT' | 'DUE' = 'DUE'): Promise<void> {
@@ -172,15 +184,17 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     if (!occurrenceAt) throw new BadRequestException('Choose a future reminder date or recurrence');
     const nextAt = new Date(Math.max(Date.now(), occurrenceAt.getTime() - input.minutesBefore * 60_000));
     if (reminderId && !Types.ObjectId.isValid(reminderId)) throw new BadRequestException('Invalid reminder ID');
-    const existing = reminderId ? await this.reminders.findOne({ _id: reminderId, ownerId, entryId, state: { $ne: 'CANCELLED' } }).exec() : undefined;
+    const existing = reminderId ? await this.reminders.findOne({ _id: reminderId, ...this.mine(ownerId), entryId, state: { $ne: 'CANCELLED' } }).exec() : undefined;
     if (reminderId && !existing) throw new NotFoundException('Reminder not found');
-    const updated = await this.reminders.findOneAndUpdate(existing ? { _id: reminderId, ownerId, entryId } : { ownerId, entryId, fieldId: input.fieldId, state: 'ACTIVE' }, { $set: { ownerId, collectionId: collection.id, entryId, fieldId: input.fieldId, viewId: input.viewId, timeZone: input.timeZone, timeOfDay: field.kind === FieldKind.DATE ? input.timeOfDay ?? '09:00' : undefined, minutesBefore: input.minutesBefore, channels, state: 'ACTIVE', nextAt, occurrenceAt, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } }, { returnDocument: 'after', upsert: !existing, runValidators: true }).exec();
+    // The owner's reminders keep no recipient (older data); a collaborator's name them as recipient.
+    const person = entry.ownerId === ownerId ? { ownerId, recipientUserId: null } : { ownerId: entry.ownerId, recipientUserId: ownerId };
+    const updated = await this.reminders.findOneAndUpdate(existing ? { _id: reminderId, entryId } : { ...person, entryId, fieldId: input.fieldId, state: 'ACTIVE' }, { $set: { ...person, collectionId: collection.id, entryId, fieldId: input.fieldId, viewId: input.viewId, timeZone: input.timeZone, timeOfDay: field.kind === FieldKind.DATE ? input.timeOfDay ?? '09:00' : undefined, minutesBefore: input.minutesBefore, channels, state: 'ACTIVE', nextAt, occurrenceAt, attempts: 0, failure: undefined }, $unset: { lockedUntil: '', lockToken: '' } }, { returnDocument: 'after', upsert: !existing, runValidators: true }).exec();
     return updated!;
   }
 
   async cancel(reminderId: string, ownerId: string): Promise<boolean> {
     if (!Types.ObjectId.isValid(reminderId)) throw new BadRequestException('Invalid reminder ID');
-    const updated = await this.reminders.findOneAndUpdate({ _id: reminderId, ownerId, state: { $ne: 'CANCELLED' } }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '', lockedUntil: '', lockToken: '' } }).exec();
+    const updated = await this.reminders.findOneAndUpdate({ _id: reminderId, ...this.mine(ownerId), state: { $ne: 'CANCELLED' } }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '', lockedUntil: '', lockToken: '' } }).exec();
     return !!updated;
   }
 
@@ -222,6 +236,11 @@ export class ReminderService implements OnApplicationBootstrap, OnApplicationShu
     const user = await this.users.findById(reminder.recipientUserId ?? reminder.ownerId).exec();
     if (!entry || !user) throw new Error('Reminder owner or entry is unavailable');
     const collection = await this.collections.findOne({ _id: reminder.collectionId, ownerId: reminder.ownerId }).exec();
+    // T52/5: a collaborator who lost access to the collection no longer receives its reminders.
+    if (reminder.recipientUserId && reminder.recipientUserId !== reminder.ownerId && !reminder.fieldId.startsWith('workflow:') && !collection?.members?.some((item) => item.userId === reminder.recipientUserId)) {
+      await this.reminders.updateOne({ _id: reminder.id }, { $set: { state: 'CANCELLED' }, $unset: { nextAt: '', occurrenceAt: '' } }).exec();
+      throw new Error('Reminder recipient no longer has access');
+    }
     const format = collection?.formats.find((item) => item.id === entry.formatId);
     const titleField = format?.fields.find((item) => item.kind === FieldKind.TITLE);
     const title = entry.values.find((item) => item.fieldId === titleField?.id)?.value ?? format?.name ?? collection?.name ?? 'Entry';
