@@ -4,10 +4,10 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnModuleIni
 import { InjectModel } from '@nestjs/mongoose';
 import { randomBytes } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { User } from '../auth/user.schema';
-import { Collection } from '../collections/collection.schema';
-import { AuditLog } from '../collections/collaboration.schema';
-import { Collaboration, CollaborationInvitePreview, Collaborator, CollaboratorInvite, CollectionOwnerSummary } from './collaborator.schema';
+import { User } from '../auth/user.schema.js';
+import { Collection } from '../collections/collection.schema.js';
+import { AuditLog } from '../collections/collaboration.schema.js';
+import { Collaboration, CollaborationInvitePreview, Collaborator, CollaboratorInvite, CollectionOwnerSummary } from './collaborator.schema.js';
 
 const pairKey = (a: string, b: string) => [a, b].sort().join(':');
 const newToken = () => randomBytes(18).toString('base64url');

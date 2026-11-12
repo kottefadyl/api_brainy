@@ -1,7 +1,7 @@
 import { Args, Context, Int, Mutation, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { Collection, SensitivityLevel } from './collection.schema';
-import { SensitivityService } from './sensitivity.service';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection, SensitivityLevel } from './collection.schema.js';
+import { SensitivityService } from './sensitivity.service.js';
 
 type Request = { headers: { authorization?: string } };
 @Resolver(() => Collection)

@@ -1,7 +1,7 @@
-import type { Entry } from './entry.schema';
-import { parseRepeat, parseWeekdays, validDay, type TaskRule } from './task-planner.logic';
-import type { TaskPlanner } from './task-planner.schema';
-import { localDate, localTime } from './time_math';
+import type { Entry } from './entry.schema.js';
+import { parseRepeat, parseWeekdays, validDay, type TaskRule } from './task-planner.logic.js';
+import type { TaskPlanner } from './task-planner.schema.js';
+import { localDate, localTime } from './time_math.js';
 
 /** T49: scheduling rule of a task entry. A once task done on a day keeps that day (sent by the device). */
 export function taskRule(entry: Entry, planner: TaskPlanner, timeZone: string): TaskRule {

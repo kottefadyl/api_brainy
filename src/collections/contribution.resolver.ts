@@ -1,8 +1,8 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { EntryValueInput } from './collection.input';
-import { ContributionLink, ContributionReceipt, ContributionSubmission, CreatedContributionLink, CreateContributionLinkInput, PublicContributionForm, RespondentContribution, SubmitContributionInput } from './contribution.schema';
-import { ContributionService } from './contribution.service';
+import { AuthService } from '../auth/auth.service.js';
+import { EntryValueInput } from './collection.input.js';
+import { ContributionLink, ContributionReceipt, ContributionSubmission, CreatedContributionLink, CreateContributionLinkInput, PublicContributionForm, RespondentContribution, SubmitContributionInput } from './contribution.schema.js';
+import { ContributionService } from './contribution.service.js';
 
 type Request = { headers: { authorization?: string } };
 

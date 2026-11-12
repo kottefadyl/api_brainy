@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { ClassificationCode, ClassificationList } from './collection.schema';
+import { ClassificationCode, ClassificationList } from './collection.schema.js';
 
 const codePattern = /^[\p{L}\p{N}_.-]{1,64}$/u;
 export const MAX_CODE_LEVELS = 8;

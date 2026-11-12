@@ -1,13 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
 import { Model, PipelineStage, Types } from 'mongoose';
-import { AnalysisInput, AnalysisOperationSpec, AnalysisRow, AnalysisSource } from './analysis.input';
-import { distributionReader, emptyResult, GroupStats, groupExplanation, needsDistribution, needsSquares, outputUnitFor, RegistryComputationOutput, scalarFromStats } from './analysis_stats';
-import { EntryFilterOperator } from './collection.input';
-import { Collection, CollectionField, CollectionFormat, FieldKind } from './collection.schema';
-import { Entry } from './entry.schema';
-import { inferStaticType } from './formula_inference';
-import { Expression, isDateExpression, isTextExpression } from './formula_nodes';
-import { fractionText, Rational, resolveUnit } from './unit_math';
+import { AnalysisInput, AnalysisOperationSpec, AnalysisRow, AnalysisSource } from './analysis.input.js';
+import { distributionReader, emptyResult, GroupStats, groupExplanation, needsDistribution, needsSquares, outputUnitFor, RegistryComputationOutput, scalarFromStats } from './analysis_stats.js';
+import { EntryFilterOperator } from './collection.input.js';
+import { Collection, CollectionField, CollectionFormat, FieldKind } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { inferStaticType } from './formula_inference.js';
+import { Expression, isDateExpression, isTextExpression } from './formula_nodes.js';
+import { fractionText, Rational, resolveUnit } from './unit_math.js';
 
 type Mql = Record<string, unknown> | unknown[] | string | number | null;
 export type PreparedFilter = { field: CollectionField; operator: EntryFilterOperator; value: string };

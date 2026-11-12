@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { EntryMeasureValueInput } from './collection.input';
-import { Entry, EntryMeasureValue, EntryValue } from './entry.schema';
+import { EntryMeasureValueInput } from './collection.input.js';
+import { Entry, EntryMeasureValue, EntryValue } from './entry.schema.js';
 
 export const MEASURE_STATUSES = ['MEASURED', 'ESTIMATED', 'CALCULATED', 'ABSENT'] as const;
 export type MeasureStatus = typeof MEASURE_STATUSES[number];

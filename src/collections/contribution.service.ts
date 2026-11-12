@@ -2,14 +2,14 @@ import { BadRequestException, ForbiddenException, HttpException, Injectable, Not
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomBytes } from 'crypto';
 import { Model, Types } from 'mongoose';
-import { Collection, FieldKind } from './collection.schema';
-import { Entry } from './entry.schema';
-import { EntryValueInput } from './collection.input';
-import { CollectionsService } from './collections.service';
-import { ContributionLink, ContributionReceipt, ContributionSubmission, CreateContributionLinkInput, PublicContributionForm, RespondentContribution, SubmitContributionInput } from './contribution.schema';
-import { RelationService } from './relation.service';
-import { ReminderService } from './reminder.service';
-import { EntryLinkService } from './entry-link.service';
+import { Collection, FieldKind } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { EntryValueInput } from './collection.input.js';
+import { CollectionsService } from './collections.service.js';
+import { ContributionLink, ContributionReceipt, ContributionSubmission, CreateContributionLinkInput, PublicContributionForm, RespondentContribution, SubmitContributionInput } from './contribution.schema.js';
+import { RelationService } from './relation.service.js';
+import { ReminderService } from './reminder.service.js';
+import { EntryLinkService } from './entry-link.service.js';
 
 const supported = new Set<FieldKind>([FieldKind.TITLE, FieldKind.TEXT, FieldKind.LONG_TEXT, FieldKind.DATE, FieldKind.TIME, FieldKind.NUMBER, FieldKind.BOOLEAN, FieldKind.SELECT, FieldKind.LINK, FieldKind.CHARACTER, FieldKind.DURATION]);
 const digest = (secret: string) => createHash('sha256').update(secret).digest('hex');

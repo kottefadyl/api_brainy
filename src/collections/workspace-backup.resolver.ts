@@ -1,7 +1,7 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { WorkspaceBackupPreview } from './workspace-backup.schema';
-import { WorkspaceBackupService } from './workspace-backup.service';
+import { AuthService } from '../auth/auth.service.js';
+import { WorkspaceBackupPreview } from './workspace-backup.schema.js';
+import { WorkspaceBackupService } from './workspace-backup.service.js';
 
 type Request = { headers: { authorization?: string } };
 @Resolver()

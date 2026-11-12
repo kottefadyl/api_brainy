@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { RelationKind } from './relation.schema';
+import { RelationKind } from './relation.schema.js';
 
 export type GraphEdge = { fromEntryId: string; toEntryId: string; kind: RelationKind };
 

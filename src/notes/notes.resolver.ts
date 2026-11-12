@@ -1,8 +1,8 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { CreateNoteInput, UpdateNoteInput } from './note.input';
-import { Note } from './note.schema';
-import { NotesService } from './notes.service';
+import { AuthService } from '../auth/auth.service.js';
+import { CreateNoteInput, UpdateNoteInput } from './note.input.js';
+import { Note } from './note.schema.js';
+import { NotesService } from './notes.service.js';
 
 @Resolver(() => Note)
 export class NotesResolver {

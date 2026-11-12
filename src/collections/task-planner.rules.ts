@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import type { SavedCollectionViewInput } from './collection.input';
-import type { Collection } from './collection.schema';
+import type { SavedCollectionViewInput } from './collection.input.js';
+import type { Collection } from './collection.schema.js';
 
 /** Day and Calendar task views exist only where the planner is set up, on its data format. */
 export function assertTaskPlannerView(collection: Collection, input: SavedCollectionViewInput): void {

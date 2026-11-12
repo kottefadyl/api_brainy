@@ -2,11 +2,11 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { CollaborationService } from './collaboration.service';
-import { CollectionRole } from './collaboration.schema';
-import { ClassificationCode, ClassificationList, Collection, FieldKind } from './collection.schema';
-import { Entry } from './entry.schema';
-import { parseClassificationCsv, resolveClassificationPaths, validateClassificationCodes } from './classification.logic';
+import { CollaborationService } from './collaboration.service.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { ClassificationCode, ClassificationList, Collection, FieldKind } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { parseClassificationCsv, resolveClassificationPaths, validateClassificationCodes } from './classification.logic.js';
 
 @Injectable()
 export class ClassificationService {

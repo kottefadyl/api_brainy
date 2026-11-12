@@ -2,20 +2,20 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { AnalysisService } from './analysis.service';
-import { ClassificationService } from './classification.service';
-import { CollaborationService } from './collaboration.service';
-import { CollectionRole } from './collaboration.schema';
-import { Collection, CollectionFormat, FieldKind } from './collection.schema';
-import { CollectionFieldInput, CollectionUnitInput } from './collection.input';
-import { CollectionsService, formatColors } from './collections.service';
-import { Entry } from './entry.schema';
-import { builtInUnits } from './unit_math';
-import { StockService } from './stock.service';
-import { DomainPackage, PackageCodeList, PackageField, PackageFormat, PackageObject, PackageStockRule, PackageText, PackageUnit, PackageView, PackageFormula, PACKAGE_FORMAT, PACKAGE_SCHEMA_VERSION, compareVersions, localized, parseDomainPackage, signatureStatus } from './domain-package.format';
-import { DomainPackageExport, DomainPackageInstall, DomainPackageInstallResult, DomainPackageKey, DomainPackagePreview, DomainPackageSummary } from './domain-package.schema';
-import { pilotPackages } from './domain-package.pilots';
-import { formulaChildKeys } from './formula_nodes';
+import { AnalysisService } from './analysis.service.js';
+import { ClassificationService } from './classification.service.js';
+import { CollaborationService } from './collaboration.service.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { Collection, CollectionFormat, FieldKind } from './collection.schema.js';
+import { CollectionFieldInput, CollectionUnitInput } from './collection.input.js';
+import { CollectionsService, formatColors } from './collections.service.js';
+import { Entry } from './entry.schema.js';
+import { builtInUnits } from './unit_math.js';
+import { StockService } from './stock.service.js';
+import { DomainPackage, PackageCodeList, PackageField, PackageFormat, PackageObject, PackageStockRule, PackageText, PackageUnit, PackageView, PackageFormula, PACKAGE_FORMAT, PACKAGE_SCHEMA_VERSION, compareVersions, localized, parseDomainPackage, signatureStatus } from './domain-package.format.js';
+import { DomainPackageExport, DomainPackageInstall, DomainPackageInstallResult, DomainPackageKey, DomainPackagePreview, DomainPackageSummary } from './domain-package.schema.js';
+import { pilotPackages } from './domain-package.pilots.js';
+import { formulaChildKeys } from './formula_nodes.js';
 
 export type DomainPackageExportOptions = { packageId: string; version: string; name: string; description?: string; notice?: string; author: string; license: string };
 

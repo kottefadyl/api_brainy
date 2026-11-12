@@ -3,16 +3,16 @@ import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Inj
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { CollectionRole } from './collaboration.schema';
-import { CollaborationService } from './collaboration.service';
-import { Collection, CollectionFormat, FieldKind } from './collection.schema';
-import { CollectionsService } from './collections.service';
-import { DATA_SOURCE_KINDS, DeliveryError, PreparedRow, RowRejection, checkHeader, duplicateRows, mergeValues, parseDelivery, prepareRow, sameValues, toCsv, unitMismatch } from './data-source.logic';
-import { DataSource, DataSourceInput, DataSourceKey, DataSourceRejection, DataSourceRun } from './data-source.schema';
-import { Entry, EntryValue } from './entry.schema';
-import { StockMovement } from './stock.schema';
-import { protectedFields } from './sensitivity.logic';
-import { assertNotFrozen, isFrozen } from '../platform';
+import { CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { Collection, CollectionFormat, FieldKind } from './collection.schema.js';
+import { CollectionsService } from './collections.service.js';
+import { DATA_SOURCE_KINDS, DeliveryError, PreparedRow, RowRejection, checkHeader, duplicateRows, mergeValues, parseDelivery, prepareRow, sameValues, toCsv, unitMismatch } from './data-source.logic.js';
+import { DataSource, DataSourceInput, DataSourceKey, DataSourceRejection, DataSourceRun } from './data-source.schema.js';
+import { Entry, EntryValue } from './entry.schema.js';
+import { StockMovement } from './stock.schema.js';
+import { protectedFields } from './sensitivity.logic.js';
+import { assertNotFrozen, isFrozen } from '../platform.js';
 
 const batchSize = 200;
 const leaseMs = 120_000;

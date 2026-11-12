@@ -1,7 +1,7 @@
 import { Args, Context, Field, InputType, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { DomainPackageService } from './domain-package.service';
-import { DomainPackageExport, DomainPackageInstall, DomainPackageInstallResult, DomainPackagePreview, DomainPackageSummary } from './domain-package.schema';
+import { AuthService } from '../auth/auth.service.js';
+import { DomainPackageService } from './domain-package.service.js';
+import { DomainPackageExport, DomainPackageInstall, DomainPackageInstallResult, DomainPackagePreview, DomainPackageSummary } from './domain-package.schema.js';
 
 type Request = { headers: { authorization?: string } };
 

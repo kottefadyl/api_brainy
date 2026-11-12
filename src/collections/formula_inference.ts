@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { Collection, CollectionField, CollectionFormat, FieldKind } from './collection.schema';
-import { BooleanExpression, Expression, FormulaNode, isDateExpression, isRelatedAggregate, isTextExpression, ObjectPath, parseFormulaDate } from './formula_nodes';
-import { Rational, resolveUnit } from './unit_math';
+import { Collection, CollectionField, CollectionFormat, FieldKind } from './collection.schema.js';
+import { BooleanExpression, Expression, FormulaNode, isDateExpression, isRelatedAggregate, isTextExpression, ObjectPath, parseFormulaDate } from './formula_nodes.js';
+import { Rational, resolveUnit } from './unit_math.js';
 
 export type UnitInfo = { unit?: string; dimension?: string; root?: string; factor?: Rational };
 type NumberType = { type: 'NUMBER'; unknownUnit?: boolean } & UnitInfo;

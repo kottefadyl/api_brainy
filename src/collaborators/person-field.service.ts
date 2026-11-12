@@ -3,11 +3,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { User } from '../auth/user.schema';
-import { Collection, CollectionFormat, FieldKind } from '../collections/collection.schema';
-import { EntryValue } from '../collections/entry.schema';
-import { Collaboration } from './collaborator.schema';
-import type { PersonSummary } from './entry-authors.resolver';
+import { User } from '../auth/user.schema.js';
+import { Collection, CollectionFormat, FieldKind } from '../collections/collection.schema.js';
+import { EntryValue } from '../collections/entry.schema.js';
+import { Collaboration } from './collaborator.schema.js';
+import type { PersonSummary } from './entry-authors.resolver.js';
 
 export const MAX_PEOPLE_PER_VALUE = 20;
 

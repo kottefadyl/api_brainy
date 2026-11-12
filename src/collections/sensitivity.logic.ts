@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { AnalysisInput, AnalysisResult, AnalysisRow } from './analysis.input';
-import { Collection, CollectionField, CollectionFormat, FieldKind, SensitivityLevel } from './collection.schema';
-import { decimal, divide, fractionText, multiply, type Rational } from './unit_math';
+import { AnalysisInput, AnalysisResult, AnalysisRow } from './analysis.input.js';
+import { Collection, CollectionField, CollectionFormat, FieldKind, SensitivityLevel } from './collection.schema.js';
+import { decimal, divide, fractionText, multiply, type Rational } from './unit_math.js';
 
 const rank: Record<SensitivityLevel, number> = { ORDINARY: 0, PERSONAL: 1, SENSITIVE: 2 };
 export const validSensitivity = (level: SensitivityLevel): boolean => Object.values(SensitivityLevel).includes(level);

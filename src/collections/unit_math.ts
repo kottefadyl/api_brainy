@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { CollectionUnit } from './unit.schema';
+import { CollectionUnit } from './unit.schema.js';
 
 export type Rational = { n: bigint; d: bigint };
 export const builtInUnits: CollectionUnit[] = [

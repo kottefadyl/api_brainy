@@ -1,9 +1,9 @@
-import { codeHierarchy } from './classification.logic';
+import { codeHierarchy } from './classification.logic.js';
 import { BadRequestException } from '@nestjs/common';
 import { createHash, createPublicKey, verify } from 'node:crypto';
-import { FieldKind, SensitivityLevel } from './collection.schema';
-import { formulaChildKeys } from './formula_nodes';
-import { builtInUnits } from './unit_math';
+import { FieldKind, SensitivityLevel } from './collection.schema.js';
+import { formulaChildKeys } from './formula_nodes.js';
+import { builtInUnits } from './unit_math.js';
 
 export const PACKAGE_FORMAT = 'brainy.domain-package';
 export const PACKAGE_SCHEMA_VERSION = 1;

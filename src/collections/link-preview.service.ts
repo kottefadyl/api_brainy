@@ -1,9 +1,9 @@
-import { isFrozen } from '../platform';
+import { isFrozen } from '../platform.js';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Field, ObjectType } from '@nestjs/graphql';
 import { InjectModel, Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { normalizedPreviewUrl, safeFetch } from './link-preview.fetch';
+import { normalizedPreviewUrl, safeFetch } from './link-preview.fetch.js';
 
 /** T48: cached Open Graph preview of a saved link. The image is copied so clients never call the site. */
 @Schema({ timestamps: true, collection: 'link_previews' })

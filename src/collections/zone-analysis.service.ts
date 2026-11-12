@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { AnalysisInput, AnalysisResult } from './analysis.input';
-import { Collection, FieldKind } from './collection.schema';
-import { CollectionsService } from './collections.service';
-import { Entry } from './entry.schema';
-import { analysePointsByZone, NamedPoint, NamedZone } from './geo-grouping';
-import { parsePosition, parseZone } from './geo.logic';
+import { AnalysisInput, AnalysisResult } from './analysis.input.js';
+import { Collection, FieldKind } from './collection.schema.js';
+import { CollectionsService } from './collections.service.js';
+import { Entry } from './entry.schema.js';
+import { analysePointsByZone, NamedPoint, NamedZone } from './geo-grouping.js';
+import { parsePosition, parseZone } from './geo.logic.js';
 
 @Injectable()
 export class ZoneAnalysisService {

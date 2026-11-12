@@ -1,6 +1,6 @@
 import { Field, ID, InputType, Int, ObjectType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { CollectionRole } from './collaboration.schema';
+import { CollectionRole } from './collaboration.schema.js';
 
 @ObjectType()
 @Schema({ _id: false })

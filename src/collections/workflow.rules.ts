@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { CollectionFormat, FieldKind } from './collection.schema';
-import { EntryValue } from './entry.schema';
-import { WorkflowDefinition, WorkflowDefinitionInput, WorkflowEvent, WorkflowEventImportInput } from './workflow.schema';
+import { CollectionFormat, FieldKind } from './collection.schema.js';
+import { EntryValue } from './entry.schema.js';
+import { WorkflowDefinition, WorkflowDefinitionInput, WorkflowEvent, WorkflowEventImportInput } from './workflow.schema.js';
 
 export function validateWorkflowDefinition(format: CollectionFormat, input: WorkflowDefinitionInput): WorkflowDefinition {
   const field = format.fields.find((item) => item.id === input.stateFieldId);

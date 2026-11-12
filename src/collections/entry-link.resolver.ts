@@ -1,8 +1,8 @@
 import { Args, Context, Field, InputType, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { EntryLink } from './entry-link.schema';
-import { EntryLinkService } from './entry-link.service';
-import { Entry } from './entry.schema';
+import { AuthService } from '../auth/auth.service.js';
+import { EntryLink } from './entry-link.schema.js';
+import { EntryLinkService } from './entry-link.service.js';
+import { Entry } from './entry.schema.js';
 
 type Request = { headers: { authorization?: string } };
 @InputType()

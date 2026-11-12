@@ -1,16 +1,16 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Collection, FieldKind } from './collection.schema';
-import { CollectionRole } from './collaboration.schema';
-import { CollaborationService } from './collaboration.service';
-import { CollectionsService } from './collections.service';
-import { Entry } from './entry.schema';
-import { occurrences, repeatLabels, validDay, weekdayLabels, dayDiff, occursOn, type TaskRule } from './task-planner.logic';
-import { TaskAgenda, TaskPlanner } from './task-planner.schema';
-import { localDate, localTime, validTimeZone } from './time_math';
-import { taskRule } from './task-planner.rule';
-import { ReminderService } from './reminder.service';
+import { Collection, FieldKind } from './collection.schema.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { CollectionsService } from './collections.service.js';
+import { Entry } from './entry.schema.js';
+import { occurrences, repeatLabels, validDay, weekdayLabels, dayDiff, occursOn, type TaskRule } from './task-planner.logic.js';
+import { TaskAgenda, TaskPlanner } from './task-planner.schema.js';
+import { localDate, localTime, validTimeZone } from './time_math.js';
+import { taskRule } from './task-planner.rule.js';
+import { ReminderService } from './reminder.service.js';
 
 type TemplateField = { name: string; kind: FieldKind; options?: string[] };
 

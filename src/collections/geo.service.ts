@@ -1,15 +1,15 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { CollaborationService } from './collaboration.service';
-import { CollectionRole } from './collaboration.schema';
-import { Collection, FieldKind } from './collection.schema';
-import { EntryFieldFilterInput } from './collection.input';
-import { CollectionsService } from './collections.service';
-import { AnalysisService } from './analysis.service';
-import { Entry } from './entry.schema';
-import { distanceMeters, parsePosition, Position } from './geo.logic';
-import { protectedFields } from './sensitivity.logic';
+import { CollaborationService } from './collaboration.service.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { Collection, FieldKind } from './collection.schema.js';
+import { EntryFieldFilterInput } from './collection.input.js';
+import { CollectionsService } from './collections.service.js';
+import { AnalysisService } from './analysis.service.js';
+import { Entry } from './entry.schema.js';
+import { distanceMeters, parsePosition, Position } from './geo.logic.js';
+import { protectedFields } from './sensitivity.logic.js';
 
 type ImportRow = { sourceId: string; name: string; position: Position };
 

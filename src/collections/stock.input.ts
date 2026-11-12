@@ -1,5 +1,5 @@
 import { Field, InputType, ObjectType } from '@nestjs/graphql';
-import { StockMovement } from './stock.schema';
+import { StockMovement } from './stock.schema.js';
 
 @InputType()
 export class StockRuleInput {

@@ -3,7 +3,7 @@
 // to send the reminders that are due. Without CRON_SECRET the route does not exist.
 import { Controller, Get, Headers, HttpCode, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
-import { ReminderService } from './reminder.service';
+import { ReminderService } from './reminder.service.js';
 
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 

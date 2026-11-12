@@ -1,6 +1,6 @@
 import { Field, InputType, registerEnumType } from '@nestjs/graphql';
-import { FieldKind, SensitivityLevel } from './collection.schema';
-import { WorkflowEventImportInput } from './workflow.schema';
+import { FieldKind, SensitivityLevel } from './collection.schema.js';
+import { WorkflowEventImportInput } from './workflow.schema.js';
 
 @InputType()
 export class SavedCollectionViewInput {

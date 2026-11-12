@@ -1,16 +1,16 @@
 // T52: collaborators module (personal link, acceptance, list, end of collaboration).
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { AuthModule } from '../auth/auth.module';
-import { User, UserSchema } from '../auth/user.schema';
-import { Collection, CollectionSchema } from '../collections/collection.schema';
-import { AuditLog, AuditLogSchema } from '../collections/collaboration.schema';
-import { Collaboration, CollaborationSchema, CollaboratorInvite, CollaboratorInviteSchema } from './collaborator.schema';
-import { CollaboratorsResolver, CollectionOwnerResolver } from './collaborators.resolver';
-import { EntryAuthorsResolver } from './entry-authors.resolver';
-import { CollaboratorsService } from './collaborators.service';
-import { PersonFieldResolver } from './person-field.resolver';
-import { PersonFieldService } from './person-field.service';
+import { AuthModule } from '../auth/auth.module.js';
+import { User, UserSchema } from '../auth/user.schema.js';
+import { Collection, CollectionSchema } from '../collections/collection.schema.js';
+import { AuditLog, AuditLogSchema } from '../collections/collaboration.schema.js';
+import { Collaboration, CollaborationSchema, CollaboratorInvite, CollaboratorInviteSchema } from './collaborator.schema.js';
+import { CollaboratorsResolver, CollectionOwnerResolver } from './collaborators.resolver.js';
+import { EntryAuthorsResolver } from './entry-authors.resolver.js';
+import { CollaboratorsService } from './collaborators.service.js';
+import { PersonFieldResolver } from './person-field.resolver.js';
+import { PersonFieldService } from './person-field.service.js';
 
 @Module({
   imports: [

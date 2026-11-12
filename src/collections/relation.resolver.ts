@@ -1,7 +1,7 @@
 import { Args, Context, Field, InputType, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { EntryRelation, RelationImpact, RelationKind, RelationTotal } from './relation.schema';
-import { RelationService } from './relation.service';
+import { AuthService } from '../auth/auth.service.js';
+import { EntryRelation, RelationImpact, RelationKind, RelationTotal } from './relation.schema.js';
+import { RelationService } from './relation.service.js';
 
 type Request = { headers: { authorization?: string } };
 

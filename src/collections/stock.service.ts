@@ -2,13 +2,13 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { Collection, CollectionField, FieldKind } from './collection.schema';
-import { Entry } from './entry.schema';
-import { StockDailyRow, StockMovementInput, StockPosition, StockPreview, StockRuleInput } from './stock.input';
-import { StockLock, StockMovement, StockRule } from './stock.schema';
-import { decimal, fractionText, multiply, Rational, resolveUnit } from './unit_math';
-import { localDate, localTime, validTimeZone } from './time_math';
-import { StockLedgerService } from './stock-ledger.service';
+import { Collection, CollectionField, FieldKind } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { StockDailyRow, StockMovementInput, StockPosition, StockPreview, StockRuleInput } from './stock.input.js';
+import { StockLock, StockMovement, StockRule } from './stock.schema.js';
+import { decimal, fractionText, multiply, Rational, resolveUnit } from './unit_math.js';
+import { localDate, localTime, validTimeZone } from './time_math.js';
+import { StockLedgerService } from './stock-ledger.service.js';
 
 type Prepared = {
   input: StockMovementInput;

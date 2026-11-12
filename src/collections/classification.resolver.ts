@@ -1,7 +1,7 @@
 import { Args, Context, Field, InputType, Int, Mutation, ObjectType, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { ClassificationCode, Collection } from './collection.schema';
-import { ClassificationService } from './classification.service';
+import { AuthService } from '../auth/auth.service.js';
+import { ClassificationCode, Collection } from './collection.schema.js';
+import { ClassificationService } from './classification.service.js';
 
 type Request = { headers: { authorization?: string } };
 

@@ -1,6 +1,6 @@
 import { Field, ObjectType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Entry } from './entry.schema';
+import { Entry } from './entry.schema.js';
 
 /** T49: which fields of the task data format drive the Day and Calendar views (Task list template only). */
 @ObjectType()

@@ -1,12 +1,12 @@
 import { Field, ID, Int, ObjectType, registerEnumType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { CollectionExchangeRate, CollectionExchangeRateSchema, CollectionUnit, CollectionUnitSchema } from './unit.schema';
-import { BookViewSettings, BookViewSettingsSchema } from './book-view.schema';
-import { TaskPlanner, TaskPlannerSchema } from './task-planner.schema';
-import { ObjectPropertySnapshot, ObjectPropertySnapshotSchema } from './entry.schema';
-import { StockRule, StockRuleSchema } from './stock.schema';
-import { CollectionMember, CollectionMemberSchema } from './collaboration.schema';
-import { WorkflowDefinition, WorkflowDefinitionSchema } from './workflow.schema';
+import { CollectionExchangeRate, CollectionExchangeRateSchema, CollectionUnit, CollectionUnitSchema } from './unit.schema.js';
+import { BookViewSettings, BookViewSettingsSchema } from './book-view.schema.js';
+import { TaskPlanner, TaskPlannerSchema } from './task-planner.schema.js';
+import { ObjectPropertySnapshot, ObjectPropertySnapshotSchema } from './entry.schema.js';
+import { StockRule, StockRuleSchema } from './stock.schema.js';
+import { CollectionMember, CollectionMemberSchema } from './collaboration.schema.js';
+import { WorkflowDefinition, WorkflowDefinitionSchema } from './workflow.schema.js';
 
 export enum FieldKind {
   TITLE = 'TITLE',

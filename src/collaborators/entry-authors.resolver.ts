@@ -2,11 +2,11 @@
 import { Args, Context, Field, ID, ObjectType, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { AuthService } from '../auth/auth.service';
-import { User } from '../auth/user.schema';
-import { Collection } from '../collections/collection.schema';
-import { Entry } from '../collections/entry.schema';
-import { CollaboratorsService } from './collaborators.service';
+import { AuthService } from '../auth/auth.service.js';
+import { User } from '../auth/user.schema.js';
+import { Collection } from '../collections/collection.schema.js';
+import { Entry } from '../collections/entry.schema.js';
+import { CollaboratorsService } from './collaborators.service.js';
 
 @ObjectType()
 export class PersonSummary {

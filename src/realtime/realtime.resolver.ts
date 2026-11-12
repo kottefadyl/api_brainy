@@ -1,7 +1,7 @@
 // Firebase custom token for the live signals; null when real-time synchronisation is off.
 import { Context, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { RealtimeService } from './realtime.service';
+import { AuthService } from '../auth/auth.service.js';
+import { RealtimeService } from './realtime.service.js';
 
 @Resolver()
 export class RealtimeResolver {

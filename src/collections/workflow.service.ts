@@ -2,14 +2,14 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { Collection, CollectionField, CollectionFormat, FieldKind } from './collection.schema';
-import { Entry } from './entry.schema';
-import { CollectionRole } from './collaboration.schema';
-import { CollaborationService } from './collaboration.service';
-import { formatColors } from './collections.service';
-import { ReminderService } from './reminder.service';
-import { WorkflowAssignmentInput, WorkflowDefinitionInput, WorkflowEvent, WorkflowNotification } from './workflow.schema';
-import { assertWorkflowRequirements, validateWorkflowDefinition, workflowState } from './workflow.rules';
+import { Collection, CollectionField, CollectionFormat, FieldKind } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { formatColors } from './collections.service.js';
+import { ReminderService } from './reminder.service.js';
+import { WorkflowAssignmentInput, WorkflowDefinitionInput, WorkflowEvent, WorkflowNotification } from './workflow.schema.js';
+import { assertWorkflowRequirements, validateWorkflowDefinition, workflowState } from './workflow.rules.js';
 
 type TemplateId = 'TASK' | 'APPROVAL' | 'CASE';
 const templates: Record<TemplateId, { en: string; fr: string; statesEn: string[]; statesFr: string[]; edges: [number, number, CollectionRole][] }> = {

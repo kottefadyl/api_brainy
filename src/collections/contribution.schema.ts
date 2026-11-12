@@ -1,8 +1,8 @@
 import { Field, ID, InputType, ObjectType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { EntryValue, EntryValueSchema } from './entry.schema';
-import { EntryValueInput } from './collection.input';
-import { FieldKind } from './collection.schema';
+import { EntryValue, EntryValueSchema } from './entry.schema.js';
+import { EntryValueInput } from './collection.input.js';
+import { FieldKind } from './collection.schema.js';
 
 @ObjectType()
 @Schema({ timestamps: true })

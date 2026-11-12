@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import { AnalysisInput, AnalysisOperationSpec, AnalysisRow, AnalysisSource } from './analysis.input';
-import { decimal, divide, fractionText, multiply, Rational } from './unit_math';
+import { AnalysisInput, AnalysisOperationSpec, AnalysisRow, AnalysisSource } from './analysis.input.js';
+import { decimal, divide, fractionText, multiply, Rational } from './unit_math.js';
 
 /**
  * Definitions shared by every way of running a statistic, and the accumulator

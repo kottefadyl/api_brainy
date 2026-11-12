@@ -1,8 +1,8 @@
 // T32 — pure rules for data sources: parsing deliveries and turning rows into entry inputs.
 // No database access here so the rules stay testable and the service stays small.
-import { EntryValueInput } from './collection.input';
-import { CollectionFormat, FieldKind } from './collection.schema';
-import { EntryValue } from './entry.schema';
+import { EntryValueInput } from './collection.input.js';
+import { CollectionFormat, FieldKind } from './collection.schema.js';
+import { EntryValue } from './entry.schema.js';
 
 export const DATA_SOURCE_KINDS = new Set<FieldKind>([
   FieldKind.TITLE, FieldKind.TEXT, FieldKind.LONG_TEXT, FieldKind.CHARACTER, FieldKind.LINK,

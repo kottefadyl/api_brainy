@@ -3,10 +3,10 @@ import { Args, Context, ID, Query, Resolver } from '@nestjs/graphql';
 import { InjectModel } from '@nestjs/mongoose';
 import { NotFoundException } from '@nestjs/common';
 import { Model, Types } from 'mongoose';
-import { AuthService } from '../auth/auth.service';
-import { Collection } from '../collections/collection.schema';
-import { PersonSummary } from './entry-authors.resolver';
-import { PersonFieldService } from './person-field.service';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection } from '../collections/collection.schema.js';
+import { PersonSummary } from './entry-authors.resolver.js';
+import { PersonFieldService } from './person-field.service.js';
 
 type Request = { headers: { authorization?: string } };
 

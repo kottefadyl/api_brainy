@@ -4,13 +4,13 @@ import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicati
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { CollectionRole } from './collaboration.schema';
-import { CollaborationService } from './collaboration.service';
-import { Collection, FieldKind } from './collection.schema';
-import { Entry, EntryValue } from './entry.schema';
-import { LARGE_FILE_CHUNK, LARGE_FILE_MAX, LARGE_FILE_THRESHOLD, LargeFile, LargeFileLink, LargeFileStatus, LargeFileUpload, StartLargeFileUploadInput } from './large-file.schema';
-import { S3Error, S3Storage } from './large-file.s3';
-import { assertNotFrozen, isFrozen } from '../platform';
+import { CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { Collection, FieldKind } from './collection.schema.js';
+import { Entry, EntryValue } from './entry.schema.js';
+import { LARGE_FILE_CHUNK, LARGE_FILE_MAX, LARGE_FILE_THRESHOLD, LargeFile, LargeFileLink, LargeFileStatus, LargeFileUpload, StartLargeFileUploadInput } from './large-file.schema.js';
+import { S3Error, S3Storage } from './large-file.s3.js';
+import { assertNotFrozen, isFrozen } from '../platform.js';
 
 const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
 /** File fingerprint: SHA-256 of the part SHA-256 list (hex, one per line, in order). Same rule on every client. */

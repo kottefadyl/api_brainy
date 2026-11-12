@@ -5,8 +5,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { defaultBookView } from './book-view.schema';
-import { Collection, CollectionFormat, FieldKind } from './collection.schema';
+import { defaultBookView } from './book-view.schema.js';
+import { Collection, CollectionFormat, FieldKind } from './collection.schema.js';
 
 const named = (format: CollectionFormat, names: string[]) => names.includes(format.name.trim().toLocaleLowerCase());
 const writing = (format: CollectionFormat) => format.fields.length === 3

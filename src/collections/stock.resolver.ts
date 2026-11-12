@@ -1,11 +1,11 @@
 import { Args, Context, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { Collection } from './collection.schema';
-import { StockDailyRow, StockMovementInput, StockPosition, StockPreview, StockRuleInput } from './stock.input';
-import { StockMovement } from './stock.schema';
-import { StockService } from './stock.service';
-import { StockLedgerService } from './stock-ledger.service';
-import { LedgerIntegrity } from './ledger.schema';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection } from './collection.schema.js';
+import { StockDailyRow, StockMovementInput, StockPosition, StockPreview, StockRuleInput } from './stock.input.js';
+import { StockMovement } from './stock.schema.js';
+import { StockService } from './stock.service.js';
+import { StockLedgerService } from './stock-ledger.service.js';
+import { LedgerIntegrity } from './ledger.schema.js';
 
 type Request = { headers: { authorization?: string } };
 

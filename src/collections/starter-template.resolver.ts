@@ -2,13 +2,13 @@ import { BadRequestException } from '@nestjs/common';
 import { Args, Context, Field, Mutation, ObjectType, Query, Resolver } from '@nestjs/graphql';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { AuthService } from '../auth/auth.service';
-import { Collection, FieldKind, SensitivityLevel } from './collection.schema';
-import { CollectionsService } from './collections.service';
-import { StockService } from './stock.service';
-import { TaskPlannerService, taskTemplateFields } from './task-planner.service';
-import { bookTemplateFormats } from './book-template';
-import { defaultBookView } from './book-view.schema';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection, FieldKind, SensitivityLevel } from './collection.schema.js';
+import { CollectionsService } from './collections.service.js';
+import { StockService } from './stock.service.js';
+import { TaskPlannerService, taskTemplateFields } from './task-planner.service.js';
+import { bookTemplateFormats } from './book-template.js';
+import { defaultBookView } from './book-view.schema.js';
 
 @ObjectType()
 class StarterTemplate {

@@ -1,8 +1,8 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { StartBackgroundJobInput } from './background-job.input';
-import { BackgroundJob } from './background-job.schema';
-import { BackgroundJobService } from './background-job.service';
+import { AuthService } from '../auth/auth.service.js';
+import { StartBackgroundJobInput } from './background-job.input.js';
+import { BackgroundJob } from './background-job.schema.js';
+import { BackgroundJobService } from './background-job.service.js';
 
 type Request = { headers: { authorization?: string } };
 

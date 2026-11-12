@@ -1,5 +1,5 @@
-import { FieldKind } from './collection.schema';
-import type { BookRole } from './book-view.schema';
+import { FieldKind } from './collection.schema.js';
+import type { BookRole } from './book-view.schema.js';
 
 /** T47: the Book starter template. 17 data formats grouped from the classic parts of a book, leaving 7 free slots. */
 type Field = { name: string; kind: FieldKind; options?: string[] };

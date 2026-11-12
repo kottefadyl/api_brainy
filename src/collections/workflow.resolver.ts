@@ -1,9 +1,9 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { Collection } from './collection.schema';
-import { Entry } from './entry.schema';
-import { WorkflowAssignmentInput, WorkflowDefinitionInput, WorkflowNotification } from './workflow.schema';
-import { WorkflowService } from './workflow.service';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { WorkflowAssignmentInput, WorkflowDefinitionInput, WorkflowNotification } from './workflow.schema.js';
+import { WorkflowService } from './workflow.service.js';
 
 type Request = { headers: { authorization?: string } };
 

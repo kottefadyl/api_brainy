@@ -1,5 +1,5 @@
 import { Field, Int, ObjectType, Query, Resolver } from '@nestjs/graphql';
-import { frozenModules, maxEntryAttachmentBytes } from './platform';
+import { frozenModules, maxEntryAttachmentBytes } from './platform.js';
 
 @ObjectType()
 export class PlatformCapabilities {

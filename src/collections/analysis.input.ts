@@ -1,5 +1,5 @@
 import { Field, Int, InputType, ObjectType } from '@nestjs/graphql';
-import { EntryFieldFilterInput } from './collection.input';
+import { EntryFieldFilterInput } from './collection.input.js';
 
 @InputType()
 export class FormulaInput {

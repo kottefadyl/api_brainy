@@ -1,4 +1,4 @@
-import { assertNotFrozen } from '../platform';
+import { assertNotFrozen } from '../platform.js';
 import {
   BadRequestException,
   ConflictException,
@@ -9,10 +9,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Model } from 'mongoose';
-import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types';
-import { validateProfilePhoto } from './profile-photo';
-import { FirebaseIdentityService } from './firebase-identity.service';
-import { User } from './user.schema';
+import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types.js';
+import { validateProfilePhoto } from './profile-photo.js';
+import { FirebaseIdentityService } from './firebase-identity.service.js';
+import { User } from './user.schema.js';
 
 const scrypt = promisify(scryptCallback);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

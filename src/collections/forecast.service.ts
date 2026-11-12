@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AnalysisService } from './analysis.service';
-import { ForecastInput, ForecastPoint, ForecastResult } from './forecast.input';
-import { decimal } from './unit_math';
+import { AnalysisService } from './analysis.service.js';
+import { ForecastInput, ForecastPoint, ForecastResult } from './forecast.input.js';
+import { decimal } from './unit_math.js';
 
 @Injectable()
 export class ForecastService {

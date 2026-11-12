@@ -1,11 +1,11 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { Collection } from './collection.schema';
-import { SaveEntryInput } from './collection.input';
-import { CollectionsService } from './collections.service';
-import { Entry } from './entry.schema';
-import { LedgerIntegrity } from './ledger.schema';
-import { LedgerService } from './ledger.service';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection } from './collection.schema.js';
+import { SaveEntryInput } from './collection.input.js';
+import { CollectionsService } from './collections.service.js';
+import { Entry } from './entry.schema.js';
+import { LedgerIntegrity } from './ledger.schema.js';
+import { LedgerService } from './ledger.service.js';
 
 type Request = { headers: { authorization?: string } };
 

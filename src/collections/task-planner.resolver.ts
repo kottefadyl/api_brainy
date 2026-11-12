@@ -1,9 +1,9 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { Collection } from './collection.schema';
-import { Entry } from './entry.schema';
-import { TaskAgenda } from './task-planner.schema';
-import { TaskPlannerService } from './task-planner.service';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { TaskAgenda } from './task-planner.schema.js';
+import { TaskPlannerService } from './task-planner.service.js';
 
 type Request = { headers: { authorization?: string } };
 

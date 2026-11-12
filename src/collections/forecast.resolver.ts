@@ -1,7 +1,7 @@
 import { Args, Context, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { ForecastInput, ForecastResult } from './forecast.input';
-import { ForecastService } from './forecast.service';
+import { AuthService } from '../auth/auth.service.js';
+import { ForecastInput, ForecastResult } from './forecast.input.js';
+import { ForecastService } from './forecast.service.js';
 
 type Request = { headers: { authorization?: string } };
 

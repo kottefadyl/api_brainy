@@ -1,6 +1,6 @@
 import { Args, Context, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { LinkPreview, LinkPreviewService } from './link-preview.service';
+import { AuthService } from '../auth/auth.service.js';
+import { LinkPreview, LinkPreviewService } from './link-preview.service.js';
 
 type Request = { headers: { authorization?: string } };
 

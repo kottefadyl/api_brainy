@@ -1,7 +1,7 @@
 import { Field, ID, ObjectType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { UnitSnapshot, UnitSnapshotSchema } from './unit.schema';
-import { EntryWorkflow, EntryWorkflowSchema } from './workflow.schema';
+import { UnitSnapshot, UnitSnapshotSchema } from './unit.schema.js';
+import { EntryWorkflow, EntryWorkflowSchema } from './workflow.schema.js';
 
 @ObjectType()
 @Schema({ _id: false })

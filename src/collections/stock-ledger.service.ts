@@ -2,11 +2,11 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectModel } from '@nestjs/mongoose';
 import { createHash, randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { Collection } from './collection.schema';
-import { CollectionRole } from './collaboration.schema';
-import { CollaborationService } from './collaboration.service';
-import { LedgerIntegrity } from './ledger.schema';
-import { StockLedgerHead, StockMovement } from './stock.schema';
+import { Collection } from './collection.schema.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { LedgerIntegrity } from './ledger.schema.js';
+import { StockLedgerHead, StockMovement } from './stock.schema.js';
 
 function canonical(value: unknown): string {
   const sort = (item: unknown): unknown => Array.isArray(item) ? item.map(sort) : item && typeof item === 'object'

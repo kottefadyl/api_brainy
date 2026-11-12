@@ -1,8 +1,8 @@
 import { Args, Context, Field, Int, Mutation, ObjectType, Query, Resolver } from '@nestjs/graphql';
 import { BadRequestException } from '@nestjs/common';
-import { AuthService } from '../auth/auth.service';
-import { ClassificationCode, Collection } from './collection.schema';
-import { CodeListStore, type ReferentialFormat } from './code-list-store.service';
+import { AuthService } from '../auth/auth.service.js';
+import { ClassificationCode, Collection } from './collection.schema.js';
+import { CodeListStore, type ReferentialFormat } from './code-list-store.service.js';
 
 type Request = { headers: { authorization?: string } };
 

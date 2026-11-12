@@ -1,16 +1,16 @@
 import { Args, Context, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { CollectionExchangeRateInput, CollectionFormatInput, CollectionUnitInput, CreateCollectionInput, EntryFieldFilterInput, EntryRecurrenceInput, ImportEntriesInput, ImportObjectLinkInput, SavedCollectionViewInput, SaveEntryInput, UpdateCollectionFormatInput } from './collection.input';
-import { Collection, CollectionFormatImpact, LinkedFormatUpdatePreview, MoveOperationStatus, ObjectModelTemplate, SharedObjectGrant, TransferPreview, TransferResult } from './collection.schema';
-import { CollectionsService } from './collections.service';
-import { CalendarOccurrence, Entry, EntryAttachment, EntryPage, ImportEntriesResult, ResolvedObjectReference, ResolvedObjectVariable } from './entry.schema';
-import { CollectionUnit, QuantityConversion } from './unit.schema';
-import { TransferService } from './transfer.service';
-import { ReminderService } from './reminder.service';
-import { EntryLinkService } from './entry-link.service';
-import { AuditLog, CollectionRole } from './collaboration.schema';
-import { CollaborationService } from './collaboration.service';
-import { RelationService } from './relation.service';
+import { AuthService } from '../auth/auth.service.js';
+import { CollectionExchangeRateInput, CollectionFormatInput, CollectionUnitInput, CreateCollectionInput, EntryFieldFilterInput, EntryRecurrenceInput, ImportEntriesInput, ImportObjectLinkInput, SavedCollectionViewInput, SaveEntryInput, UpdateCollectionFormatInput } from './collection.input.js';
+import { Collection, CollectionFormatImpact, LinkedFormatUpdatePreview, MoveOperationStatus, ObjectModelTemplate, SharedObjectGrant, TransferPreview, TransferResult } from './collection.schema.js';
+import { CollectionsService } from './collections.service.js';
+import { CalendarOccurrence, Entry, EntryAttachment, EntryPage, ImportEntriesResult, ResolvedObjectReference, ResolvedObjectVariable } from './entry.schema.js';
+import { CollectionUnit, QuantityConversion } from './unit.schema.js';
+import { TransferService } from './transfer.service.js';
+import { ReminderService } from './reminder.service.js';
+import { EntryLinkService } from './entry-link.service.js';
+import { AuditLog, CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { RelationService } from './relation.service.js';
 
 type Request = { headers: { authorization?: string } };
 

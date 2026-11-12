@@ -2,16 +2,16 @@ import { BadRequestException, Injectable, NotFoundException, OnApplicationBootst
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { ClassificationList, Collection, CollectionField, CollectionFormat, CollectionFormula, LinkedFormatUpdatePreview, MoveOperationStatus, SharedObjectGrant, TransferPreview, TransferResult } from './collection.schema';
-import { Entry, EntryValue, ObjectPropertySnapshot, ObjectReferenceSnapshot } from './entry.schema';
-import { CollectionUnit, UnitSnapshot } from './unit.schema';
-import { MoveOperation } from './move-operation.schema';
-import { EntryReminder } from './reminder.schema';
-import { StockMovement } from './stock.schema';
-import { EntryRelation } from './relation.schema';
-import { CollaborationService } from './collaboration.service';
-import { protectedFields } from './sensitivity.logic';
-import { formulaChildKeys } from './formula_nodes';
+import { ClassificationList, Collection, CollectionField, CollectionFormat, CollectionFormula, LinkedFormatUpdatePreview, MoveOperationStatus, SharedObjectGrant, TransferPreview, TransferResult } from './collection.schema.js';
+import { Entry, EntryValue, ObjectPropertySnapshot, ObjectReferenceSnapshot } from './entry.schema.js';
+import { CollectionUnit, UnitSnapshot } from './unit.schema.js';
+import { MoveOperation } from './move-operation.schema.js';
+import { EntryReminder } from './reminder.schema.js';
+import { StockMovement } from './stock.schema.js';
+import { EntryRelation } from './relation.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { protectedFields } from './sensitivity.logic.js';
+import { formulaChildKeys } from './formula_nodes.js';
 
 const colors = ['#EEF5FF', '#EDF9F3', '#FFF5EB', '#F4F0FF', '#FFF0F4', '#EAF8FA', '#FBF7E9', '#F1F8ED', '#F8F0FA', '#F1F5FA', '#FFF7F1', '#EFF8FF', '#FDEFF7', '#EDF7FF', '#F7FBEA', '#FFF0E8', '#EFEFFD', '#E9F8F4', '#FBF1E8', '#F0F8F9', '#FFF2EF', '#F4F8E8', '#F1F2FF', '#EFFAF0'];
 type CopyPlan = { source: Collection; target: Collection; formats: CollectionFormat[]; units: CollectionUnit[]; codeLists: ClassificationList[]; formulas: CollectionFormula[]; entries: Entry[]; relations: EntryRelation[]; conflicts: string[]; colors: Map<string, string> };

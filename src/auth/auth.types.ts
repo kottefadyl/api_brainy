@@ -1,5 +1,5 @@
 import { Field, InputType, ObjectType } from '@nestjs/graphql';
-import { User } from './user.schema';
+import { User } from './user.schema.js';
 
 @InputType()
 export class RegisterInput {

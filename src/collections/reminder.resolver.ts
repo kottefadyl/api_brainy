@@ -1,8 +1,8 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { EntryReminderInput } from './collection.input';
-import { EntryReminder, PushDevice, ReminderCapabilities } from './reminder.schema';
-import { ReminderService } from './reminder.service';
+import { AuthService } from '../auth/auth.service.js';
+import { EntryReminderInput } from './collection.input.js';
+import { EntryReminder, PushDevice, ReminderCapabilities } from './reminder.schema.js';
+import { ReminderService } from './reminder.service.js';
 
 type Request = { headers: { authorization?: string } };
 

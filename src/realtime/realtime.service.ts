@@ -8,8 +8,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { Model, Types } from 'mongoose';
-import { Collection } from '../collections/collection.schema';
-import { firebaseAdminApp, firebaseAdminConfigured } from '../firebase-admin-app';
+import { Collection } from '../collections/collection.schema.js';
+import { firebaseAdminApp, firebaseAdminConfigured } from '../firebase-admin-app.js';
 
 export const SIGNALS = 'brainy_signals';
 const TIMEOUT_MS = 2500;

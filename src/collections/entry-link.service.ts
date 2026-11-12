@@ -1,9 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Collection, FieldKind } from './collection.schema';
-import { Entry } from './entry.schema';
-import { EntryLink } from './entry-link.schema';
+import { Collection, FieldKind } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { EntryLink } from './entry-link.schema.js';
 
 @Injectable()
 export class EntryLinkService {

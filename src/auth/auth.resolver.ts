@@ -1,7 +1,7 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from './auth.service';
-import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types';
-import { User } from './user.schema';
+import { AuthService } from './auth.service.js';
+import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types.js';
+import { User } from './user.schema.js';
 
 type GraphqlRequest = { headers: { authorization?: string } };
 

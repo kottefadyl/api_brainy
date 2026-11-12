@@ -1,4 +1,4 @@
-import type { Rational } from './unit_math';
+import type { Rational } from './unit_math.js';
 
 export type BooleanExpression ={ kind: 'boolean'; value: boolean } | { kind: 'comparison'; operator: 'EQ' | 'NEQ' | 'LT' | 'LTE' | 'GT' | 'GTE'; left: FormulaNode; right: FormulaNode } | { kind: 'logical'; operator: 'AND' | 'OR'; args: BooleanExpression[] } | { kind: 'not'; arg: BooleanExpression };
 export type DateExpression = { kind: 'dateField'; fieldId: string } | { kind: 'dateLiteral'; value: string } | { kind: 'addDays'; date: DateExpression; days: Expression } | { kind: 'startOfMonth'; date: DateExpression } | { kind: 'endOfMonth'; date: DateExpression };

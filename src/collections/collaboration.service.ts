@@ -1,12 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Collection } from './collection.schema';
-import { AuditLog, CollectionMember, CollectionRole } from './collaboration.schema';
-import { User } from '../auth/user.schema';
-import { Entry, EntryValue } from './entry.schema';
-import { protectedFields } from './sensitivity.logic';
-import { CollaboratorsService } from '../collaborators/collaborators.service';
+import { Collection } from './collection.schema.js';
+import { AuditLog, CollectionMember, CollectionRole } from './collaboration.schema.js';
+import { User } from '../auth/user.schema.js';
+import { Entry, EntryValue } from './entry.schema.js';
+import { protectedFields } from './sensitivity.logic.js';
+import { CollaboratorsService } from '../collaborators/collaborators.service.js';
 
 @Injectable()
 export class CollaborationService {

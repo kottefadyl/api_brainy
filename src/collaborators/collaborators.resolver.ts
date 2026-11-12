@@ -1,10 +1,10 @@
 // T52: GraphQL for collaborators and the "shared by" summary of a collection.
 import { Args, Context, Mutation, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { Collection } from '../collections/collection.schema';
-import { CollectionMember } from '../collections/collaboration.schema';
-import { CollaborationInvitePreview, Collaborator, CollectionOwnerSummary } from './collaborator.schema';
-import { CollaboratorsService } from './collaborators.service';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection } from '../collections/collection.schema.js';
+import { CollectionMember } from '../collections/collaboration.schema.js';
+import { CollaborationInvitePreview, Collaborator, CollectionOwnerSummary } from './collaborator.schema.js';
+import { CollaboratorsService } from './collaborators.service.js';
 
 type Request = { headers: { authorization?: string }; brainyViewerId?: Promise<string> };
 

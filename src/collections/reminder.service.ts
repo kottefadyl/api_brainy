@@ -1,4 +1,4 @@
-import { CollectionRole } from './collaboration.schema';
+import { CollectionRole } from './collaboration.schema.js';
 import { BadRequestException, Injectable, Logger, NotFoundException, OnApplicationBootstrap, OnApplicationShutdown, ServiceUnavailableException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
@@ -7,15 +7,15 @@ import { getApps, initializeApp, cert, type App } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
 import { Model, Types } from 'mongoose';
 import nodemailer from 'nodemailer';
-import { User } from '../auth/user.schema';
-import { EntryReminderInput } from './collection.input';
-import { Collection, FieldKind } from './collection.schema';
-import { Entry } from './entry.schema';
-import { EntryReminder, PushDevice, ReminderCapabilities, ReminderDelivery } from './reminder.schema';
-import { localDate, localTime, localToInstant, nextRecurrenceStart, validTimeZone } from './time_math';
-import { addDays, nextOccurrenceDay } from './task-planner.logic';
-import { taskRule } from './task-planner.rule';
-import { assertNotFrozen, isFrozen } from '../platform';
+import { User } from '../auth/user.schema.js';
+import { EntryReminderInput } from './collection.input.js';
+import { Collection, FieldKind } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
+import { EntryReminder, PushDevice, ReminderCapabilities, ReminderDelivery } from './reminder.schema.js';
+import { localDate, localTime, localToInstant, nextRecurrenceStart, validTimeZone } from './time_math.js';
+import { addDays, nextOccurrenceDay } from './task-planner.logic.js';
+import { taskRule } from './task-planner.rule.js';
+import { assertNotFrozen, isFrozen } from '../platform.js';
 
 @Injectable()
 export class ReminderService implements OnApplicationBootstrap, OnApplicationShutdown {

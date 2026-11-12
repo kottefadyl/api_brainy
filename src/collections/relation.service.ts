@@ -2,14 +2,14 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomUUID } from 'node:crypto';
-import { Collection, FieldKind } from './collection.schema';
-import { CollectionRole } from './collaboration.schema';
-import { CollaborationService } from './collaboration.service';
-import { Entry } from './entry.schema';
-import { EntryRelation, RelationImpact, RelationKind, RelationTotal } from './relation.schema';
-import { graphNodes, validateNewEdge } from './relation-graph';
-import { assertParentAllowed } from './format-entry-rules';
-import { decimal, fractionText, multiply, resolveUnit, type Rational } from './unit_math';
+import { Collection, FieldKind } from './collection.schema.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { Entry } from './entry.schema.js';
+import { EntryRelation, RelationImpact, RelationKind, RelationTotal } from './relation.schema.js';
+import { graphNodes, validateNewEdge } from './relation-graph.js';
+import { assertParentAllowed } from './format-entry-rules.js';
+import { decimal, fractionText, multiply, resolveUnit, type Rational } from './unit_math.js';
 
 @Injectable()
 export class RelationService {

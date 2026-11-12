@@ -2,18 +2,18 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { AuthService } from '../auth/auth.service';
-import { bookAlignments, bookFonts, bookPageSizes, BookViewSettingsInput, defaultBookView } from './book-view.schema';
+import { AuthService } from '../auth/auth.service.js';
+import { bookAlignments, bookFonts, bookPageSizes, BookViewSettingsInput, defaultBookView } from './book-view.schema.js';
 
 /** T47/3: book roles the owner can give to any data format (front and back matter stay with the template formats). */
 export const assignableBookRoles = ['PART', 'CHAPTER', 'SECTION', 'SUBSECTION', 'APPENDIX', 'TERM', 'SOURCE'] as const;
-import { CollectionRole } from './collaboration.schema';
-import { CollaborationService } from './collaboration.service';
-import { Collection } from './collection.schema';
-import { CollectionsService } from './collections.service';
-import { Entry } from './entry.schema';
-import { validatedParentFormatIds } from './format-entry-rules';
-import { EntryRelation, RelationKind } from './relation.schema';
+import { CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
+import { Collection } from './collection.schema.js';
+import { CollectionsService } from './collections.service.js';
+import { Entry } from './entry.schema.js';
+import { validatedParentFormatIds } from './format-entry-rules.js';
+import { EntryRelation, RelationKind } from './relation.schema.js';
 
 type Request = { headers: { authorization?: string } };
 const between = (value: number, min: number, max: number) => Number.isFinite(value) && value >= min && value <= max;

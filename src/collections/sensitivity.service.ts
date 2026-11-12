@@ -1,10 +1,10 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { CollaborationService } from './collaboration.service';
-import { CollectionRole } from './collaboration.schema';
-import { Collection, CollectionFormat, SensitivityLevel } from './collection.schema';
-import { validSensitivity } from './sensitivity.logic';
+import { CollaborationService } from './collaboration.service.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { Collection, CollectionFormat, SensitivityLevel } from './collection.schema.js';
+import { validSensitivity } from './sensitivity.logic.js';
 
 @Injectable()
 export class SensitivityService {

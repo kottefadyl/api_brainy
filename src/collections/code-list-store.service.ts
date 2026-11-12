@@ -2,12 +2,12 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'node:crypto';
 import { Model, Types } from 'mongoose';
-import { CollaborationService } from './collaboration.service';
-import { CollectionRole } from './collaboration.schema';
-import { ClassificationCode, ClassificationList, Collection, FieldKind } from './collection.schema';
-import { ClassificationService } from './classification.service';
-import { codeHierarchy, EMBEDDED_CODE_LIMIT, foldSearch, MAX_REFERENTIAL_CODES, parseReferential, validateClassificationCodes } from './classification.logic';
-import { StoredCode } from './code-list-store.schema';
+import { CollaborationService } from './collaboration.service.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { ClassificationCode, ClassificationList, Collection, FieldKind } from './collection.schema.js';
+import { ClassificationService } from './classification.service.js';
+import { codeHierarchy, EMBEDDED_CODE_LIMIT, foldSearch, MAX_REFERENTIAL_CODES, parseReferential, validateClassificationCodes } from './classification.logic.js';
+import { StoredCode } from './code-list-store.schema.js';
 
 export type ReferentialFormat = 'CSV' | 'JSON';
 export type FoundCode = { code: string; label: string; path: string[]; level: number; active: boolean; hasChildren: boolean };

@@ -4,7 +4,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Collection, FieldKind } from './collection.schema';
+import { Collection, FieldKind } from './collection.schema.js';
 
 const kinds = [FieldKind.TITLE, FieldKind.LINK, FieldKind.LONG_TEXT, FieldKind.TEXT, FieldKind.DATE];
 const names = [['title', 'titre'], ['url'], ['comment', 'commentaire'], ['category', 'catégorie'], ['saved on', 'enregistré le']];

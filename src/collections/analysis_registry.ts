@@ -1,9 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
-import { AnalysisInput, AnalysisOperationSpec, AnalysisRow, AnalysisSource } from './analysis.input';
-import { emptyResult, formatFloat, negate, ObservationAccumulator, ObservationRecord, outputUnitFor, plus, RegistryComputationOutput, scalarOf, sourceWindow, toNumber } from './analysis_stats';
-import { decimal, divide, fractionText, multiply, Rational } from './unit_math';
+import { AnalysisInput, AnalysisOperationSpec, AnalysisRow, AnalysisSource } from './analysis.input.js';
+import { emptyResult, formatFloat, negate, ObservationAccumulator, ObservationRecord, outputUnitFor, plus, RegistryComputationOutput, scalarOf, sourceWindow, toNumber } from './analysis_stats.js';
+import { decimal, divide, fractionText, multiply, Rational } from './unit_math.js';
 
-export type { ObservationRecord, RegistryComputationOutput } from './analysis_stats';
+export type { ObservationRecord, RegistryComputationOutput } from './analysis_stats.js';
 
 export const ANALYSIS_REGISTRY: readonly AnalysisOperationSpec[] = [
   { id: 'COUNT', version: 1, acceptedMeasureKinds: ['EVENT', 'SNAPSHOT', 'RATE'], requiresNumeric: false, requiresDateOrder: false, missingValuePolicy: 'COUNT_ONLY', minObservations: 0, outputKind: 'COUNT' },

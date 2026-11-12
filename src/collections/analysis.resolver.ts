@@ -1,9 +1,9 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { AnalysisInput, AnalysisOperationSpec, AnalysisResult, FormulaInput, FormulaPreview, FormulaResult, FormulaStaticType } from './analysis.input';
-import { ANALYSIS_REGISTRY } from './analysis_registry';
-import { AnalysisService } from './analysis.service';
-import { Collection } from './collection.schema';
+import { AuthService } from '../auth/auth.service.js';
+import { AnalysisInput, AnalysisOperationSpec, AnalysisResult, FormulaInput, FormulaPreview, FormulaResult, FormulaStaticType } from './analysis.input.js';
+import { ANALYSIS_REGISTRY } from './analysis_registry.js';
+import { AnalysisService } from './analysis.service.js';
+import { Collection } from './collection.schema.js';
 
 type Request = { headers: { authorization?: string } };
 

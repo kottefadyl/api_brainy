@@ -1,8 +1,8 @@
 // T32 — GraphQL surface of data sources. `pushDataSourceDelivery` is public and authenticated by the source key only.
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { DataSource, DataSourceInput, DataSourceKey, DataSourceRun } from './data-source.schema';
-import { DataSourceService } from './data-source.service';
+import { AuthService } from '../auth/auth.service.js';
+import { DataSource, DataSourceInput, DataSourceKey, DataSourceRun } from './data-source.schema.js';
+import { DataSourceService } from './data-source.service.js';
 
 type Request = { headers: { authorization?: string } };
 

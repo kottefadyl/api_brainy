@@ -1,6 +1,6 @@
-import { AnalysisInput, AnalysisRow } from './analysis.input';
-import { executeRegisteredOperation, getOperationSpec, ObservationRecord } from './analysis_registry';
-import { insideZone, Position, Zone } from './geo.logic';
+import { AnalysisInput, AnalysisRow } from './analysis.input.js';
+import { executeRegisteredOperation, getOperationSpec, ObservationRecord } from './analysis_registry.js';
+import { insideZone, Position, Zone } from './geo.logic.js';
 
 export type NamedZone = { id: string; label: string; shape: Zone };
 export type NamedPoint = { entryId: string; position: Position };

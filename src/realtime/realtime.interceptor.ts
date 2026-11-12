@@ -6,10 +6,10 @@ import { GqlContextType, GqlExecutionContext } from '@nestjs/graphql';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { from, mergeMap, type Observable } from 'rxjs';
-import { AuthService } from '../auth/auth.service';
-import { Collection } from '../collections/collection.schema';
-import { Entry } from '../collections/entry.schema';
-import { RealtimeService } from './realtime.service';
+import { AuthService } from '../auth/auth.service.js';
+import { Collection } from '../collections/collection.schema.js';
+import { Entry } from '../collections/entry.schema.js';
+import { RealtimeService } from './realtime.service.js';
 
 const COLLECTION_KEYS = new Set(['collectionId', 'sourceCollectionId', 'targetCollectionId']);
 const MAYBE_ENTRY_OR_COLLECTION_KEYS = new Set(['id', 'entryId', 'objectId', 'fromEntryId', 'toEntryId', 'originalId', 'sourceObjectId']);

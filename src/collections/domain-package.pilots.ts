@@ -1,5 +1,5 @@
-import { FieldKind } from './collection.schema';
-import { PACKAGE_FORMAT, PACKAGE_SCHEMA_VERSION } from './domain-package.format';
+import { FieldKind } from './collection.schema.js';
+import { PACKAGE_FORMAT, PACKAGE_SCHEMA_VERSION } from './domain-package.format.js';
 
 // Pilot domain packages shipped with Brainy. They are plain data in package format 1:
 // domain experts can author new ones the same way, without touching Brainy's core.

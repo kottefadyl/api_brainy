@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { AnalysisInput } from './analysis.input';
-import { CollaborationService } from './collaboration.service';
+import { AnalysisInput } from './analysis.input.js';
+import { CollaborationService } from './collaboration.service.js';
 
 /**
  * T43/3: audit trail of sensitive aggregate queries and alerts on repeated

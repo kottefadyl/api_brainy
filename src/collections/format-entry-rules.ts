@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Model } from 'mongoose';
-import { Collection, CollectionFormat } from './collection.schema';
-import { Entry } from './entry.schema';
+import { Collection, CollectionFormat } from './collection.schema.js';
+import { Entry } from './entry.schema.js';
 
 /** T47: generic data format rules, reusable outside books. */
 

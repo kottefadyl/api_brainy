@@ -1,8 +1,8 @@
 // T44 — GraphQL surface for large files stored by reference.
 import { Args, Context, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { LargeFileLink, LargeFileStatus, LargeFileUpload, StartLargeFileUploadInput } from './large-file.schema';
-import { LargeFileService } from './large-file.service';
+import { AuthService } from '../auth/auth.service.js';
+import { LargeFileLink, LargeFileStatus, LargeFileUpload, StartLargeFileUploadInput } from './large-file.schema.js';
+import { LargeFileService } from './large-file.service.js';
 
 type Request = { headers: { authorization?: string } };
 

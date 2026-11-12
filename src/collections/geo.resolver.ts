@@ -1,7 +1,7 @@
 import { Args, Context, Field, Float, Int, Mutation, ObjectType, Query, Resolver } from '@nestjs/graphql';
-import { AuthService } from '../auth/auth.service';
-import { GeoService } from './geo.service';
-import { EntryFieldFilterInput } from './collection.input';
+import { AuthService } from '../auth/auth.service.js';
+import { GeoService } from './geo.service.js';
+import { EntryFieldFilterInput } from './collection.input.js';
 
 type Request = { headers: { authorization?: string } };
 
