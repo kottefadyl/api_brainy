@@ -13,7 +13,8 @@ import { NotesModule } from './notes/notes.module';
   imports: [
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), 'schema.gql'),
+      // Vercel's file system is read-only: the schema stays in memory there; locally it is written for the clients' codegen.
+      autoSchemaFile: process.env.VERCEL ? true : join(process.cwd(), 'schema.gql'),
       sortSchema: true,
       context: ({ req }: { req: { headers: { authorization?: string } } }) => ({ req }),
       graphiql: process.env.NODE_ENV !== 'production',

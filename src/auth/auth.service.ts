@@ -1,3 +1,4 @@
+import { assertNotFrozen } from '../platform';
 import {
   BadRequestException,
   ConflictException,
@@ -172,6 +173,8 @@ export class AuthService {
   }
 
   async updateProfilePhoto(userId: string, photo: string | null): Promise<User> {
+    // Removing a photo stays possible; a new one is not stored on Vercel's free plan.
+    if (photo?.trim()) assertNotFrozen('mediaFiles');
     const update = photo?.trim()
       ? { $set: { profilePhoto: validateProfilePhoto(photo), hasProfilePhoto: true } }
       : { $unset: { profilePhoto: 1 }, $set: { hasProfilePhoto: false } };

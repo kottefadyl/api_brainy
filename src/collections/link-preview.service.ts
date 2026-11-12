@@ -1,3 +1,4 @@
+import { isFrozen } from '../platform';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Field, ObjectType } from '@nestjs/graphql';
 import { InjectModel, Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
@@ -93,7 +94,8 @@ export class LinkPreviewService {
   }
 
   private async image(source: string | undefined, base: string): Promise<string | undefined> {
-    if (!source) return undefined;
+    // On Vercel's free plan no picture is kept in the database: the preview keeps its text only.
+    if (!source || isFrozen('mediaFiles')) return undefined;
     const url = normalizedPreviewUrl(new URL(decodeEntities(source), base).toString());
     if (!url) return undefined;
     try {

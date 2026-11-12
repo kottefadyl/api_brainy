@@ -19,7 +19,8 @@ import { CollectionRole } from './collaboration.schema';
 import { parsePosition, parseZone } from './geo.logic';
 import { assertWorkflowEdit, importedWorkflowHistory, prepareWorkflowCreate, prepareWorkflowImport } from './workflow.rules';
 import { protectedFields, validSensitivity } from './sensitivity.logic';
-import { maxEntryAttachmentBytes } from '../platform';
+import { isFrozen, maxEntryAttachmentBytes } from '../platform';
+import { isMediaFile, MEDIA_REFUSED } from '../media-guard';
 import { CodeListStore } from './code-list-store.service';
 import { assertRoomForEntries } from './format-entry-rules';
 import { assertTaskPlannerView } from './task-planner.rules';
@@ -1270,6 +1271,7 @@ export class CollectionsService {
             if (input.attachmentBase64.length > 2_800_000 || !/^[A-Za-z0-9+/]*={0,2}$/.test(input.attachmentBase64)) throw new BadRequestException(`${field.name} file is too large or invalid`);
             data = Buffer.from(input.attachmentBase64, 'base64');
             if (!data.length || data.length > 2_097_152 || data.toString('base64') !== input.attachmentBase64) throw new BadRequestException(`${field.name} file is too large or invalid`);
+            if (isFrozen('mediaFiles') && isMediaFile(text, input.attachmentMimeType, data)) throw new BadRequestException(MEDIA_REFUSED);
           } else if (previous?.attachmentData) {
             data = Buffer.from(previous.attachmentData);
           } else {

@@ -7,7 +7,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
  * their workers do not start and their actions are refused with a clear
  * message, while existing data stays readable.
  */
-export const FREEZABLE_MODULES = ['reminders', 'backgroundJobs', 'dataSources', 'largeFiles'] as const;
+export const FREEZABLE_MODULES = ['reminders', 'backgroundJobs', 'dataSources', 'largeFiles', 'mediaFiles'] as const;
 export type FreezableModule = (typeof FREEZABLE_MODULES)[number];
 
 const LABELS: Record<FreezableModule, string> = {
@@ -15,6 +15,7 @@ const LABELS: Record<FreezableModule, string> = {
   backgroundJobs: 'Background processing',
   dataSources: 'Data sources',
   largeFiles: 'Large files',
+  mediaFiles: 'Pictures, videos and PDF files',
 };
 
 /**
@@ -28,7 +29,10 @@ export function frozenModules(env: NodeJS.ProcessEnv = process.env): Set<Freezab
     const known = new Set<string>(FREEZABLE_MODULES);
     return new Set(raw.split(',').map((item) => item.trim()).filter((item): item is FreezableModule => known.has(item)));
   }
-  return new Set(env.VERCEL ? FREEZABLE_MODULES : []);
+  if (!env.VERCEL) return new Set();
+  // Reminders run on Vercel only when an outside scheduler calls GET /cron/reminders (CRON_SECRET).
+  const scheduled = (env.CRON_SECRET?.trim().length ?? 0) >= 16;
+  return new Set(FREEZABLE_MODULES.filter((module) => module !== 'reminders' || !scheduled));
 }
 
 export const isFrozen = (module: FreezableModule): boolean => frozenModules().has(module);

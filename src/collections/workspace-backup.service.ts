@@ -1,3 +1,5 @@
+import { isMediaFile, MEDIA_REFUSED } from '../media-guard';
+import { isFrozen } from '../platform';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectConnection } from '@nestjs/mongoose';
 import { createHash } from 'node:crypto';
@@ -93,6 +95,8 @@ export class WorkspaceBackupService {
     const conflicts: string[] = [];
     if (collectionIds.size !== docs.collections.length || entryIds.size !== docs.entries.length) conflicts.push('Duplicate collection or entry IDs in backup');
     for (const collection of docs.collections) if (collection.ownerId !== userId) conflicts.push('A collection belongs to another account');
+    // On Vercel's free plan a backup holding pictures, videos or PDF files cannot be restored as is.
+    if (isFrozen('mediaFiles') && docs.entries.some((entry) => ((entry.values as { value?: string; attachmentMimeType?: string; attachmentData?: unknown }[] | undefined) ?? []).some((value) => value.attachmentData && isMediaFile(value.value ?? '', value.attachmentMimeType)))) conflicts.push(MEDIA_REFUSED);
     for (const collection of docs.collections) {
       const lists = (collection.codeLists as { id: string; codes: { code: string }[] }[] | undefined) ?? [];
       const listIds = new Set(lists.map((list) => list.id));
