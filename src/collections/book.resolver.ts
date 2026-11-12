@@ -4,6 +4,9 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AuthService } from '../auth/auth.service';
 import { bookAlignments, bookFonts, bookPageSizes, BookViewSettingsInput, defaultBookView } from './book-view.schema';
+
+/** T47/3: book roles the owner can give to any data format (front and back matter stay with the template formats). */
+export const assignableBookRoles = ['PART', 'CHAPTER', 'SECTION', 'SUBSECTION', 'APPENDIX', 'TERM', 'SOURCE'] as const;
 import { CollectionRole } from './collaboration.schema';
 import { CollaborationService } from './collaboration.service';
 import { Collection } from './collection.schema';
@@ -65,6 +68,23 @@ export class BookResolver {
     const bookView = { ...defaultBookView(roles), ...input, roles };
     const updated = await this.collectionModel.findOneAndUpdate({ _id: collectionId }, { $set: { bookView } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Collection not found');
+    return updated;
+  }
+
+  /** T47/3: shows a data format in the book with a role (chapter, section…), or hides it with no role. */
+  @Mutation(() => Collection)
+  async setBookFormatRole(@Args('collectionId') collectionId: string, @Args('formatId') formatId: string, @Args('role', { type: () => String, nullable: true }) role: string | null | undefined, @Context('req') request: Request): Promise<Collection> {
+    const userId = await this.user(request);
+    const collection = await this.collections.one(collectionId, userId);
+    this.collaboration.checkAccess(collection, userId, CollectionRole.OWNER);
+    if (collection.templateId !== 'book') throw new BadRequestException('The book view is only available in collections created from the Book template');
+    if (!collection.formats.some((item) => item.id === formatId)) throw new NotFoundException('Data format not found in this collection');
+    if (role != null && !(assignableBookRoles as readonly string[]).includes(role)) throw new BadRequestException('Choose a part, chapter, section, sub-section, appendix, term or source');
+    const roles = [...(collection.bookView?.roles ?? []).filter((item) => item.formatId !== formatId), ...(role ? [{ formatId, role }] : [])];
+    const update = collection.bookView ? { 'bookView.roles': roles } : { bookView: defaultBookView(roles, false) };
+    const updated = await this.collectionModel.findOneAndUpdate({ _id: collectionId }, { $set: update }, { returnDocument: 'after' }).exec();
+    if (!updated) throw new NotFoundException('Collection not found');
+    await this.collaboration.logAction(collectionId, userId, 'UPDATE_FORMAT', 'Updated the book role of a data format');
     return updated;
   }
 }

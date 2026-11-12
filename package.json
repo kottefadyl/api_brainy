@@ -26,6 +26,7 @@
     "smoke:task-planner": "node --env-file-if-exists=.env scripts/task-planner-smoke.mjs",
     "seed:collab": "node --env-file-if-exists=.env scripts/collab-seed.mjs",
     "smoke:collaborators": "node --env-file-if-exists=.env scripts/collaborators-smoke.mjs",
+    "smoke:book-roles": "node --env-file-if-exists=.env scripts/book-roles-smoke.mjs",
     "smoke:person-field": "node --env-file-if-exists=.env scripts/person-field-smoke.mjs",
     "smoke:referentials": "node --env-file-if-exists=.env scripts/referential-smoke.mjs"
   },

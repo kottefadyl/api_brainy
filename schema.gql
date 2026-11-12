@@ -1215,6 +1215,7 @@ type Mutation {
   saveEntryReminder(entryId: String!, input: EntryReminderInput!, reminderId: String): EntryReminder!
   saveStockRule(collectionId: String!, input: StockRuleInput!, ruleId: String): Collection!
   sealStockHistory(collectionId: String!, productId: String!): LedgerIntegrity!
+  setBookFormatRole(collectionId: String!, formatId: String!, role: String): Collection!
   setBookView(collectionId: String!, input: BookViewSettingsInput!): Collection!
   setCollectionEntryLinkActive(active: Boolean!, collectionId: String!, linkId: String!): EntryLink!
   setCollectionEntryRecurrence(collectionId: String!, entryId: String!, input: EntryRecurrenceInput, viewId: String!): Entry!
