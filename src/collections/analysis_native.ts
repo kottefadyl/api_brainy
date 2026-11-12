@@ -73,6 +73,8 @@ function keyExpression(request: NativeRequest, slotFor: (fieldId: string) => str
     const slot = slotFor(date!.id);
     return { $cond: [{ $eq: [{ $type: `$${slot}.value` }, 'string'] }, { $substrCP: [`$${slot}.value`, 0, input.groupBy === 'DAY' ? 10 : 7] }, 'Missing date'] };
   }
+  // T54: one entry can count for several people, which the single-key pipeline cannot express.
+  if (input.groupBy === 'PERSON') return undefined;
   const slot = slotFor(groupField!.id);
   if (input.groupBy === 'OBJECT') return { $ifNull: [{ $arrayElemAt: [`$${slot}.objectIds`, 0] }, 'Missing object'] };
   // A depth in a code list needs the hierarchy of the list, which only the API knows.

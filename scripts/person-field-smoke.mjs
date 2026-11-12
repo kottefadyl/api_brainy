@@ -69,6 +69,13 @@ try {
   const byIvan = data(await call(create, { c: project.id, i: task([julien.user.id]) }, ivan.token)).createEntry;
   assert.equal(byIvan.values.find((value) => value.fieldId === doneBy).value, 'Julien');
 
+  // Analyses by person: an entry counts for each person it names (Rapport final: Kevin, Ivan, Julien; byIvan: Julien).
+  const progress = format.fields.find((field) => field.kind === 'NUMBER').id;
+  await call(update, { id: byIvan.id, i: { formatId: format.id, values: [{ fieldId: title, value: 'Relecture' }, { fieldId: progress, value: '40' }, { fieldId: doneBy, value: 'Julien' }] } }, kevin.token);
+  const analysis = data(await call('query($id:String!,$input:AnalysisInput!){analyseCollection(collectionId:$id,input:$input){rows{group label value count}}}', { id: project.id, input: { formatId: format.id, operation: 'COUNT', measureKind: 'EVENT', groupBy: 'PERSON', groupFieldId: doneBy, language: 'fr' } }, kevin.token)).analyseCollection.rows;
+  assert.deepEqual(Object.fromEntries(analysis.map((row) => [row.label, row.count])), { Kevin: 1, Ivan: 1, Julien: 2 });
+  denied(await call('query($id:String!,$input:AnalysisInput!){analyseCollection(collectionId:$id,input:$input){rows{group}}}', { id: project.id, input: { formatId: format.id, operation: 'COUNT', measureKind: 'EVENT', groupBy: 'PERSON', groupFieldId: title } }, kevin.token), /compatible group field/);
+
   // After the collaboration with Julien ends, saved entries keep him; new choices cannot name him.
   data(await call('mutation($u:String!){endCollaboration(userId:$u)}', { u: julien.user.id }, kevin.token));
   const kept = data(await call(update, { id: entry.id, i: { formatId: format.id, values: [{ fieldId: title, value: 'Rapport final' }, { fieldId: doneBy, value: JSON.stringify([ivan.user.id, julien.user.id]) }] } }, kevin.token)).updateEntry;

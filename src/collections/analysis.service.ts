@@ -657,7 +657,7 @@ export class AnalysisService {
     try { sensitive = assertSensitiveAnalysisRequest(format, input); } catch (error) { throw await refuse(error); }
     if (input.groupBy === 'ZONE') return this.zoneAnalysis.analyse(collection, ownerId, input);
     const spec = getOperationSpec(input.operation);
-    if (!['NONE', 'DAY', 'MONTH', 'CATEGORY', 'OBJECT'].includes(input.groupBy) || !['EVENT', 'SNAPSHOT', 'RATE'].includes(input.measureKind)) {
+    if (!['NONE', 'DAY', 'MONTH', 'CATEGORY', 'OBJECT', 'PERSON'].includes(input.groupBy) || !['EVENT', 'SNAPSHOT', 'RATE'].includes(input.measureKind)) {
       throw new BadRequestException('Choose a valid analysis');
     }
     if (!spec.acceptedMeasureKinds.includes(input.measureKind)) {
@@ -669,8 +669,8 @@ export class AnalysisService {
     const date = format.fields.find((item) => item.id === input.dateFieldId && [FieldKind.DATE, FieldKind.DATETIME].includes(item.kind));
     const needsDate = spec.requiresDateOrder || ['DAY', 'MONTH'].includes(input.groupBy) || ['DAY', 'MONTH'].includes(input.secondaryGroupBy ?? '') || !!(input.from || input.to || input.comparisonFrom || input.comparisonTo);
     if (needsDate && !date) throw new BadRequestException('Choose a date field');
-    const groupField = format.fields.find((item) => item.id === input.groupFieldId && (input.groupBy === 'CATEGORY' ? [FieldKind.SELECT, FieldKind.TEXT, FieldKind.CODE].includes(item.kind) : input.groupBy === 'OBJECT' && item.kind === FieldKind.OBJECT_REF));
-    if (['CATEGORY', 'OBJECT'].includes(input.groupBy) && !groupField) throw new BadRequestException('Choose a compatible group field');
+    const groupField = format.fields.find((item) => item.id === input.groupFieldId && (input.groupBy === 'CATEGORY' ? [FieldKind.SELECT, FieldKind.TEXT, FieldKind.CODE].includes(item.kind) : input.groupBy === 'OBJECT' ? item.kind === FieldKind.OBJECT_REF : input.groupBy === 'PERSON' && item.kind === FieldKind.COLLABORATOR));
+    if (['CATEGORY', 'OBJECT', 'PERSON'].includes(input.groupBy) && !groupField) throw new BadRequestException('Choose a compatible group field');
     let secondaryGroupField: CollectionField | undefined;
     if (spec.id === 'CROSSTAB') {
       if (!input.secondaryGroupBy || !['DAY', 'MONTH', 'CATEGORY', 'OBJECT'].includes(input.secondaryGroupBy) || input.groupBy === 'NONE') {
@@ -754,7 +754,10 @@ export class AnalysisService {
         const dateValue = rawDate?.slice(0, 10);
         if (spec.requiresDateOrder && !dateValue) { skippedMissingCount++; continue; }
         if ((from && (!dateValue || dateValue < from)) || (to && (!dateValue || dateValue > to))) continue;
-        const primaryKey = keyFor(entry, dateValue, input.groupBy, groupField, input.groupDepth);
+        // T54: by person, an entry counts once for each person its collaborator field names.
+        const people = input.groupBy === 'PERSON' ? entry.values.find((item) => item.fieldId === groupField!.id) : undefined;
+        people?.personIds?.forEach((id, index) => personNames.set(id, people.personNames?.[index] ?? id));
+        const primaryKeys = input.groupBy === 'PERSON' ? (people?.personIds?.length ? people.personIds : ['Missing person']) : [keyFor(entry, dateValue, input.groupBy, groupField, input.groupDepth)];
         const secondaryKey = spec.id === 'CROSSTAB' && input.secondaryGroupBy ? keyFor(entry, dateValue, input.secondaryGroupBy, secondaryGroupField, input.secondaryGroupDepth) : undefined;
         const quantity = formula
           ? await this.evaluateNode(this.parseNumeric(formula.expression), collection, entry, ownerId)
@@ -802,6 +805,7 @@ export class AnalysisService {
         const counterReset = counterResetField
           ? entry.values.find((item) => item.fieldId === counterResetField.id)?.value === 'true'
           : false;
+        for (const primaryKey of primaryKeys) {
         distinctGroups.add(secondaryKey ? `${primaryKey} × ${secondaryKey}` : primaryKey);
         if (distinctGroups.size > 1000) throw new BadRequestException('Narrow the analysis to at most 1000 groups');
         const observation: ObservationRecord = {
@@ -819,12 +823,14 @@ export class AnalysisService {
         };
         if (accumulator) accumulator.add(observation);
         else observations.push(observation);
+        }
       }
       return {
         ...(accumulator ? accumulator.finish(unit, skippedMissingCount, isComparison) : executeRegisteredOperation(spec, observations, input, unit, skippedMissingCount, isComparison)),
         skippedMissingCount,
       };
     };
+    const personNames = new Map<string, string>();
     const primaryOut = await build(input.from, input.to, false);
     const rows = primaryOut.rows;
     const comparisonRows = input.comparisonFrom || input.comparisonTo ? (await build(input.comparisonFrom, input.comparisonTo, true)).rows : undefined;
@@ -850,6 +856,10 @@ export class AnalysisService {
           row.label = names.get(row.group) || row.group;
         }
       }
+    }
+    if (input.groupBy === 'PERSON') {
+      const personLabel = (key: string) => key === 'Missing person' ? (input.language === 'fr' ? 'Personne non renseignée' : 'No person') : personNames.get(key) ?? key;
+      for (const row of [...rows, ...(comparisonRows ?? [])]) row.label = row.rowKey && row.columnKey ? `${personLabel(row.rowKey)} × ${row.columnKey}` : personLabel(row.group);
     }
     if (groupField?.kind === FieldKind.CODE || secondaryGroupField?.kind === FieldKind.CODE) {
       const labelFor = (field: CollectionField | undefined, code: string): string => {
