@@ -4,6 +4,7 @@ import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
 import { Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
 import { MongooseModule } from '@nestjs/mongoose';
+import { AdminModule } from './admin/admin.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CollectionsModule } from './collections/collections.module.js';
 import { HealthResolver } from './health.resolver.js';
@@ -24,6 +25,7 @@ import { RealtimeModule } from './realtime/realtime.module.js';
       process.env.MONGODB_URI ?? 'mongodb://localhost:27017/brainy',
     ),
     AuthModule,
+    AdminModule,
     CollectionsModule,
     NotesModule,
     RealtimeModule,

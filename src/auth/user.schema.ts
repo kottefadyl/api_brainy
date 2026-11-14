@@ -1,5 +1,24 @@
-import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { Field, ID, Int, ObjectType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+
+/** The view chosen in one collection. */
+@ObjectType()
+@Schema({ _id: false })
+export class CollectionViewChoice {
+  @Field() @Prop({ required: true }) collectionId!: string;
+  @Field() @Prop({ required: true }) viewId!: string;
+}
+export const CollectionViewChoiceSchema = SchemaFactory.createForClass(CollectionViewChoice);
+
+/** Where the person left Brainy: kept on the account, so every device reopens the same way. */
+@ObjectType()
+@Schema({ _id: false })
+export class ViewPreferences {
+  @Field({ nullable: true }) @Prop() lastCollectionId?: string;
+  @Field(() => Int, { nullable: true }) @Prop() pageSize?: number;
+  @Field(() => [CollectionViewChoice]) @Prop({ type: [CollectionViewChoiceSchema], default: [] }) views!: CollectionViewChoice[];
+}
+export const ViewPreferencesSchema = SchemaFactory.createForClass(ViewPreferences);
 
 @ObjectType()
 @Schema({ timestamps: true })
@@ -57,6 +76,23 @@ export class User {
   @Field()
   @Prop({ default: false })
   onboardingCompleted!: boolean;
+
+  @Field(() => ViewPreferences, { nullable: true })
+  @Prop({ type: ViewPreferencesSchema })
+  viewPreferences?: ViewPreferences;
+
+  /** Set by the administrator: a blocked account can neither sign in nor use an open session. */
+  @Prop({ default: false, index: true })
+  blocked?: boolean;
+
+  @Prop()
+  blockedAt?: Date;
+
+  /** Last request, kept to the hour: shown to the administrator only. */
+  @Prop()
+  lastActiveAt?: Date;
+
+  createdAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

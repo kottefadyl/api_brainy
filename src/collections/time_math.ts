@@ -69,3 +69,11 @@ export function nextRecurrenceStart(start: Date, rule: { timeZone: string; frequ
   }
   return;
 }
+
+/** Midnight of a YYYY-MM-DD day in a time zone (UTC when the zone is missing or unknown). */
+export function dayStart(date: string, zone?: string): Date {
+  const [year, month, day] = date.split('-').map(Number);
+  const value = { year, month, day, hour: 0, minute: 0, second: 0 };
+  if (Number.isNaN(Date.UTC(year, month - 1, day)) || month < 1 || month > 12 || day < 1 || day > 31) throw new BadRequestException('Choose a valid date');
+  return zone && validTimeZone(zone) ? localToInstant(value, zone) : new Date(Date.UTC(year, month - 1, day));
+}

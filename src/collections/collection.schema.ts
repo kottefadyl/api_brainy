@@ -86,6 +86,16 @@ export class CollectionField {
   @Field({ nullable: true })
   @Prop()
   codeListId?: string;
+
+  /** An entry of this data format must fill this field; not required unless chosen. */
+  @Field({ nullable: true })
+  @Prop()
+  required?: boolean;
+
+  /** Shown in the entry list rows (3 fields at most per data format); none chosen = the first filled ones. */
+  @Field({ nullable: true })
+  @Prop()
+  showInList?: boolean;
 }
 
 export const CollectionFieldSchema = SchemaFactory.createForClass(CollectionField);
@@ -140,6 +150,8 @@ export class CollectionFormat {
   @Field(() => WorkflowDefinition, { nullable: true }) @Prop({ type: WorkflowDefinitionSchema }) workflow?: WorkflowDefinition;
   /** T47: at most one entry may use this data format. */
   @Field({ nullable: true }) @Prop({ default: false }) singleEntry?: boolean;
+  /** Most entries this data format accepts (1 or more); empty = no limit. Kept in step with `singleEntry`. */
+  @Field(() => Int, { nullable: true }) @Prop() maxEntries?: number;
   /** T47: when set, a parent relation from an entry of this format must point to one of these formats. */
   @Field(() => [String], { nullable: true }) @Prop({ type: [String], default: undefined }) parentFormatIds?: string[];
 }
@@ -173,6 +185,13 @@ export class ClassificationList {
   @Prop() transferKey?: string;
 }
 export const ClassificationListSchema = SchemaFactory.createForClass(ClassificationList);
+
+/** Entries saved with one data format (all pages). */
+@ObjectType()
+export class FormatEntryCount {
+  @Field() formatId!: string;
+  @Field(() => Int) count!: number;
+}
 
 @ObjectType()
 export class CollectionFormatImpact {

@@ -1,4 +1,4 @@
-import { Field, ID, ObjectType } from '@nestjs/graphql';
+import { Field, ID, Int, ObjectType } from '@nestjs/graphql';
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { UnitSnapshot, UnitSnapshotSchema } from './unit.schema.js';
 import { EntryWorkflow, EntryWorkflowSchema } from './workflow.schema.js';
@@ -324,6 +324,7 @@ export class CalendarOccurrence {
 
 export const EntrySchema = SchemaFactory.createForClass(Entry);
 EntrySchema.index({ ownerId: 1, collectionId: 1, createdAt: -1, _id: -1 });
+EntrySchema.index({ ownerId: 1, collectionId: 1, formatId: 1, createdAt: -1, _id: -1 });
 EntrySchema.index({ ownerId: 1, collectionId: 1, formatId: 1, 'values.fieldId': 1, 'values.value': 1 });
 EntrySchema.index({ ownerId: 1, collectionId: 1, 'values.value': 'text' }, { default_language: 'none' });
 EntrySchema.index({ ownerId: 1, collectionId: 1, importKey: 1, sourceId: 1 }, { unique: true, partialFilterExpression: { importKey: { $type: 'string' }, sourceId: { $type: 'string' } } });
@@ -341,6 +342,14 @@ export class EntryPage {
 
   @Field()
   hasMore!: boolean;
+
+  /** Matching entries in all pages; given when the page is asked by position (offset or date) or is the first one. */
+  @Field(() => Int, { nullable: true })
+  totalCount?: number;
+
+  /** Position of this page's first entry (0 = the very first); given when the page is asked by position. */
+  @Field(() => Int, { nullable: true })
+  offset?: number;
 }
 
 @ObjectType()

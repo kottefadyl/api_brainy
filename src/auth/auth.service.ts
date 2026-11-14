@@ -9,7 +9,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { createHmac, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Model } from 'mongoose';
-import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types.js';
+import { AuthPayload, LoginInput, ProfileInput, RegisterInput, ViewPreferencesInput } from './auth.types.js';
 import { validateProfilePhoto } from './profile-photo.js';
 import { FirebaseIdentityService } from './firebase-identity.service.js';
 import { User } from './user.schema.js';
@@ -64,6 +64,7 @@ export class AuthService {
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
       throw new UnauthorizedException('Incorrect email or password');
     }
+    this.assertNotBlocked(user);
     return { user, token: this.sign(user.id) };
   }
 
@@ -97,6 +98,7 @@ export class AuthService {
       }
     }
     if (!user) throw new ConflictException('This email is already linked to another account');
+    this.assertNotBlocked(user);
     return { user, token: this.sign(user.id) };
   }
 
@@ -116,6 +118,7 @@ export class AuthService {
   }
 
   async currentUser(authorization?: string): Promise<User> {
+    let user: User | null;
     const token = authorization?.match(/^Bearer (\S+)$/i)?.[1];
     if (!token) throw new UnauthorizedException('Sign in to continue');
     const [header, payload, signature] = token.split('.');
@@ -133,12 +136,38 @@ export class AuthService {
           typeof claims.exp !== 'number' || claims.exp <= Math.floor(Date.now() / 1000)) {
         throw new Error('Invalid claims');
       }
-      const user = await this.users.findById(claims.sub).exec();
+      user = await this.users.findById(claims.sub).exec();
       if (!user) throw new Error('Account missing');
-      return user;
     } catch {
       throw new UnauthorizedException('Invalid or expired session');
     }
+    this.assertNotBlocked(user);
+    // Last activity for the administrator, written at most once an hour.
+    if (!user.lastActiveAt || Date.now() - user.lastActiveAt.getTime() > 3_600_000) {
+      void this.users.updateOne({ _id: user.id }, { $set: { lastActiveAt: new Date() } }, { timestamps: false }).exec().catch(() => undefined);
+    }
+    return user;
+  }
+
+  /** A blocked account is refused everywhere, with a message the clients translate. */
+  private assertNotBlocked(user: User): void {
+    if (user.blocked) throw new UnauthorizedException('This account is blocked. Contact the Brainy administrator');
+  }
+
+  /** Where the person left Brainy (last collection, view per collection, page size), kept on the account. */
+  async saveViewPreferences(userId: string, input: ViewPreferencesInput): Promise<User> {
+    const idPattern = /^[\w-]{1,64}$/;
+    const views = new Map<string, string>();
+    for (const choice of input.views.slice(-200)) {
+      if (!idPattern.test(choice.collectionId) || !idPattern.test(choice.viewId)) throw new BadRequestException('Invalid view preference');
+      views.set(choice.collectionId, choice.viewId);
+    }
+    if (input.lastCollectionId != null && !idPattern.test(input.lastCollectionId)) throw new BadRequestException('Invalid view preference');
+    if (input.pageSize != null && ![30, 50, 100].includes(input.pageSize)) throw new BadRequestException('Choose 30, 50 or 100 entries per page');
+    const viewPreferences = { lastCollectionId: input.lastCollectionId ?? undefined, pageSize: input.pageSize ?? undefined, views: [...views].map(([collectionId, viewId]) => ({ collectionId, viewId })) };
+    const user = await this.users.findByIdAndUpdate(userId, { $set: { viewPreferences } }, { returnDocument: 'after', timestamps: false }).exec();
+    if (!user) throw new UnauthorizedException('Invalid session');
+    return user;
   }
 
   async updateProfile(userId: string, input: ProfileInput): Promise<User> {

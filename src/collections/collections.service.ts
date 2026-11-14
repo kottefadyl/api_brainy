@@ -7,7 +7,7 @@ import { validateClassificationCodes } from './classification.logic.js';
 import { Collection, CollectionField, CollectionFormat, CollectionFormatImpact, FieldKind, ObjectModelTemplate, SavedCollectionView, SensitivityLevel } from './collection.schema.js';
 import { CalendarOccurrence, Entry, EntryAttachment, EntryPage, EntryValue, ImportEntriesResult, ObjectPropertySnapshot, ObjectReferenceSnapshot, ResolvedObjectReference, ResolvedObjectVariable } from './entry.schema.js';
 import { ContributionLink, ContributionSubmission } from './contribution.schema.js';
-import { addLocalDays, addLocalMonths, localDate, localTime, localToInstant, validTimeZone } from './time_math.js';
+import { addLocalDays, addLocalMonths, dayStart, localDate, localTime, localToInstant, validTimeZone } from './time_math.js';
 import { builtInUnits, decimal, divide, fractionText, multiply, resolveUnit } from './unit_math.js';
 import { CollectionUnit, QuantityConversion, UnitSnapshot } from './unit.schema.js';
 import { StockLedgerHead, StockMovement } from './stock.schema.js';
@@ -22,7 +22,7 @@ import { protectedFields, validSensitivity } from './sensitivity.logic.js';
 import { isFrozen, maxEntryAttachmentBytes } from '../platform.js';
 import { isMediaFile, MEDIA_REFUSED } from '../media-guard.js';
 import { CodeListStore } from './code-list-store.service.js';
-import { assertRoomForEntries } from './format-entry-rules.js';
+import { assertRequiredFields, assertRoomForEntries, validatedMaxEntries } from './format-entry-rules.js';
 import { assertTaskPlannerView } from './task-planner.rules.js';
 import { PersonFieldService, parsePersonIds } from '../collaborators/person-field.service.js';
 
@@ -78,8 +78,11 @@ export class CollectionsService {
     if (!Types.ObjectId.isValid(id)) throw new BadRequestException('Invalid ID');
   }
 
-  async list(ownerId: string): Promise<Collection[]> {
+  async list(ownerId: string, ids?: string[]): Promise<Collection[]> {
+    const wanted = ids?.filter((id) => Types.ObjectId.isValid(id)).slice(0, 100);
+    if (wanted && wanted.length === 0) return [];
     const collections = await this.collections.find({
+      ...(wanted ? { _id: { $in: wanted } } : {}),
       $or: [{ ownerId }, { 'members.userId': ownerId }],
     }).sort({ createdAt: -1 }).exec();
     return Promise.all(collections.map((collection) => this.ensureFormats(collection)));
@@ -250,6 +253,7 @@ export class CollectionsService {
 
   private validateFields(input: (CollectionFieldInput | UpdateCollectionFieldInput)[], existingIds?: Set<string>): CollectionField[] {
     if (!input.length || input.length > 30) throw new BadRequestException('Choose between 1 and 30 fields');
+    if (input.filter((field) => field.showInList).length > 3) throw new BadRequestException('Show at most 3 fields in the list');
     const names = new Set<string>();
     const ids = new Set<string>();
     const variableNames = new Set<string>();
@@ -291,7 +295,7 @@ export class CollectionsService {
       if (requestedId && (!existingIds?.has(requestedId) || ids.has(requestedId))) throw new BadRequestException('Invalid or repeated field ID');
       const id = requestedId || randomUUID();
       ids.add(id);
-      return { id, name: fieldName, kind: field.kind, sensitivity: field.sensitivity ?? ([FieldKind.POSITION, FieldKind.ZONE].includes(field.kind) ? SensitivityLevel.SENSITIVE : SensitivityLevel.ORDINARY), ...(unit ? { unit } : {}), ...(choice ? { options } : {}), ...(reference ? { targetObjectFormatId, multiple: field.multiple ?? false, variableName, referenceMode } : {}), ...(codeListId ? { codeListId } : {}) };
+      return { id, name: fieldName, kind: field.kind, sensitivity: field.sensitivity ?? ([FieldKind.POSITION, FieldKind.ZONE].includes(field.kind) ? SensitivityLevel.SENSITIVE : SensitivityLevel.ORDINARY), ...(unit ? { unit } : {}), ...(choice ? { options } : {}), ...(reference ? { targetObjectFormatId, multiple: field.multiple ?? false, variableName, referenceMode } : {}), ...(codeListId ? { codeListId } : {}), ...(field.required ? { required: true } : {}), ...(field.showInList ? { showInList: true } : {}) };
     });
   }
 
@@ -317,7 +321,8 @@ export class CollectionsService {
     const fields = this.validateFields(input.fields);
     if (input.sensitivity && !validSensitivity(input.sensitivity)) throw new BadRequestException('Choose a sensitivity level');
     if (input.objectModel && !fields.some((field) => field.kind === FieldKind.TITLE)) throw new BadRequestException('An object data format needs a title field');
-    return { id: randomUUID(), name, color, fields, sensitivity: input.sensitivity ?? SensitivityLevel.ORDINARY, version: 1, objectModel: input.objectModel ?? false };
+    const maxEntries = validatedMaxEntries(input.maxEntries);
+    return { id: randomUUID(), name, color, fields, sensitivity: input.sensitivity ?? SensitivityLevel.ORDINARY, version: 1, objectModel: input.objectModel ?? false, ...(maxEntries ? { maxEntries, singleEntry: maxEntries === 1 } : {}) };
   }
 
   objectModelTemplates(language?: string): ObjectModelTemplate[] {
@@ -568,6 +573,20 @@ export class CollectionsService {
     return true;
   }
 
+  /** Entries per data format, counted on the server (the list only holds one page). */
+  async formatEntryCounts(collectionId: string, ownerId: string): Promise<{ formatId: string; count: number }[]> {
+    const collection = await this.one(collectionId, ownerId);
+    this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
+    const counts = await this.entries.aggregate<{ _id: string; count: number }>([
+      { $match: { ownerId: collection.ownerId, collectionId } },
+      { $group: { _id: '$formatId', count: { $sum: 1 } } },
+    ]).exec();
+    const byFormat = new Map(counts.map((item) => [item._id, item.count]));
+    // Entries saved before data formats existed belong to the first one.
+    const legacy = byFormat.get(null as unknown as string) ?? 0;
+    return collection.formats.map((format, index) => ({ formatId: format.id, count: (byFormat.get(format.id) ?? 0) + (index === 0 ? legacy : 0) }));
+  }
+
   async listEntries(collectionId: string, ownerId: string): Promise<Entry[]> {
     const collection = await this.one(collectionId, ownerId);
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
@@ -748,12 +767,15 @@ export class CollectionsService {
   async entriesPage(
     collectionId: string,
     ownerId: string,
-    input: { first: number; after?: string; search?: string; formatId?: string; filters?: EntryFieldFilterInput[]; viewId?: string },
+    input: { first: number; after?: string; search?: string; formatId?: string; filters?: EntryFieldFilterInput[]; viewId?: string; offset?: number; atDate?: string; timeZone?: string },
   ): Promise<EntryPage> {
     const collection = await this.one(collectionId, ownerId);
     const access = this.collaboration.checkAccess(collection, ownerId, CollectionRole.READER);
     const view = input.viewId ? collection.savedViews.find((item) => item.id === input.viewId) : undefined;
     if (input.viewId && !view) throw new NotFoundException('View not found');
+    if (input.offset != null && (!Number.isInteger(input.offset) || input.offset < 0 || input.offset > 1_000_000)) throw new BadRequestException('Invalid page position');
+    if (input.atDate != null && !/^\d{4}-\d{2}-\d{2}$/.test(input.atDate)) throw new BadRequestException('Choose a valid date');
+    if ((input.offset != null || input.atDate != null) && input.after) throw new BadRequestException('Choose a cursor or a position, not both');
     if (view) input = { ...input, search: view.search, formatId: view.formatIds.length === 1 ? view.formatIds[0] : undefined, filters: view.filterFieldId && view.filterOperator && view.filterValue ? [{ fieldId: view.filterFieldId, operator: view.filterOperator as EntryFilterOperator, value: view.filterValue }] : undefined };
     if (!Number.isInteger(input.first) || input.first < 1 || input.first > 100) throw new BadRequestException('Page size must be between 1 and 100');
     const search = input.search?.trim() ?? '';
@@ -802,7 +824,12 @@ export class CollectionsService {
         const difference = left.n * right.d - right.n * left.d;
         return difference < 0n ? -1 : difference > 0n ? 1 : a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id);
       });
-      let start = 0;
+      let start = input.offset ?? 0;
+      if (input.atDate) {
+        const day = dayStart(input.atDate, input.timeZone);
+        const index = all.findIndex((entry) => entry.createdAt >= day);
+        start = Math.floor(Math.max(0, index) / input.first) * input.first;
+      }
       if (input.after) {
         let cursor: { manual?: boolean; id?: string };
         try { cursor = JSON.parse(Buffer.from(input.after, 'base64url').toString('utf8')) as typeof cursor; }
@@ -816,16 +843,28 @@ export class CollectionsService {
       await this.collaboration.auditProtectedRead(collection, ownerId, entries);
       const last = rawEntries.at(-1);
       const hasMore = start + rawEntries.length < all.length;
-      return { entries, hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ manual: true, id: last.id })).toString('base64url') : undefined };
+      const positioned = input.offset != null || input.atDate != null || !input.after;
+      return { entries, hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ manual: true, id: last.id })).toString('base64url') : undefined, ...(positioned ? { totalCount: all.length, offset: start } : {}) };
     }
     const sortDirection = view?.sort === 'OLDEST' ? 1 : -1;
-    const found = await this.entries.find(query as QueryFilter<Entry>).sort({ createdAt: sortDirection, _id: sortDirection }).limit(input.first + 1).exec();
+    // Large lists (T-navigation): a page can be asked by position or by date; the total comes with it.
+    const positioned = input.offset != null || input.atDate != null || !input.after;
+    const totalCount = positioned ? await this.entries.countDocuments(query as QueryFilter<Entry>).exec() : undefined;
+    let offset = input.offset ?? 0;
+    if (input.atDate) {
+      const day = dayStart(input.atDate, input.timeZone);
+      // Entries listed before that day: newer ones when newest come first, older ones otherwise.
+      const before = await this.entries.countDocuments({ ...query, createdAt: sortDirection === -1 ? { $gte: new Date(day.getTime() + 86_400_000) } : { $lt: day } } as QueryFilter<Entry>).exec();
+      offset = Math.floor(Math.min(before, Math.max(0, (totalCount ?? 1) - 1)) / input.first) * input.first;
+    }
+    if (totalCount != null && offset >= totalCount && totalCount > 0) offset = Math.floor((totalCount - 1) / input.first) * input.first;
+    const found = await this.entries.find(query as QueryFilter<Entry>).sort({ createdAt: sortDirection, _id: sortDirection }).skip(input.after ? 0 : offset).limit(input.first + 1).exec();
     const hasMore = found.length > input.first;
     const rawEntries = found.slice(0, input.first);
     const entries = rawEntries.map((e) => this.collaboration.filterEntryFields(e, access.member, collection));
     await this.collaboration.auditProtectedRead(collection, ownerId, entries);
     const last = rawEntries.at(-1);
-    return { entries, hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ createdAt: last.createdAt.toISOString(), id: last.id })).toString('base64url') : undefined };
+    return { entries, hasMore, nextCursor: hasMore && last ? Buffer.from(JSON.stringify({ createdAt: last.createdAt.toISOString(), id: last.id })).toString('base64url') : undefined, ...(positioned ? { totalCount, offset: input.after ? undefined : offset } : {}) };
   }
 
   private entryFilterCondition(field: CollectionField, filter: EntryFieldFilterInput): Record<string, unknown> {
@@ -897,6 +936,7 @@ export class CollectionsService {
         const history = importedWorkflowHistory(format, values, row.workflowHistory, ownerId, new Date());
         await this.validateReferences(collection, format, values, ownerId);
         this.assertObjectTitle(format, values);
+        assertRequiredFields(format, values);
         rows.push({ sourceId: row.sourceId, values, createdAt, updatedAt, workflow: history ? { history } : undefined });
       } catch (error) {
         errors.push({ sourceId: row.sourceId || '(missing)', message: error instanceof Error ? error.message : 'Invalid row' });
@@ -944,12 +984,16 @@ export class CollectionsService {
   async validateContributionValues(collection: Collection, formatId: string, values: EntryValueInput[]): Promise<EntryValue[]> {
     const format = collection.formats.find((item) => item.id === formatId);
     if (!format) throw new BadRequestException('Data format not found in this collection');
-    return this.validateValues(values, format.fields, [], collection.units, false, await this.codeLists.listsForValues(collection, values));
+    const validated = this.validateValues(values, format.fields, [], collection.units, false, await this.codeLists.listsForValues(collection, values));
+    assertRequiredFields(format, validated);
+    return validated;
   }
 
   /** T32: shared value rules for data-source rows (see data-source.service.ts). */
   validateSourceValues(collection: Collection, format: CollectionFormat, values: EntryValueInput[], existing: EntryValue[] = []): EntryValue[] {
-    return this.validateValues(values, format.fields, existing, collection.units, false, collection.codeLists ?? []);
+    const validated = this.validateValues(values, format.fields, existing, collection.units, false, collection.codeLists ?? []);
+    assertRequiredFields(format, validated);
+    return validated;
   }
 
   async createEntry(collectionId: string, values: EntryValueInput[], formatId: string | undefined, ownerId: string, clientMutationId?: string, contribution?: { linkId: string; receivedAt: Date }, correctionOf?: string): Promise<Entry> {
@@ -970,6 +1014,7 @@ export class CollectionsService {
     await this.largeFiles.bind(collection, validated);
     await this.validateReferences(collection, format, validated, ownerId);
     this.assertObjectTitle(format, validated);
+    assertRequiredFields(format, validated, this.collaboration.checkAccess(collection, ownerId).member);
     await assertRoomForEntries(this.entries, collection, format);
     let entry: Entry;
     try { entry = format.appendOnly
@@ -1199,6 +1244,7 @@ export class CollectionsService {
     assertWorkflowEdit(format, entry.values, validated);
     await this.validateReferences(collection, format, validated, collection.ownerId, entry.id, entry.values);
     this.assertObjectTitle(format, validated);
+    assertRequiredFields(format, validated, this.collaboration.checkAccess(collection, ownerId).member);
     const saved = await this.entries.findOneAndUpdate(
       { _id: id, movingOperationId: null, ...(expectedUpdatedAt || format.workflow ? { updatedAt: entry.updatedAt } : {}) }, { $set: { formatId: savedFormatId, formatVersion: format.version ?? 1, values: validated, updatedBy: ownerId, ...(clientMutationId ? { lastMutationId: clientMutationId } : {}) }, $push: { revisions: { $each: [{ at: entry.updatedAt, formatVersion: entry.formatVersion ?? 1, values: entry.values }], $slice: -20 } } },
       { returnDocument: 'after', runValidators: true },

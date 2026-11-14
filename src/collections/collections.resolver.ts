@@ -1,7 +1,7 @@
 import { Args, Context, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AuthService } from '../auth/auth.service.js';
 import { CollectionExchangeRateInput, CollectionFormatInput, CollectionUnitInput, CreateCollectionInput, EntryFieldFilterInput, EntryRecurrenceInput, ImportEntriesInput, ImportObjectLinkInput, SavedCollectionViewInput, SaveEntryInput, UpdateCollectionFormatInput } from './collection.input.js';
-import { Collection, CollectionFormatImpact, LinkedFormatUpdatePreview, MoveOperationStatus, ObjectModelTemplate, SharedObjectGrant, TransferPreview, TransferResult } from './collection.schema.js';
+import { Collection, CollectionFormatImpact, FormatEntryCount, LinkedFormatUpdatePreview, MoveOperationStatus, ObjectModelTemplate, SharedObjectGrant, TransferPreview, TransferResult } from './collection.schema.js';
 import { CollectionsService } from './collections.service.js';
 import { CalendarOccurrence, Entry, EntryAttachment, EntryPage, ImportEntriesResult, ResolvedObjectReference, ResolvedObjectVariable } from './entry.schema.js';
 import { CollectionUnit, QuantityConversion } from './unit.schema.js';
@@ -30,10 +30,10 @@ export class CollectionsResolver {
     return (await this.auth.currentUser(request.headers.authorization)).id;
   }
 
-  @Query(() => [Collection])
-  async collectionsList(@Context('req') request: Request): Promise<Collection[]> {
+  @Query(() => [Collection], { description: 'My collections; with ids, only those (a live update reloads just what changed)' })
+  async collectionsList(@Args('ids', { type: () => [String], nullable: true }) ids: string[] | undefined, @Context('req') request: Request): Promise<Collection[]> {
     const actorId = await this.ownerId(request);
-    const collections = await this.service.list(actorId);
+    const collections = await this.service.list(actorId, ids);
     return Promise.all(collections.map((collection) => this.collaboration.projectCollection(collection, actorId)));
   }
 
@@ -137,6 +137,11 @@ export class CollectionsResolver {
     return this.service.setFormatColor(collectionId, formatId, color, await this.ownerId(request));
   }
 
+  @Query(() => [FormatEntryCount], { description: 'Entries per data format, counted over all pages' })
+  async formatEntryCounts(@Args('collectionId') collectionId: string, @Context('req') request: Request): Promise<FormatEntryCount[]> {
+    return this.service.formatEntryCounts(collectionId, await this.ownerId(request));
+  }
+
   @Query(() => CollectionFormatImpact)
   async collectionFormatImpact(
     @Args('collectionId') collectionId: string,
@@ -190,8 +195,11 @@ export class CollectionsResolver {
     @Args('filters', { type: () => [EntryFieldFilterInput], nullable: true }) filters: EntryFieldFilterInput[] | undefined,
     @Args('viewId', { type: () => String, nullable: true }) viewId: string | undefined,
     @Context('req') request: Request,
+    @Args('offset', { type: () => Int, nullable: true, description: 'Jump to this position (a page number times the page size) instead of following a cursor' }) offset?: number,
+    @Args('atDate', { type: () => String, nullable: true, description: 'YYYY-MM-DD: jump to the page holding the entries created that day (or the nearest one)' }) atDate?: string,
+    @Args('timeZone', { type: () => String, nullable: true }) timeZone?: string,
   ): Promise<EntryPage> {
-    return this.service.entriesPage(collectionId, await this.ownerId(request), { first, after, search, formatId, filters, viewId });
+    return this.service.entriesPage(collectionId, await this.ownerId(request), { first, after, search, formatId, filters, viewId, offset, atDate, timeZone });
   }
 
   @Query(() => EntryPage)

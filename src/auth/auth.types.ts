@@ -1,4 +1,4 @@
-import { Field, InputType, ObjectType } from '@nestjs/graphql';
+import { Field, InputType, Int, ObjectType } from '@nestjs/graphql';
 import { User } from './user.schema.js';
 
 @InputType()
@@ -50,4 +50,17 @@ export class AuthPayload {
 
   @Field(() => User)
   user!: User;
+}
+
+@InputType()
+export class CollectionViewChoiceInput {
+  @Field() collectionId!: string;
+  @Field() viewId!: string;
+}
+
+@InputType()
+export class ViewPreferencesInput {
+  @Field({ nullable: true }) lastCollectionId?: string;
+  @Field(() => Int, { nullable: true }) pageSize?: number;
+  @Field(() => [CollectionViewChoiceInput]) views!: CollectionViewChoiceInput[];
 }

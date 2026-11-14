@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
+import { Args, Context, Int, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AuthService } from '../auth/auth.service.js';
@@ -12,7 +12,7 @@ import { CollaborationService } from './collaboration.service.js';
 import { Collection } from './collection.schema.js';
 import { CollectionsService } from './collections.service.js';
 import { Entry } from './entry.schema.js';
-import { validatedParentFormatIds } from './format-entry-rules.js';
+import { MAX_ENTRIES_LIMIT, validatedMaxEntries, validatedParentFormatIds } from './format-entry-rules.js';
 import { EntryRelation, RelationKind } from './relation.schema.js';
 
 type Request = { headers: { authorization?: string } };
@@ -40,14 +40,18 @@ export class BookResolver {
   }
 
   @Mutation(() => Collection)
-  async setFormatEntryRules(@Args('collectionId') collectionId: string, @Args('formatId') formatId: string, @Args('singleEntry') singleEntry: boolean, @Args('parentFormatIds', { type: () => [String] }) parentFormatIds: string[], @Context('req') request: Request): Promise<Collection> {
+  async setFormatEntryRules(@Args('collectionId') collectionId: string, @Args('formatId') formatId: string, @Args('singleEntry') singleEntry: boolean, @Args('parentFormatIds', { type: () => [String] }) parentFormatIds: string[], @Context('req') request: Request, @Args('maxEntries', { type: () => Int, nullable: true, description: 'Most entries (1 or more); empty = no limit unless singleEntry' }) maxEntries?: number | null): Promise<Collection> {
     const userId = await this.user(request);
     const collection = await this.collections.one(collectionId, userId);
     this.collaboration.checkAccess(collection, userId, CollectionRole.OWNER);
     if (!collection.formats.some((item) => item.id === formatId)) throw new NotFoundException('Data format not found in this collection');
     const parents = validatedParentFormatIds(collection, formatId, parentFormatIds);
-    if (singleEntry && await this.entries.countDocuments({ collectionId, formatId }).exec() > 1) throw new BadRequestException('This data format already has several entries. Keep one before allowing a single entry');
-    const updated = await this.collectionModel.findOneAndUpdate({ _id: collectionId, 'formats.id': formatId }, { $set: { 'formats.$.singleEntry': singleEntry, 'formats.$.parentFormatIds': parents } }, { returnDocument: 'after' }).exec();
+    const limit = singleEntry ? 1 : validatedMaxEntries(maxEntries);
+    if (limit != null && limit < MAX_ENTRIES_LIMIT) {
+      const count = await this.entries.countDocuments({ collectionId, formatId }, { limit: limit + 1 }).exec();
+      if (count > limit) throw new BadRequestException(limit === 1 ? 'This data format already has several entries. Keep one before allowing a single entry' : `This data format already has more than ${limit} entries`);
+    }
+    const updated = await this.collectionModel.findOneAndUpdate({ _id: collectionId, 'formats.id': formatId }, { $set: { 'formats.$.singleEntry': limit === 1, 'formats.$.maxEntries': limit ?? null, 'formats.$.parentFormatIds': parents } }, { returnDocument: 'after' }).exec();
     if (!updated) throw new NotFoundException('Data format not found in this collection');
     await this.collaboration.logAction(collectionId, userId, 'UPDATE_FORMAT', 'Updated data format entry rules');
     return updated;

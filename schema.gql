@@ -2,6 +2,38 @@
 # THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
 # ------------------------------------------------------
 
+type AdminErasure {
+  accountDeleted: Boolean!
+  collections: Int!
+  documents: Int!
+  files: Int!
+}
+
+type AdminOverview {
+  blockedCount: Int!
+  generatedAt: DateTime!
+  totalBytes: Float!
+  userCount: Int!
+  users: [AdminUser!]!
+}
+
+type AdminUser {
+  admin: Boolean!
+  blocked: Boolean!
+  blockedAt: DateTime
+  collections: Int!
+  createdAt: DateTime
+  databaseBytes: Float!
+  email: String!
+  entries: Int!
+  fileBytes: Float!
+  googleSignIn: Boolean!
+  id: ID!
+  lastActiveAt: DateTime
+  name: String!
+  totalBytes: Float!
+}
+
 input AnalysisInput {
   comparisonFrom: String
   comparisonTo: String
@@ -289,7 +321,9 @@ type CollectionField {
   name: String!
   options: [String!]
   referenceMode: String
+  required: Boolean
   sensitivity: SensitivityLevel
+  showInList: Boolean
   sourceFieldId: String
   targetObjectFormatId: String
   unit: String
@@ -303,7 +337,9 @@ input CollectionFieldInput {
   name: String!
   options: [String!]
   referenceMode: String
+  required: Boolean
   sensitivity: SensitivityLevel
+  showInList: Boolean
   targetObjectFormatId: String
   unit: String
   variableName: String
@@ -316,6 +352,7 @@ type CollectionFormat {
   fields: [CollectionField!]!
   id: String!
   linkedSource: LinkedFormatSource
+  maxEntries: Int
   name: String!
   objectModel: Boolean!
   parentFormatIds: [String!]
@@ -333,6 +370,7 @@ type CollectionFormatImpact {
 input CollectionFormatInput {
   color: String!
   fields: [CollectionFieldInput!]!
+  maxEntries: Int
   name: String!
   objectModel: Boolean
   sensitivity: SensitivityLevel
@@ -395,6 +433,16 @@ input CollectionUnitInput {
   name: String!
   objectFormatId: String
   symbol: String!
+}
+
+type CollectionViewChoice {
+  collectionId: String!
+  viewId: String!
+}
+
+input CollectionViewChoiceInput {
+  collectionId: String!
+  viewId: String!
 }
 
 type ContributionEvent {
@@ -734,6 +782,8 @@ type EntryPage {
   entries: [Entry!]!
   hasMore: Boolean!
   nextCursor: String
+  offset: Int
+  totalCount: Int
 }
 
 type EntryRecurrence {
@@ -904,6 +954,11 @@ type ForecastResult {
   uncertainty: String!
   unit: String
   validation: [ForecastPoint!]!
+}
+
+type FormatEntryCount {
+  count: Int!
+  formatId: String!
 }
 
 input FormulaInput {
@@ -1135,6 +1190,12 @@ type Mutation {
   addCollectionMember(collectionId: String!, email: String, memberUserId: String, role: CollectionRole!, sensitiveFieldIds: [String!], sharedFieldIds: [String!]): Collection!
   addCollectionWorkflowTemplate(collectionId: String!, color: String!, language: String, templateId: String!): Collection!
   addObjectModelFromTemplate(collectionId: String!, color: String!, language: String, name: String!, templateId: String!): Collection!
+
+  """
+  Removes everything the account owns; with deleteAccount the account goes too
+  """
+  adminEraseUser(confirmEmail: String!, deleteAccount: Boolean!, userId: String!): AdminErasure!
+  adminSetUserBlocked(blocked: Boolean!, userId: String!): Boolean!
   assignWorkflowEntry(entryId: String!, input: WorkflowAssignmentInput!): Entry!
   cancelBackgroundJob(jobId: String!): BackgroundJob!
   cancelDataSourceRun(runId: String!): DataSourceRun!
@@ -1214,6 +1275,7 @@ type Mutation {
   saveCollectionView(collectionId: String!, input: SavedCollectionViewInput!, viewId: String): Collection!
   saveEntryReminder(entryId: String!, input: EntryReminderInput!, reminderId: String): EntryReminder!
   saveStockRule(collectionId: String!, input: StockRuleInput!, ruleId: String): Collection!
+  saveViewPreferences(input: ViewPreferencesInput!): User!
   sealStockHistory(collectionId: String!, productId: String!): LedgerIntegrity!
   setBookFormatRole(collectionId: String!, formatId: String!, role: String): Collection!
   setBookView(collectionId: String!, input: BookViewSettingsInput!): Collection!
@@ -1224,7 +1286,15 @@ type Mutation {
   setCollectionFormatWorkflow(collectionId: String!, formatId: String!, input: WorkflowDefinitionInput!): Collection!
   setCollectionTaskCompleted(collectionId: String!, done: Boolean!, entryId: String!, viewId: String!): Entry!
   setFieldSensitivity(collectionId: String!, expectedVersion: Int!, fieldId: String!, formatId: String!, level: SensitivityLevel!): Collection!
-  setFormatEntryRules(collectionId: String!, formatId: String!, parentFormatIds: [String!]!, singleEntry: Boolean!): Collection!
+  setFormatEntryRules(
+    collectionId: String!
+    formatId: String!
+
+    """Most entries (1 or more); empty = no limit unless singleEntry"""
+    maxEntries: Int
+    parentFormatIds: [String!]!
+    singleEntry: Boolean!
+  ): Collection!
   setFormatSensitivity(collectionId: String!, expectedVersion: Int!, formatId: String!, level: SensitivityLevel!): Collection!
   setMinimumAggregateSize(collectionId: String!, minimum: Int!): Collection!
   setOnboardingCompleted(completed: Boolean!): User!
@@ -1330,6 +1400,9 @@ type QuantityConversion {
 }
 
 type Query {
+  """True when the signed-in account may open the administration"""
+  adminAccess: Boolean!
+  adminOverview: AdminOverview!
   analyseCollection(collectionId: String!, input: AnalysisInput!): AnalysisResult!
   analysisOperations: [AnalysisOperationSpec!]!
   backgroundJob(jobId: String!): BackgroundJob!
@@ -1354,7 +1427,26 @@ type Query {
   collectionCalendarOccurrences(collectionId: String!, from: String!, to: String!, viewId: String!): [CalendarOccurrence!]!
   collectionDuplicateLinks(collectionId: String!, excludeEntryId: String, fieldId: String!, formatId: String!, url: String!): [Entry!]!
   collectionEntries(collectionId: String!): [Entry!]!
-  collectionEntriesPage(after: String, collectionId: String!, filters: [EntryFieldFilterInput!], first: Int! = 30, formatId: String, search: String, viewId: String): EntryPage!
+  collectionEntriesPage(
+    after: String
+
+    """
+    YYYY-MM-DD: jump to the page holding the entries created that day (or the nearest one)
+    """
+    atDate: String
+    collectionId: String!
+    filters: [EntryFieldFilterInput!]
+    first: Int! = 30
+    formatId: String
+
+    """
+    Jump to this position (a page number times the page size) instead of following a cursor
+    """
+    offset: Int
+    search: String
+    timeZone: String
+    viewId: String
+  ): EntryPage!
   collectionEntry(collectionId: String!, entryId: String!): Entry!
   collectionEntryAsOfDate(asOfDate: String!, entryId: String!): Entry!
   collectionEntryLinks(collectionId: String!, entryId: String!, includeDeleted: Boolean): [EntryLink!]!
@@ -1375,7 +1467,11 @@ type Query {
   collectionRelationImpact(collectionId: String!, entryId: String!, replacementId: String): RelationImpact!
   collectionRelationTotal(collectionId: String!, fieldName: String!, kind: RelationKind!, rootId: String!): RelationTotal!
   collectionRelations(collectionId: String!, entryId: String!): [EntryRelation!]!
-  collectionsList: [Collection!]!
+
+  """
+  My collections; with ids, only those (a live update reloads just what changed)
+  """
+  collectionsList(ids: [String!]): [Collection!]!
   contributionByReceipt(receipt: String!): RespondentContribution!
   contributionLinks(collectionId: String!): [ContributionLink!]!
   contributionSubmissions(collectionId: String!): [ContributionSubmission!]!
@@ -1392,6 +1488,9 @@ type Query {
   exportDomainPackage(collectionId: String!, input: DomainPackageExportInput!, language: String): DomainPackageExport!
   exportGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, includeSensitive: Boolean, kind: String!): String!
   forecastCollection(collectionId: String!, input: ForecastInput!): ForecastResult!
+
+  """Entries per data format, counted over all pages"""
+  formatEntryCounts(collectionId: String!): [FormatEntryCount!]!
   health: String!
   inferCollectionFormula(collectionId: String!, expression: String!, formatId: String!): FormulaStaticType!
   largeFileDownloadLink(entryId: String!, fieldId: String!): LargeFileLink!
@@ -1793,7 +1892,9 @@ input UpdateCollectionFieldInput {
   name: String!
   options: [String!]
   referenceMode: String
+  required: Boolean
   sensitivity: SensitivityLevel
+  showInList: Boolean
   targetObjectFormatId: String
   unit: String
   variableName: String
@@ -1822,6 +1923,19 @@ type User {
   onboardingCompleted: Boolean!
   profession: String
   profileCompleted: Boolean!
+  viewPreferences: ViewPreferences
+}
+
+type ViewPreferences {
+  lastCollectionId: String
+  pageSize: Int
+  views: [CollectionViewChoice!]!
+}
+
+input ViewPreferencesInput {
+  lastCollectionId: String
+  pageSize: Int
+  views: [CollectionViewChoiceInput!]!
 }
 
 input WorkflowAssignmentInput {

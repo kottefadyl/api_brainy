@@ -1,4 +1,4 @@
-import { Field, InputType, registerEnumType } from '@nestjs/graphql';
+import { Field, InputType, Int, registerEnumType } from '@nestjs/graphql';
 import { FieldKind, SensitivityLevel } from './collection.schema.js';
 import { WorkflowEventImportInput } from './workflow.schema.js';
 
@@ -73,6 +73,12 @@ export class CollectionFieldInput {
 
   @Field({ nullable: true })
   codeListId?: string;
+
+  @Field({ nullable: true })
+  required?: boolean;
+
+  @Field({ nullable: true })
+  showInList?: boolean;
 }
 
 @InputType()
@@ -108,6 +114,10 @@ export class CollectionFormatInput {
 
   @Field({ nullable: true })
   objectModel?: boolean;
+
+  /** Most entries this data format accepts (1 or more); empty = no limit. */
+  @Field(() => Int, { nullable: true })
+  maxEntries?: number;
 }
 
 @InputType()

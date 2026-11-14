@@ -1,6 +1,6 @@
 import { Args, Context, Mutation, Query, Resolver } from '@nestjs/graphql';
 import { AuthService } from './auth.service.js';
-import { AuthPayload, LoginInput, ProfileInput, RegisterInput } from './auth.types.js';
+import { AuthPayload, LoginInput, ProfileInput, RegisterInput, ViewPreferencesInput } from './auth.types.js';
 import { User } from './user.schema.js';
 
 type GraphqlRequest = { headers: { authorization?: string } };
@@ -57,5 +57,12 @@ export class AuthResolver {
   async setOnboardingCompleted(@Args('completed') completed: boolean, @Context('req') request: GraphqlRequest): Promise<User> {
     const user = await this.auth.currentUser(request.headers.authorization);
     return this.auth.setOnboardingCompleted(user.id, completed);
+  }
+
+  /** Where the person left Brainy, so every device reopens the same way. */
+  @Mutation(() => User)
+  async saveViewPreferences(@Args('input') input: ViewPreferencesInput, @Context('req') request: GraphqlRequest): Promise<User> {
+    const user = await this.auth.currentUser(request.headers.authorization);
+    return this.auth.saveViewPreferences(user.id, input);
   }
 }
