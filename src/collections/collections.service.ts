@@ -23,6 +23,7 @@ import { isFrozen, maxEntryAttachmentBytes } from '../platform.js';
 import { isMediaFile, MEDIA_REFUSED } from '../media-guard.js';
 import { CodeListStore } from './code-list-store.service.js';
 import { durationValue, isDurationUnit, parseDuration } from './duration.js';
+import { usedChoices } from './format-choices.js';
 import { assertRequiredFields, assertRoomForEntries, validatedMaxEntries } from './format-entry-rules.js';
 import { assertTaskPlannerView } from './task-planner.rules.js';
 import { PersonFieldService, parsePersonIds } from '../collaborators/person-field.service.js';
@@ -503,8 +504,15 @@ export class CollectionsService {
       const replacement = next.get(field.id);
       const isNumberToMeasure = field.kind === FieldKind.NUMBER && replacement?.kind === FieldKind.MEASURE;
       const isAllowedKind = replacement && (replacement.kind === field.kind || isNumberToMeasure);
-      if (impact.populatedFieldIds.includes(field.id) && (!isAllowedKind || (field.kind !== FieldKind.DURATION && (replacement.unit ?? '') !== (field.unit ?? '')) || (replacement.targetObjectFormatId ?? '') !== (field.targetObjectFormatId ?? '') || (replacement.codeListId ?? '') !== (field.codeListId ?? '') || (replacement.multiple ?? false) !== (field.multiple ?? false) || (replacement.referenceMode ?? '') !== (field.referenceMode ?? '') || (field.options ?? []).some((option) => !replacement.options?.includes(option)))) {
+      if (impact.populatedFieldIds.includes(field.id) && (!isAllowedKind || (field.kind !== FieldKind.DURATION && (replacement.unit ?? '') !== (field.unit ?? '')) || (replacement.targetObjectFormatId ?? '') !== (field.targetObjectFormatId ?? '') || (replacement.codeListId ?? '') !== (field.codeListId ?? '') || (replacement.multiple ?? false) !== (field.multiple ?? false) || (replacement.referenceMode ?? '') !== (field.referenceMode ?? ''))) {
         throw new BadRequestException(`Field ${field.name} has saved values. Keep its type, unit and existing choices, or migrate entries first`);
+      }
+      // Choices: adding is always fine; renaming or removing one is refused only when entries use it.
+      const removed = (field.options ?? []).filter((option) => !replacement?.options?.includes(option));
+      if (impact.populatedFieldIds.includes(field.id) && removed.length) {
+        const used = await usedChoices(this.entries, id, formatId, field.id);
+        const kept = removed.filter((option) => used.has(option));
+        if (kept.length) throw new BadRequestException(`Field ${field.name} has saved values using the choice ${kept.map((option) => `"${option}"`).join(', ')}. Keep that choice, or change those entries first`);
       }
     }
     const filter = { _id: id, formats: { $elemMatch: { id: formatId, version: version === 1 ? { $in: [null, 1] } : version } } };
