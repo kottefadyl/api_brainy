@@ -96,6 +96,11 @@ export class CollectionField {
   @Field({ nullable: true })
   @Prop()
   showInList?: boolean;
+
+  /** T56: face of a flash card the field is shown on (FRONT or BACK); used by Flash cards collections. */
+  @Field({ nullable: true })
+  @Prop()
+  face?: string;
 }
 
 export const CollectionFieldSchema = SchemaFactory.createForClass(CollectionField);
@@ -146,6 +151,8 @@ export class CollectionFormat {
   appendOnly?: boolean;
 
   @Field({ nullable: true }) @Prop() copiedFromFormatId?: string;
+  /** T56: language read aloud on this data format's flash cards (BCP 47, e.g. en-GB, fr-FR, es-ES). */
+  @Field({ nullable: true }) @Prop() speechLanguage?: string;
   @Field(() => LinkedFormatSource, { nullable: true }) @Prop({ type: LinkedFormatSourceSchema }) linkedSource?: LinkedFormatSource;
   @Field(() => WorkflowDefinition, { nullable: true }) @Prop({ type: WorkflowDefinitionSchema }) workflow?: WorkflowDefinition;
   /** T47: at most one entry may use this data format. */

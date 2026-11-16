@@ -196,6 +196,47 @@ type CalendarOccurrence {
   timeZone: String!
 }
 
+type CardDeckSummary {
+  due: Int!
+  formatId: String!
+
+  """Cards never reviewed by this person."""
+  fresh: Int!
+  total: Int!
+}
+
+enum CardGrade {
+  AGAIN
+  EASY
+  GOOD
+  HARD
+}
+
+type CardGradePreview {
+  again: Int!
+  easy: Int!
+  good: Int!
+  hard: Int!
+}
+
+enum CardReviewOrder {
+  DUE
+  NEWEST
+  OLDEST
+  RANDOM
+}
+
+type CardReviewState {
+  due: DateTime!
+  ease: Float!
+  entryId: String!
+  intervalDays: Int!
+  lapses: Int!
+  lastGrade: String
+  lastReviewedAt: DateTime
+  reps: Int!
+}
+
 type ClassificationCode {
   active: Boolean!
   code: String!
@@ -321,6 +362,7 @@ input CollectionExchangeRateInput {
 
 type CollectionField {
   codeListId: String
+  face: String
   id: String!
   kind: FieldKind!
   multiple: Boolean
@@ -338,6 +380,7 @@ type CollectionField {
 
 input CollectionFieldInput {
   codeListId: String
+  face: String
   kind: FieldKind!
   multiple: Boolean
   name: String!
@@ -364,6 +407,7 @@ type CollectionFormat {
   parentFormatIds: [String!]
   sensitivity: SensitivityLevel
   singleEntry: Boolean
+  speechLanguage: String
   version: Float
   workflow: WorkflowDefinition
 }
@@ -1269,6 +1313,9 @@ type Mutation {
   endCollaboration(userId: String!): Boolean!
   eraseContribution(id: String!): Boolean!
   eraseContributionByReceipt(receipt: String!): Boolean!
+
+  """Records my answer to a card and schedules when it comes back."""
+  gradeCard(collectionId: String!, entryId: String!, grade: CardGrade!): CardReviewState!
   importCollectionRelations(collectionId: String!, importKey: String!, rows: [ImportedRelationInput!]!): Boolean!
   importEntriesBatch(collectionId: String!, input: ImportEntriesInput!): ImportEntriesResult!
   importGeoPoints(collectionId: String!, fieldId: String!, formatId: String!, importKey: String!, kind: String!, text: String!): GeoImportResult!
@@ -1294,6 +1341,9 @@ type Mutation {
   removeCollectionMember(collectionId: String!, memberUserId: String!): Collection!
   removeCollectionRelation(collectionId: String!, relationId: String!): Boolean!
   renameCollection(id: String!, name: String!): Collection!
+
+  """Forgets my review history in this collection; the cards stay."""
+  resetCardReviews(collectionId: String!): Boolean!
   restoreWorkspaceBackup(archive: String!, dryRun: Boolean!): WorkspaceBackupPreview!
   resumeBackgroundJob(jobId: String!): BackgroundJob!
   resumeDataSourceRun(runId: String!): DataSourceRun!
@@ -1313,6 +1363,7 @@ type Mutation {
   sealStockHistory(collectionId: String!, productId: String!): LedgerIntegrity!
   setBookFormatRole(collectionId: String!, formatId: String!, role: String): Collection!
   setBookView(collectionId: String!, input: BookViewSettingsInput!): Collection!
+  setCardSpeechLanguage(collectionId: String!, formatId: String!, language: String): Collection!
 
   """
   Turns calculations and statistics on or off for a collection (owner only).
@@ -1452,6 +1503,10 @@ type Query {
   backgroundJob(jobId: String!): BackgroundJob!
   backgroundJobs(collectionId: String!): [BackgroundJob!]!
   calculateCollectionFormula(collectionId: String!, entryId: String!, formulaId: String!): FormulaResult!
+
+  """Per data format: cards, cards due now and cards never reviewed by me."""
+  cardDecks(collectionId: String!): [CardDeckSummary!]!
+  cardReviewSession(collectionId: String!, count: Int!, formatId: String!, order: CardReviewOrder!): [ReviewCard!]!
   classificationCodePaths(collectionId: String!, language: String, listId: String!): [ClassificationCodePath!]!
 
   """Codes by value, to label the codes already saved in entries"""
@@ -1650,6 +1705,12 @@ type RespondentContribution {
   respondentEmail: String
   status: String!
   values: [EntryValue!]!
+}
+
+type ReviewCard {
+  entry: Entry!
+  preview: CardGradePreview!
+  state: CardReviewState
 }
 
 input SaveEntryInput {
@@ -1936,6 +1997,7 @@ input UnitSnapshotInput {
 
 input UpdateCollectionFieldInput {
   codeListId: String
+  face: String
   id: String
   kind: FieldKind!
   multiple: Boolean

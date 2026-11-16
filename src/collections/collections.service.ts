@@ -273,6 +273,7 @@ export class CollectionsService {
       if (unit && ((unit.startsWith('local:') ? unit.length > 70 : unit.length > 24) || /[\x00-\x1f\x7f]/.test(unit))) {
         throw new BadRequestException('Unit must be at most 24 characters on one line');
       }
+      if (field.face && field.face !== 'FRONT' && field.face !== 'BACK') throw new BadRequestException('Choose the front or the back of the card');
       const rawOptions = field.options ?? [];
       const choice = field.kind === FieldKind.SELECT || field.kind === FieldKind.MULTI_SELECT;
       if (!choice && rawOptions.length) throw new BadRequestException('Only choice fields can have options');
@@ -298,7 +299,7 @@ export class CollectionsService {
       if (requestedId && (!existingIds?.has(requestedId) || ids.has(requestedId))) throw new BadRequestException('Invalid or repeated field ID');
       const id = requestedId || randomUUID();
       ids.add(id);
-      return { id, name: fieldName, kind: field.kind, sensitivity: field.sensitivity ?? ([FieldKind.POSITION, FieldKind.ZONE].includes(field.kind) ? SensitivityLevel.SENSITIVE : SensitivityLevel.ORDINARY), ...(unit ? { unit } : {}), ...(choice ? { options } : {}), ...(reference ? { targetObjectFormatId, multiple: field.multiple ?? false, variableName, referenceMode } : {}), ...(codeListId ? { codeListId } : {}), ...(field.required ? { required: true } : {}), ...(field.showInList ? { showInList: true } : {}) };
+      return { id, name: fieldName, kind: field.kind, sensitivity: field.sensitivity ?? ([FieldKind.POSITION, FieldKind.ZONE].includes(field.kind) ? SensitivityLevel.SENSITIVE : SensitivityLevel.ORDINARY), ...(unit ? { unit } : {}), ...(choice ? { options } : {}), ...(reference ? { targetObjectFormatId, multiple: field.multiple ?? false, variableName, referenceMode } : {}), ...(codeListId ? { codeListId } : {}), ...(field.required ? { required: true } : {}), ...(field.showInList ? { showInList: true } : {}), ...(field.face ? { face: field.face } : {}) };
     });
   }
 

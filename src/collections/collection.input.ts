@@ -79,6 +79,10 @@ export class CollectionFieldInput {
 
   @Field({ nullable: true })
   showInList?: boolean;
+
+  /** T56: FRONT or BACK face of a flash card. */
+  @Field({ nullable: true })
+  face?: string;
 }
 
 @InputType()

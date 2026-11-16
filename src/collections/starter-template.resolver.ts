@@ -21,7 +21,7 @@ class StarterTemplate {
 }
 
 type Request = { headers: { authorization?: string } };
-type TemplateField = { name: string; kind: FieldKind; options?: string[]; unit?: string };
+type TemplateField = { name: string; kind: FieldKind; options?: string[]; unit?: string; face?: 'FRONT' | 'BACK' };
 type TemplateFormat = { name: string; color: string; fields: TemplateField[]; objectModel?: boolean; sensitivity?: SensitivityLevel };
 type TemplateDefinition = { id: string; name: string; description: string; formats: TemplateFormat[]; layout?: 'TASKS' | 'CALENDAR' };
 
@@ -31,6 +31,17 @@ function templates(language: string): TemplateDefinition[] {
     { id: 'blank', name: fr ? 'Partir de zéro' : 'Start from scratch', description: fr ? 'Une collection et un format de données simple à modifier.' : 'One simple, editable data format.', formats: [{ name: fr ? 'Général' : 'General', color: '#EEF5FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }] }] },
     { id: 'kt_personal', name: 'KT personal', description: fr ? 'Ventes d’eau : notez le montant de chaque journée et suivez le total de la semaine, du mois et de l’année.' : 'Water sales: note each day’s amount and follow the week, month and year totals.', formats: [{ name: fr ? 'Bilan du jour' : 'Daily sales', color: '#EAF8FA', fields: [{ name: 'Date', kind: FieldKind.DATE }, { name: fr ? 'Montant' : 'Amount', kind: FieldKind.NUMBER, unit: 'FCFA' }] }] },
     { id: 'notes', name: fr ? 'Notes et écriture' : 'Notes and writing', description: fr ? 'Des notes longues, datées et faciles à rechercher.' : 'Dated, searchable long-form notes.', formats: [{ name: fr ? 'Note' : 'Note', color: '#EEF5FF', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Contenu' : 'Content', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Date' : 'Date', kind: FieldKind.DATE }] }] },
+    { id: 'cards', name: fr ? 'Cartes à deux faces' : 'Two-sided cards', description: fr ? 'Mots, définitions, notions : un recto, un verso, puis des révisions qui reviennent au bon moment.' : 'Words, definitions, concepts: a front, a back, then reviews that come back at the right time.', formats: [
+      { name: fr ? 'Carte' : 'Card', color: '#F4F0FF', fields: [
+        { name: fr ? 'Mot ou expression' : 'Word or expression', kind: FieldKind.TITLE, face: 'FRONT' },
+        { name: fr ? 'Image (lien)' : 'Picture (link)', kind: FieldKind.LINK, face: 'FRONT' },
+        { name: fr ? 'Registre' : 'Formality', kind: FieldKind.SELECT, options: fr ? ['Courant', 'Soutenu', 'Familier'] : ['Neutral', 'Formal', 'Informal'], face: 'FRONT' },
+        { name: fr ? 'Définition' : 'Definition', kind: FieldKind.LONG_TEXT, face: 'BACK' },
+        { name: fr ? 'Exemple' : 'Example', kind: FieldKind.TEXT, face: 'BACK' },
+        { name: fr ? 'Contexte' : 'Context', kind: FieldKind.TEXT, face: 'BACK' },
+        { name: fr ? 'Son (lien)' : 'Audio (link)', kind: FieldKind.LINK, face: 'BACK' },
+      ] },
+    ] },
     { id: 'links', name: fr ? 'Liens conservés' : 'Saved links', description: fr ? 'URL, commentaire, catégorie et date de sauvegarde.' : 'URL, comment, category and saved date.', formats: [{ name: fr ? 'Lien' : 'Link', color: '#EDF9F3', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: 'URL', kind: FieldKind.LINK }, { name: fr ? 'Commentaire' : 'Comment', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Catégorie' : 'Category', kind: FieldKind.TEXT }, { name: fr ? 'Enregistré le' : 'Saved on', kind: FieldKind.DATE }] }] },
     { id: 'capture', name: fr ? 'Captures rapides' : 'Quick captures', description: fr ? 'Liens, textes et fichiers avec une note de contexte.' : 'Links, text and files with a context note.', formats: [{ name: fr ? 'Capture' : 'Capture', color: '#EAF8FA', fields: [{ name: fr ? 'Titre' : 'Title', kind: FieldKind.TITLE }, { name: fr ? 'Lien' : 'Link', kind: FieldKind.LINK }, { name: fr ? 'Texte' : 'Text', kind: FieldKind.TEXT }, { name: fr ? 'Note' : 'Note', kind: FieldKind.LONG_TEXT }, { name: fr ? 'Source' : 'Source', kind: FieldKind.TEXT }, { name: fr ? 'Pièce jointe' : 'Attachment', kind: FieldKind.ATTACHMENT }] }] },
     { id: 'tasks', name: fr ? 'Liste de tâches' : 'Task list', description: fr ? 'Tâches uniques ou qui reviennent, avec une vue du jour et un calendrier.' : 'One-off or repeating tasks, with a day view and a calendar.', formats: [{ name: fr ? 'Tâche' : 'Task', color: '#FFF5EB', fields: taskTemplateFields(fr) }], layout: 'TASKS' },

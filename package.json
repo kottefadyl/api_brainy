@@ -35,6 +35,7 @@
     "smoke:entry-navigation": "node --env-file-if-exists=.env scripts/entry-navigation-smoke.mjs",
     "smoke:calculations": "node --env-file-if-exists=.env scripts/calculations-smoke.mjs",
     "smoke:format-choices": "node --env-file-if-exists=.env scripts/format-choices-smoke.mjs",
+    "smoke:flash-cards": "node --env-file-if-exists=.env scripts/flash-cards-smoke.mjs",
     "smoke:admin": "node --env-file-if-exists=.env scripts/admin-smoke.mjs"
   },
   "dependencies": {
