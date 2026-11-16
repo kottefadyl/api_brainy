@@ -1305,6 +1305,11 @@ type Mutation {
   setCollectionFormatObjectModel(collectionId: String!, enabled: Boolean!, expectedEntryCount: Int, expectedVersion: Int!, formatId: String!): Collection!
   setCollectionFormatWorkflow(collectionId: String!, formatId: String!, input: WorkflowDefinitionInput!): Collection!
   setCollectionTaskCompleted(collectionId: String!, done: Boolean!, entryId: String!, viewId: String!): Entry!
+
+  """
+  Checks or unchecks one checkbox (yes/no) field of an entry; owner or read-and-write collaborator.
+  """
+  setEntryCheckbox(checked: Boolean!, entryId: String!, expectedUpdatedAt: String, fieldId: String!): Entry!
   setFieldSensitivity(collectionId: String!, expectedVersion: Int!, fieldId: String!, formatId: String!, level: SensitivityLevel!): Collection!
   setFormatEntryRules(
     collectionId: String!

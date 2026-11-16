@@ -79,7 +79,7 @@ try {
   assert.equal(data(await call(counts, {}, awa.token)).collectionsList.find((item) => item.id === house.id).memberCount, 2);
   assert.equal(data(await call(counts, {}, bruno.token)).collectionsList.find((item) => item.id === house.id).memberCount, null);
   // A write collaborator saving a link: the duplicate check works in a shared collection.
-  const links = data(await call('mutation($i:CreateCollectionInput!){createCollection(input:$i){id formats{id fields{id}}}}', { i: { name: 'Liens', formats: [{ name: 'Lien', color: '#EEF5FF', fields: [{ name: 'URL', kind: 'LINK' }] }] } }, awa.token)).createCollection;
+  const links = data(await call('mutation($i:CreateCollectionInput!){createCollection(input:$i){id formats{id fields{id}}}}', { i: { name: 'Liens', formats: [{ name: 'Lien', color: '#EEF5FF', fields: [{ name: 'URL', kind: 'LINK' }, { name: 'Lu', kind: 'BOOLEAN' }] }] } }, awa.token)).createCollection;
   const link = { formatId: links.formats[0].id, values: [{ fieldId: links.formats[0].fields[0].id, value: 'https://example.com/' }] };
   data(await call(share, { c: links.id, u: bruno.user.id, r: 'EDITOR' }, awa.token));
   data(await call(entry, { c: links.id, i: link }, awa.token));
@@ -87,6 +87,17 @@ try {
   assert.equal(data(await call(duplicates, { c: links.id, f: link.formatId, d: link.values[0].fieldId, u: 'https://example.com' }, bruno.token)).collectionDuplicateLinks.length, 1);
   data(await call(entry, { c: links.id, i: link }, bruno.token));
   denied(await call(duplicates, { c: links.id, f: link.formatId, d: link.values[0].fieldId, u: 'https://example.com' }, chloe.token), /not found/i);
+  // One-click checkbox from the entry list: only that field changes, the change is kept in the history.
+  const checkbox = 'mutation($e:String!,$f:String!,$v:Boolean!,$x:String){setEntryCheckbox(entryId:$e,fieldId:$f,checked:$v,expectedUpdatedAt:$x){id updatedAt values{fieldId value} updatedBy{name}}}';
+  const read = links.formats[0].fields[1].id;
+  const ticked = data(await call(entry.replace('{id}', '{id updatedAt}'), { c: links.id, i: link }, awa.token)).createEntry;
+  const checked = data(await call(checkbox, { e: ticked.id, f: read, v: true, x: ticked.updatedAt }, bruno.token)).setEntryCheckbox;
+  assert.deepEqual(checked.values.map((value) => [value.fieldId, value.value]), [[link.values[0].fieldId, 'https://example.com/'], [read, 'true']]);
+  assert.equal(checked.updatedBy.name, 'Bruno');
+  denied(await call(checkbox, { e: ticked.id, f: read, v: false, x: ticked.updatedAt }, awa.token), /changed elsewhere/);
+  assert.equal(data(await call(checkbox, { e: ticked.id, f: read, v: false }, awa.token)).setEntryCheckbox.values[1].value, 'false');
+  denied(await call(checkbox, { e: ticked.id, f: link.values[0].fieldId, v: true }, awa.token), /Checkbox field not found/);
+  denied(await call(checkbox, { e: ticked.id, f: read, v: true }, chloe.token), /not found|denied/i);
   // T52/2: the owner manages saved views; a collaborator sees and uses them but cannot change them.
   const saveView = 'mutation($id:String!,$input:SavedCollectionViewInput!){saveCollectionView(collectionId:$id,input:$input){id savedViews{id name}}}';
   const viewInput = { name: 'Toutes', layout: 'LIST', formatIds: [format.id], columnFieldIds: [format.fields[0].id], sort: 'NEWEST', groupByFormat: false };

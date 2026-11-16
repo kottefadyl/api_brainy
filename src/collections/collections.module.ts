@@ -17,6 +17,8 @@ import { AnalysisService } from './analysis.service.js';
 import { EntryLink, EntryLinkSchema } from './entry-link.schema.js';
 import { EntryLinkResolver } from './entry-link.resolver.js';
 import { EntryLinkService } from './entry-link.service.js';
+import { EntryCheckboxResolver } from './entry-checkbox.resolver.js';
+import { EntryCheckboxService } from './entry-checkbox.service.js';
 import { StarterTemplateResolver } from './starter-template.resolver.js';
 import { BookResolver } from './book.resolver.js';
 import { LinkPreviewResolver } from './link-preview.resolver.js';
@@ -106,7 +108,7 @@ import { ReminderCronController } from './reminder-cron.controller.js';
     ]),
   ],
   controllers: [ReminderCronController],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, CodeListStore, CodeListStoreResolver, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, BookResolver, LinkPreviewResolver, LinkPreviewService, TaskPlannerResolver, TaskPlannerService, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver, LinksTemplateMigration, LegacyBookMigration],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, EntryCheckboxResolver, EntryCheckboxService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, CodeListStore, CodeListStoreResolver, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, BookResolver, LinkPreviewResolver, LinkPreviewService, TaskPlannerResolver, TaskPlannerService, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver, LinksTemplateMigration, LegacyBookMigration],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}
