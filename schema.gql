@@ -276,6 +276,7 @@ type Collaborator {
 type Collection {
   allowNegativeStock: Boolean!
   bookView: BookViewSettings
+  calculations: Boolean
   codeLists: [ClassificationList!]!
   exchangeRates: [CollectionExchangeRate!]!
   fields: [CollectionField!]!
@@ -506,6 +507,7 @@ type ContributionSubmission {
 }
 
 input CreateCollectionInput {
+  calculations: Boolean
   codeLists: [InitialCodeListInput!]
   exchangeRates: [CollectionExchangeRateInput!]
   fields: [CollectionFieldInput!]
@@ -1236,7 +1238,14 @@ type Mutation {
   correctLedgerEntry(input: SaveEntryInput!, originalId: String!): Entry!
   createCollection(input: CreateCollectionInput!): Collection!
   createCollectionEntryLink(collectionId: String!, fromEntryId: String!, label: String, toEntryId: String!): EntryLink!
-  createCollectionFromTemplate(language: String, name: String!, templateId: String!, timeZone: String): Collection!
+  createCollectionFromTemplate(
+    """Calculations and statistics; the template decides when not given"""
+    calculations: Boolean
+    language: String
+    name: String!
+    templateId: String!
+    timeZone: String
+  ): Collection!
   createCollectionRelation(collectionId: String!, fromEntryId: String!, kind: RelationKind!, label: String, quantity: String, snapshotFieldId: String, toEntryId: String!, unit: String): EntryRelation!
   createContributionLink(collectionId: String!, input: CreateContributionLinkInput!): CreatedContributionLink!
   createDataSource(collectionId: String!, input: DataSourceInput!): DataSource!
@@ -1304,6 +1313,11 @@ type Mutation {
   sealStockHistory(collectionId: String!, productId: String!): LedgerIntegrity!
   setBookFormatRole(collectionId: String!, formatId: String!, role: String): Collection!
   setBookView(collectionId: String!, input: BookViewSettingsInput!): Collection!
+
+  """
+  Turns calculations and statistics on or off for a collection (owner only).
+  """
+  setCollectionCalculations(collectionId: String!, enabled: Boolean!): Collection!
   setCollectionEntryLinkActive(active: Boolean!, collectionId: String!, linkId: String!): EntryLink!
   setCollectionEntryRecurrence(collectionId: String!, entryId: String!, input: EntryRecurrenceInput, viewId: String!): Entry!
   setCollectionFormatColor(collectionId: String!, color: String!, formatId: String!): Collection!
@@ -1723,6 +1737,7 @@ input StartLargeFileUploadInput {
 }
 
 type StarterTemplate {
+  calculations: Boolean!
   description: String!
   id: String!
   name: String!

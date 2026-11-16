@@ -384,7 +384,7 @@ export class CollectionsService {
       if (Number.isNaN(effectiveAt.getTime()) || !/^\d{4}-\d{2}-\d{2}T/.test(rate.effectiveAt)) throw new BadRequestException('Use a valid exchange rate date');
       return { id: randomUUID(), from: rate.from, to: rate.to, rate: rate.rate, effectiveAt };
     });
-    return this.collections.create({ name, fields: formats[0].fields, formats, codeLists, units, exchangeRates, ownerId });
+    return this.collections.create({ name, fields: formats[0].fields, formats, codeLists, units, exchangeRates, ownerId, calculations: input.calculations ?? false });
   }
 
   async addFormat(id: string, input: CollectionFormatInput, ownerId: string): Promise<Collection> {

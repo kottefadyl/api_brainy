@@ -152,6 +152,10 @@ export class CreateCollectionInput {
   @Field(() => [InitialCodeListInput], { nullable: true })
   codeLists?: InitialCodeListInput[];
 
+  /** Calculations and statistics for this collection; off when not given (a new collection starts simple). */
+  @Field({ nullable: true })
+  calculations?: boolean;
+
   @Field(() => [CollectionUnitInput], { nullable: true })
   units?: CollectionUnitInput[];
 

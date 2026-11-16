@@ -334,6 +334,8 @@ const CollectionPeriodTotalsSchema = SchemaFactory.createForClass(CollectionPeri
 export class Collection {
   /** T47: provenance only (starter template id); never a permanent collection type. */
   @Field({ nullable: true }) @Prop() templateId?: string;
+  /** Calculations and statistics shown for this collection (insights, formulas, charts, totals, stock, measures). */
+  @Field({ nullable: true }) @Prop() calculations?: boolean;
   @Field(() => BookViewSettings, { nullable: true }) @Prop({ type: BookViewSettingsSchema }) bookView?: BookViewSettings;
   /** T49: Day and Calendar task views (Task list template only). */
   @Field(() => TaskPlanner, { nullable: true }) @Prop({ type: TaskPlannerSchema }) taskPlanner?: TaskPlanner;

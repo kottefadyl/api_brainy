@@ -1,3 +1,4 @@
+import { calculationsByDefault } from './collection-calculations.js';
 import { BadRequestException } from '@nestjs/common';
 import { Args, Context, Field, Mutation, ObjectType, Query, Resolver } from '@nestjs/graphql';
 import { InjectModel } from '@nestjs/mongoose';
@@ -15,6 +16,8 @@ class StarterTemplate {
   @Field() id!: string;
   @Field() name!: string;
   @Field() description!: string;
+  /** Whether a collection made from this template starts with calculations and statistics. */
+  @Field() calculations!: boolean;
 }
 
 type Request = { headers: { authorization?: string } };
@@ -70,17 +73,17 @@ export class StarterTemplateResolver {
 
   @Query(() => [StarterTemplate])
   starterTemplates(@Args('language', { type: () => String, nullable: true }) language?: string): StarterTemplate[] {
-    return templates(language ?? 'en').map(({ id, name, description }) => ({ id, name, description }));
+    return templates(language ?? 'en').map(({ id, name, description }) => ({ id, name, description, calculations: calculationsByDefault(id) }));
   }
 
   @Mutation(() => Collection)
-  async createCollectionFromTemplate(@Args('templateId') templateId: string, @Args('name') name: string, @Args('language', { type: () => String, nullable: true }) language: string | undefined, @Args('timeZone', { type: () => String, nullable: true }) timeZone: string | undefined, @Context('req') request: Request): Promise<Collection> {
+  async createCollectionFromTemplate(@Args('templateId') templateId: string, @Args('name') name: string, @Args('language', { type: () => String, nullable: true }) language: string | undefined, @Args('timeZone', { type: () => String, nullable: true }) timeZone: string | undefined, @Context('req') request: Request, @Args('calculations', { type: () => Boolean, nullable: true, description: 'Calculations and statistics; the template decides when not given' }) calculations?: boolean): Promise<Collection> {
     const ownerId = (await this.auth.currentUser(request.headers.authorization)).id;
     const template = templates(language ?? 'en').find((item) => item.id === templateId);
     if (!template) throw new BadRequestException('Unknown template');
     let collection = await this.collections.create({ name, formats: template.formats }, ownerId);
     // T47/T48: keep the starting template as provenance only (never a permanent collection type).
-    collection = (await this.collectionModel.findOneAndUpdate({ _id: collection.id, ownerId }, { $set: { templateId: template.id } }, { returnDocument: 'after' }).exec())!;
+    collection = (await this.collectionModel.findOneAndUpdate({ _id: collection.id, ownerId }, { $set: { templateId: template.id, calculations: calculations ?? calculationsByDefault(template.id) } }, { returnDocument: 'after' }).exec())!;
     const format = collection.formats[0];
     const byKind = (kind: FieldKind) => format.fields.find((field) => field.kind === kind)?.id;
     if (template.layout === 'TASKS') {
