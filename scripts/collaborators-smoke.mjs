@@ -68,6 +68,25 @@ try {
   // Read and write: entries only.
   data(await call(share, { c: house.id, u: bruno.user.id, r: 'EDITOR' }, awa.token));
   const written = data(await call(entry, { c: house.id, i: values }, bruno.token)).createEntry.id;
+  // The owner sees who has access, paged and searchable; a member never does.
+  const members = 'query($c:String!,$s:String,$o:Int,$l:Int){collectionMembers(collectionId:$c,search:$s,offset:$o,limit:$l){total offset items{userId name role hasPhoto}}}';
+  assert.deepEqual(data(await call(members, { c: house.id }, awa.token)).collectionMembers.items.map((item) => [item.name, item.role]), [['Bruno', 'EDITOR'], ['Dan', 'READER']]);
+  assert.deepEqual(data(await call(members, { c: house.id, s: 'da' }, awa.token)).collectionMembers.total, 1);
+  assert.deepEqual(data(await call(members, { c: house.id, o: 1, l: 1 }, awa.token)).collectionMembers, { total: 2, offset: 1, items: [{ userId: dan.user.id, name: 'Dan', role: 'READER', hasPhoto: false }] });
+  denied(await call(members, { c: house.id }, bruno.token), /not found/i);
+  denied(await call(members, { c: house.id, l: 1000 }, awa.token), /Invalid page/);
+  const counts = 'query{collectionsList{id memberCount}}';
+  assert.equal(data(await call(counts, {}, awa.token)).collectionsList.find((item) => item.id === house.id).memberCount, 2);
+  assert.equal(data(await call(counts, {}, bruno.token)).collectionsList.find((item) => item.id === house.id).memberCount, null);
+  // A write collaborator saving a link: the duplicate check works in a shared collection.
+  const links = data(await call('mutation($i:CreateCollectionInput!){createCollection(input:$i){id formats{id fields{id}}}}', { i: { name: 'Liens', formats: [{ name: 'Lien', color: '#EEF5FF', fields: [{ name: 'URL', kind: 'LINK' }] }] } }, awa.token)).createCollection;
+  const link = { formatId: links.formats[0].id, values: [{ fieldId: links.formats[0].fields[0].id, value: 'https://example.com/' }] };
+  data(await call(share, { c: links.id, u: bruno.user.id, r: 'EDITOR' }, awa.token));
+  data(await call(entry, { c: links.id, i: link }, awa.token));
+  const duplicates = 'query($c:String!,$f:String!,$d:String!,$u:String!){collectionDuplicateLinks(collectionId:$c,formatId:$f,fieldId:$d,url:$u){id}}';
+  assert.equal(data(await call(duplicates, { c: links.id, f: link.formatId, d: link.values[0].fieldId, u: 'https://example.com' }, bruno.token)).collectionDuplicateLinks.length, 1);
+  data(await call(entry, { c: links.id, i: link }, bruno.token));
+  denied(await call(duplicates, { c: links.id, f: link.formatId, d: link.values[0].fieldId, u: 'https://example.com' }, chloe.token), /not found/i);
   // T52/2: the owner manages saved views; a collaborator sees and uses them but cannot change them.
   const saveView = 'mutation($id:String!,$input:SavedCollectionViewInput!){saveCollectionView(collectionId:$id,input:$input){id savedViews{id name}}}';
   const viewInput = { name: 'Toutes', layout: 'LIST', formatIds: [format.id], columnFieldIds: [format.fields[0].id], sort: 'NEWEST', groupByFormat: false };

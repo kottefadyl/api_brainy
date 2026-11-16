@@ -2,28 +2,40 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Collection, FieldKind } from './collection.schema.js';
+import { CollectionRole } from './collaboration.schema.js';
+import { CollaborationService } from './collaboration.service.js';
 import { Entry } from './entry.schema.js';
 import { EntryLink } from './entry-link.schema.js';
 
 @Injectable()
 export class EntryLinkService {
-  constructor(@InjectModel(Collection.name) private readonly collections: Model<Collection>, @InjectModel(Entry.name) private readonly entries: Model<Entry>, @InjectModel(EntryLink.name) private readonly links: Model<EntryLink>) {}
+  constructor(@InjectModel(Collection.name) private readonly collections: Model<Collection>, @InjectModel(Entry.name) private readonly entries: Model<Entry>, @InjectModel(EntryLink.name) private readonly links: Model<EntryLink>, private readonly collaboration: CollaborationService) {}
 
-  private async context(collectionId: string, ownerId: string, fromEntryId: string, toEntryId?: string): Promise<void> {
-    if (![collectionId, fromEntryId, ...(toEntryId ? [toEntryId] : [])].every((value) => Types.ObjectId.isValid(value))) throw new NotFoundException('Entry not found');
-    if (!await this.collections.exists({ _id: collectionId, ownerId })) throw new NotFoundException('Collection not found');
-    const ids = [fromEntryId, ...(toEntryId ? [toEntryId] : [])];
-    if (await this.entries.countDocuments({ _id: { $in: ids }, collectionId, ownerId, movingOperationId: null }) !== ids.length) throw new NotFoundException('Entry not found');
+  /** The collection as seen by `userId` (owner or member with at least `role`); links and entries are stored under the owner. */
+  private async access(collectionId: string, userId: string, role: CollectionRole): Promise<{ collection: Collection; ownerId: string; member?: ReturnType<CollaborationService['checkAccess']>['member'] }> {
+    if (!Types.ObjectId.isValid(collectionId)) throw new NotFoundException('Collection not found');
+    const collection = await this.collections.findOne({ _id: collectionId, $or: [{ ownerId: userId }, { 'members.userId': userId }] }).exec();
+    if (!collection) throw new NotFoundException('Collection not found');
+    const { member } = this.collaboration.checkAccess(collection, userId, role);
+    return { collection, ownerId: collection.ownerId, member };
   }
 
-  async list(collectionId: string, ownerId: string, entryId: string, includeDeleted = false): Promise<EntryLink[]> {
-    await this.context(collectionId, ownerId, entryId);
+  private async context(collectionId: string, userId: string, fromEntryId: string, toEntryId?: string, role = CollectionRole.READER): Promise<string> {
+    if (![collectionId, fromEntryId, ...(toEntryId ? [toEntryId] : [])].every((value) => Types.ObjectId.isValid(value))) throw new NotFoundException('Entry not found');
+    const { ownerId } = await this.access(collectionId, userId, role);
+    const ids = [fromEntryId, ...(toEntryId ? [toEntryId] : [])];
+    if (await this.entries.countDocuments({ _id: { $in: ids }, collectionId, ownerId, movingOperationId: null }) !== ids.length) throw new NotFoundException('Entry not found');
+    return ownerId;
+  }
+
+  async list(collectionId: string, userId: string, entryId: string, includeDeleted = false): Promise<EntryLink[]> {
+    const ownerId = await this.context(collectionId, userId, entryId);
     return this.links.find({ collectionId, ownerId, $or: [{ fromEntryId: entryId }, { toEntryId: entryId }], ...(!includeDeleted ? { deletedAt: null } : {}) }).sort({ createdAt: -1 }).exec();
   }
 
-  async create(collectionId: string, ownerId: string, fromEntryId: string, toEntryId: string, label = ''): Promise<EntryLink> {
+  async create(collectionId: string, userId: string, fromEntryId: string, toEntryId: string, label = ''): Promise<EntryLink> {
     if (fromEntryId === toEntryId) throw new BadRequestException('Choose another entry');
-    await this.context(collectionId, ownerId, fromEntryId, toEntryId);
+    const ownerId = await this.context(collectionId, userId, fromEntryId, toEntryId, CollectionRole.EDITOR);
     if (label.length > 120) throw new BadRequestException('Link label is too long');
     const existing = await this.links.findOne({ ownerId, collectionId, fromEntryId, toEntryId }).exec();
     if (existing) {
@@ -34,11 +46,12 @@ export class EntryLinkService {
     return this.links.create({ ownerId, collectionId, fromEntryId, toEntryId, label, createdAt: new Date() });
   }
 
-  async change(collectionId: string, ownerId: string, linkId: string, restore: boolean): Promise<EntryLink> {
+  async change(collectionId: string, userId: string, linkId: string, restore: boolean): Promise<EntryLink> {
     if (!Types.ObjectId.isValid(linkId)) throw new NotFoundException('Link not found');
+    const { ownerId } = await this.access(collectionId, userId, CollectionRole.EDITOR);
     const link = await this.links.findOne({ _id: linkId, ownerId, collectionId }).exec();
     if (!link) throw new NotFoundException('Link not found');
-    if (restore) await this.context(collectionId, ownerId, link.fromEntryId, link.toEntryId);
+    if (restore) await this.context(collectionId, userId, link.fromEntryId, link.toEntryId, CollectionRole.EDITOR);
     const updated = await this.links.findOneAndUpdate({ _id: linkId, ownerId, collectionId }, restore ? { $unset: { deletedAt: '' } } : { $set: { deletedAt: new Date() } }, { returnDocument: 'after' }).exec();
     return updated!;
   }
@@ -64,15 +77,18 @@ export class EntryLinkService {
     return true;
   }
 
-  async duplicateLinks(collectionId: string, ownerId: string, formatId: string, fieldId: string, url: string, excludeEntryId?: string): Promise<Entry[]> {
+  /** Works for the owner and for any member: a collaborator adding an entry must be warned of duplicates too. */
+  async duplicateLinks(collectionId: string, userId: string, formatId: string, fieldId: string, url: string, excludeEntryId?: string): Promise<Entry[]> {
     if (url.length > 10000) throw new BadRequestException('URL is too long');
     let normalized: string;
     try { const parsed = new URL(url); if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(); normalized = parsed.href; }
     catch { throw new BadRequestException('Enter a valid web link'); }
-    const collection = await this.collections.findOne({ _id: collectionId, ownerId }).exec();
-    if (!collection?.formats.some((format) => format.id === formatId && format.fields.some((field) => field.id === fieldId && field.kind === FieldKind.LINK))) throw new NotFoundException('Link field not found');
+    const { collection, ownerId, member } = await this.access(collectionId, userId, CollectionRole.READER);
+    if (member?.sharedFieldIds?.length && !member.sharedFieldIds.includes(fieldId)) return [];
+    if (!collection.formats.some((format) => format.id === formatId && format.fields.some((field) => field.id === fieldId && field.kind === FieldKind.LINK))) throw new NotFoundException('Link field not found');
     const candidates = await this.entries.find({ ownerId, collectionId, formatId, 'values.fieldId': fieldId, ...(excludeEntryId ? { _id: { $ne: excludeEntryId } } : {}) }).limit(1001).exec();
     if (candidates.length > 1000) throw new BadRequestException('Narrow the link search');
-    return candidates.filter((entry) => entry.values.some((value) => { if (value.fieldId !== fieldId) return false; try { return new URL(value.value).href === normalized; } catch { return false; } }));
+    const matches = candidates.filter((entry) => entry.values.some((value) => { if (value.fieldId !== fieldId) return false; try { return new URL(value.value).href === normalized; } catch { return false; } }));
+    return member ? matches.map((entry) => this.collaboration.filterEntryFields(entry, member, collection)) : matches;
   }
 }

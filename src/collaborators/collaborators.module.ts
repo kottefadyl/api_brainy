@@ -11,6 +11,8 @@ import { EntryAuthorsResolver } from './entry-authors.resolver.js';
 import { CollaboratorsService } from './collaborators.service.js';
 import { PersonFieldResolver } from './person-field.resolver.js';
 import { PersonFieldService } from './person-field.service.js';
+import { CollectionMembersResolver } from './collection-members.resolver.js';
+import { CollectionMembersService } from './collection-members.service.js';
 
 @Module({
   imports: [
@@ -23,7 +25,7 @@ import { PersonFieldService } from './person-field.service.js';
       { name: AuditLog.name, schema: AuditLogSchema },
     ]),
   ],
-  providers: [CollaboratorsService, CollaboratorsResolver, CollectionOwnerResolver, EntryAuthorsResolver, PersonFieldService, PersonFieldResolver],
+  providers: [CollaboratorsService, CollaboratorsResolver, CollectionOwnerResolver, EntryAuthorsResolver, PersonFieldService, PersonFieldResolver, CollectionMembersService, CollectionMembersResolver],
   exports: [CollaboratorsService, PersonFieldService],
 })
 export class CollaboratorsModule {}

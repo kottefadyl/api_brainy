@@ -282,6 +282,11 @@ type Collection {
   formats: [CollectionFormat!]!
   formulas: [CollectionFormula!]!
   id: ID!
+
+  """
+  Number of people the collection is shared with; null when the viewer is not the owner.
+  """
+  memberCount: Int
   members: [CollectionMember!]
   minAggregateSize: Float
   name: String!
@@ -393,6 +398,21 @@ type CollectionMember {
   sensitiveFieldIds: [String!]
   sharedFieldIds: [String!]
   userId: String!
+}
+
+type CollectionMemberSummary {
+  addedAt: DateTime!
+  email: String!
+  hasPhoto: Boolean!
+  name: String!
+  role: CollectionRole!
+  userId: String!
+}
+
+type CollectionMembersPage {
+  items: [CollectionMemberSummary!]!
+  offset: Int!
+  total: Int!
 }
 
 type CollectionOwnerSummary {
@@ -1454,6 +1474,9 @@ type Query {
   collectionGeoDistance(collectionId: String!, fieldId: String!, firstEntryId: String!, formatId: String!, secondEntryId: String!, unit: String!): GeoDistance!
   collectionGeoPage(after: String, collectionId: String!, fieldId: String!, filters: [EntryFieldFilterInput!], first: Int!, formatId: String!, search: String, viewId: String): GeoPage!
   collectionGeoZoneSummary(collectionId: String!, filters: [EntryFieldFilterInput!], positionFieldId: String!, positionFormatId: String!, search: String, viewId: String, zoneFieldId: String!, zoneFormatId: String!): [GeoZoneCount!]!
+
+  """People a collection is shared with, sorted by name; owner only."""
+  collectionMembers(collectionId: String!, limit: Int, offset: Int, search: String): CollectionMembersPage!
   collectionMoveStatus(operationId: String!): MoveOperationStatus!
   collectionObject(id: String!): Entry!
   collectionObjectsPage(after: String, collectionId: String!, first: Int! = 30, formatId: String!, search: String): EntryPage!
