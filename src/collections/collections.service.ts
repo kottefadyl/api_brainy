@@ -22,6 +22,7 @@ import { protectedFields, validSensitivity } from './sensitivity.logic.js';
 import { isFrozen, maxEntryAttachmentBytes } from '../platform.js';
 import { isMediaFile, MEDIA_REFUSED } from '../media-guard.js';
 import { CodeListStore } from './code-list-store.service.js';
+import { durationValue, isDurationUnit, parseDuration } from './duration.js';
 import { assertRequiredFields, assertRoomForEntries, validatedMaxEntries } from './format-entry-rules.js';
 import { assertTaskPlannerView } from './task-planner.rules.js';
 import { PersonFieldService, parsePersonIds } from '../collaborators/person-field.service.js';
@@ -266,7 +267,8 @@ export class CollectionsService {
       if (!Object.values(FieldKind).includes(field.kind)) throw new BadRequestException('Invalid field type');
       if (field.sensitivity && !validSensitivity(field.sensitivity)) throw new BadRequestException('Choose a sensitivity level');
       const unit = field.unit?.trim();
-      if (unit && field.kind !== FieldKind.NUMBER && field.kind !== FieldKind.MEASURE) throw new BadRequestException('Only number and measure fields can have units');
+      if (unit && field.kind !== FieldKind.NUMBER && field.kind !== FieldKind.MEASURE && field.kind !== FieldKind.DURATION) throw new BadRequestException('Only number, measure and duration fields can have units');
+      if (unit && field.kind === FieldKind.DURATION && !isDurationUnit(unit)) throw new BadRequestException('Choose seconds, minutes, hours, days or weeks for a duration');
       if (unit && ((unit.startsWith('local:') ? unit.length > 70 : unit.length > 24) || /[\x00-\x1f\x7f]/.test(unit))) {
         throw new BadRequestException('Unit must be at most 24 characters on one line');
       }
@@ -501,7 +503,7 @@ export class CollectionsService {
       const replacement = next.get(field.id);
       const isNumberToMeasure = field.kind === FieldKind.NUMBER && replacement?.kind === FieldKind.MEASURE;
       const isAllowedKind = replacement && (replacement.kind === field.kind || isNumberToMeasure);
-      if (impact.populatedFieldIds.includes(field.id) && (!isAllowedKind || (replacement.unit ?? '') !== (field.unit ?? '') || (replacement.targetObjectFormatId ?? '') !== (field.targetObjectFormatId ?? '') || (replacement.codeListId ?? '') !== (field.codeListId ?? '') || (replacement.multiple ?? false) !== (field.multiple ?? false) || (replacement.referenceMode ?? '') !== (field.referenceMode ?? '') || (field.options ?? []).some((option) => !replacement.options?.includes(option)))) {
+      if (impact.populatedFieldIds.includes(field.id) && (!isAllowedKind || (field.kind !== FieldKind.DURATION && (replacement.unit ?? '') !== (field.unit ?? '')) || (replacement.targetObjectFormatId ?? '') !== (field.targetObjectFormatId ?? '') || (replacement.codeListId ?? '') !== (field.codeListId ?? '') || (replacement.multiple ?? false) !== (field.multiple ?? false) || (replacement.referenceMode ?? '') !== (field.referenceMode ?? '') || (field.options ?? []).some((option) => !replacement.options?.includes(option)))) {
         throw new BadRequestException(`Field ${field.name} has saved values. Keep its type, unit and existing choices, or migrate entries first`);
       }
     }
@@ -879,8 +881,9 @@ export class CollectionsService {
     if (!comparison[operator]) throw new BadRequestException('Invalid filter operator');
     if (field.kind === FieldKind.NUMBER || field.kind === FieldKind.DURATION) {
       if (field.kind === FieldKind.NUMBER && (!/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(value) || !Number.isFinite(Number(value)))) throw new BadRequestException(`${field.name} must be a number`);
-      if (field.kind === FieldKind.DURATION && !/^\d{1,6}:[0-5]\d$/.test(value)) throw new BadRequestException(`${field.name} needs a duration as hours:minutes`);
-      const expected = field.kind === FieldKind.NUMBER ? Types.Decimal128.fromString(value) : (Number(value.split(':')[0]) * 60 + Number(value.split(':')[1])) * 60;
+      const seconds = field.kind === FieldKind.DURATION ? parseDuration(value, field.unit) : null;
+      if (field.kind === FieldKind.DURATION && seconds === null) throw new BadRequestException(`${field.name} needs a duration such as 45, 1:30 or 2 h 30`);
+      const expected = field.kind === FieldKind.NUMBER ? Types.Decimal128.fromString(value) : seconds!;
       const stored = field.kind === FieldKind.NUMBER
         ? { $convert: { input: { $ifNull: ['$$item.numberValue', '$$item.value'] }, to: 'decimal', onError: null, onNull: null } }
         : { $ifNull: ['$$item.durationSeconds', null] };
@@ -1352,9 +1355,9 @@ export class CollectionsService {
           return { fieldId, value: date.toISOString(), dateTimeValue: date.toISOString() };
         }
         case FieldKind.DURATION: {
-          const match = /^(\d{1,6}):([0-5]\d)$/.exec(text);
-          if (!match) throw new BadRequestException(`${field.name} needs a duration as hours:minutes`);
-          return { fieldId, value: `${Number(match[1])}:${match[2]}`, durationSeconds: (Number(match[1]) * 60 + Number(match[2])) * 60 };
+          const seconds = parseDuration(text, field.unit);
+          if (seconds === null) throw new BadRequestException(`${field.name} needs a duration such as 45, 1:30 or 2 h 30`);
+          return { fieldId, value: durationValue(seconds, field.unit), durationSeconds: seconds };
         }
         case FieldKind.TIME:
           if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(text)) throw new BadRequestException(`${field.name} must be a valid time`);

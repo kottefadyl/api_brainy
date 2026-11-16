@@ -1212,6 +1212,11 @@ type Mutation {
   addObjectModelFromTemplate(collectionId: String!, color: String!, language: String, name: String!, templateId: String!): Collection!
 
   """
+  Adds Estimated duration and Time spent to a task list made before they existed.
+  """
+  addTaskDurationFields(collectionId: String!, language: String): Collection!
+
+  """
   Removes everything the account owns; with deleteAccount the account goes too
   """
   adminEraseUser(confirmEmail: String!, deleteAccount: Boolean!, userId: String!): AdminErasure!
@@ -1858,9 +1863,11 @@ type TaskPlanner {
   completedFieldId: String
   doneFieldId: String!
   endFieldId: String!
+  estimateFieldId: String
   formatId: String!
   intervalFieldId: String!
   repeatFieldId: String!
+  spentFieldId: String
   startFieldId: String!
   weekdaysFieldId: String!
 }

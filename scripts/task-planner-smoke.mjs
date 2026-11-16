@@ -13,7 +13,7 @@ async function gql(query, variables = {}, expectError = false) {
 }
 token = (await gql('mutation($input:RegisterInput!){register(input:$input){token}}', { input: { name: 'Task Tester', email: `tasks-${randomUUID()}@example.test`, password: 'temporary-test-password' } })).register.token;
 const ids = [];
-const fields = 'id templateId taskPlanner { formatId doneFieldId startFieldId endFieldId repeatFieldId intervalFieldId weekdaysFieldId completedFieldId } savedViews { id layout name } formats { id fields { id name kind options } }';
+const fields = 'id templateId taskPlanner { formatId doneFieldId startFieldId endFieldId repeatFieldId intervalFieldId weekdaysFieldId completedFieldId estimateFieldId spentFieldId } savedViews { id layout name } formats { id version fields { id name kind options unit } }';
 try {
   const c = (await gql(`mutation{createCollectionFromTemplate(templateId:"tasks",name:"Maison",language:"fr"){${fields}}}`)).createCollectionFromTemplate;
   ids.push(c.id);
@@ -61,6 +61,25 @@ try {
   assert.ok(upgraded.savedViews.some((view) => view.layout === 'TASK_DAY'));
   const legacyDay = (await gql('query($id:String!){taskAgenda(collectionId:$id,from:"2026-11-11",to:"2026-11-11",today:"2026-11-11",timeZone:"UTC"){occurrences{entryId}}}', { id: legacy.id })).taskAgenda;
   assert.deepEqual(legacyDay.occurrences.map((item) => item.entryId), [kept]);
+  assert.ok(upgraded.taskPlanner.estimateFieldId && upgraded.taskPlanner.spentFieldId, 'an upgraded list gets the duration fields');
+
+  // Durations: typed in the field unit (minutes here) or with words; stored as exact seconds.
+  const estimate = c.formats[0].fields.find((field) => field.id === p.estimateFieldId);
+  assert.deepEqual([estimate.name, estimate.kind, estimate.unit], ['Durée estimée', 'DURATION', 'min']);
+  assert.equal(c.formats[0].fields.find((field) => field.id === p.spentFieldId).name, 'Temps passé');
+  const timed = async (value) => (await gql('mutation($id:String!,$input:SaveEntryInput!){createEntry(collectionId:$id,input:$input){values{fieldId value durationSeconds}}}', { id: c.id, input: { formatId: p.formatId, values: [{ fieldId: c.formats[0].fields[0].id, value: 'Durée' }, { fieldId: p.estimateFieldId, value }] } })).createEntry.values.find((item) => item.fieldId === p.estimateFieldId);
+  for (const [typed, stored, seconds] of [['45', '45min', 2700], ['1:30', '1h 30min', 5400], ['2 h 30', '2h 30min', 9000], ['1,5 h', '1h 30min', 5400], ['1j 4h', '1d 4h', 100800], ['2 sem', '2w', 1209600], ['90 s', '1min 30s', 90]]) {
+    assert.deepEqual(await timed(typed), { fieldId: p.estimateFieldId, value: stored, durationSeconds: seconds }, typed);
+  }
+  assert.match(await gql('mutation($id:String!,$input:SaveEntryInput!){createEntry(collectionId:$id,input:$input){id}}', { id: c.id, input: { formatId: p.formatId, values: [{ fieldId: p.estimateFieldId, value: '2 mois' }] } }, true), /duration such as/);
+  const filtered = (await gql('query($id:String!,$f:[EntryFieldFilterInput!]){collectionEntriesPage(collectionId:$id,filters:$f){entries{id}}}', { id: c.id, f: [{ fieldId: p.estimateFieldId, operator: 'GTE', value: '1 d' }] })).collectionEntriesPage;
+  assert.equal(filtered.entries.length, 2, 'filters compare exact durations (1d 4h and 2w)');
+  // The unit of a filled duration field can change: only typing and display change, seconds stay.
+  const changed = (await gql('mutation($id:String!,$f:String!,$input:UpdateCollectionFormatInput!){updateCollectionFormat(collectionId:$id,formatId:$f,input:$input){formats{id fields{id unit}}}}', { id: c.id, f: p.formatId, input: { name: 'Tâche', expectedVersion: c.formats[0].version ?? 1, fields: c.formats[0].fields.map((field) => ({ id: field.id, name: field.name, kind: field.kind, ...(field.options ? { options: field.options } : {}), ...(field.unit ? { unit: field.id === p.estimateFieldId ? 'h' : field.unit } : {}) })) } })).updateCollectionFormat;
+  assert.equal(changed.formats[0].fields.find((field) => field.id === p.estimateFieldId).unit, 'h');
+  assert.equal((await timed('2')).durationSeconds, 7200, 'a bare number now means hours');
+  const legacyAdded = (await gql('mutation($id:String!){addTaskDurationFields(collectionId:$id,language:"fr"){taskPlanner{estimateFieldId spentFieldId}}}', { id: c.id })).addTaskDurationFields;
+  assert.deepEqual(legacyAdded.taskPlanner, { estimateFieldId: p.estimateFieldId, spentFieldId: p.spentFieldId }, 'already there: nothing added twice');
   console.log('TASK_PLANNER_SMOKE_PASSED');
 } finally {
   for (const id of ids) await gql('mutation($id:String!){deleteCollection(id:$id)}', { id });

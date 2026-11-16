@@ -12,7 +12,7 @@ import { localDate, localTime, validTimeZone } from './time_math.js';
 import { taskRule } from './task-planner.rule.js';
 import { ReminderService } from './reminder.service.js';
 
-type TemplateField = { name: string; kind: FieldKind; options?: string[] };
+type TemplateField = { name: string; kind: FieldKind; options?: string[]; unit?: string };
 
 /** Fields of the Task list template (T49). Order matters: the planner maps them by position. */
 export function taskTemplateFields(fr: boolean): TemplateField[] {
@@ -25,6 +25,8 @@ export function taskTemplateFields(fr: boolean): TemplateField[] {
     { name: fr ? 'Tous les N jours' : 'Every N days', kind: FieldKind.NUMBER },
     { name: fr ? 'Jours de la semaine' : 'Weekdays', kind: FieldKind.MULTI_SELECT, options: weekdayLabels.map((labels) => labels[fr ? 1 : 0]) },
     { name: fr ? 'Terminée le' : 'Completed at', kind: FieldKind.DATETIME },
+    { name: fr ? 'Durée estimée' : 'Estimated duration', kind: FieldKind.DURATION, unit: 'min' },
+    { name: fr ? 'Temps passé' : 'Time spent', kind: FieldKind.DURATION, unit: 'min' },
   ];
 }
 
@@ -47,7 +49,7 @@ export class TaskPlannerService {
     const names = taskTemplateFields(fr);
     const ids = names.map((field) => byName(field.name, field.kind));
     if (ids.slice(0, 7).some((id) => !id)) throw new BadRequestException('The task data format misses planner fields');
-    const planner: TaskPlanner = { formatId, doneFieldId: ids[1]!, startFieldId: ids[2]!, endFieldId: ids[3]!, repeatFieldId: ids[4]!, intervalFieldId: ids[5]!, weekdaysFieldId: ids[6]!, completedFieldId: ids[7] };
+    const planner: TaskPlanner = { formatId, doneFieldId: ids[1]!, startFieldId: ids[2]!, endFieldId: ids[3]!, repeatFieldId: ids[4]!, intervalFieldId: ids[5]!, weekdaysFieldId: ids[6]!, completedFieldId: ids[7], estimateFieldId: ids[8], spentFieldId: ids[9] };
     await this.collectionModel.updateOne({ _id: collectionId }, { $set: { taskPlanner: planner, templateId: 'tasks' } }).exec();
     let updated = await this.collections.one(collectionId, ownerId);
     const view = (name: string, layout: string) => ({ name, layout, formatIds: [formatId], columnFieldIds: format.fields.map((field) => field.id), sort: 'NEWEST', groupByFormat: false });
@@ -79,10 +81,27 @@ export class TaskPlannerService {
     const rename = (id: string | undefined, name: string) => { const field = fields.find((item) => item.id === id); if (field && !fields.some((item) => item.id !== id && item.name.toLowerCase() === name.toLowerCase())) field.name = name; };
     rename(title?.id, wanted[0].name); rename(done?.id, wanted[1].name); rename(end?.id, wanted[3].name); rename(completed?.id, wanted[7].name);
     const add = (index: number) => { if (!fields.some((item) => item.name.toLowerCase() === wanted[index].name.toLowerCase())) fields.push({ ...wanted[index] } as never); };
-    add(2); if (!end) add(3); add(4); add(5); add(6); if (!completed) add(7);
+    add(2); if (!end) add(3); add(4); add(5); add(6); if (!completed) add(7); add(8); add(9);
     if (fields.length > 30) throw new BadRequestException('This data format has no room for the planner fields');
     await this.collections.updateFormat(collectionId, format.id, { name: format.name, expectedVersion: format.version ?? 1, fields: fields as never }, ownerId);
     return this.setUp(collectionId, format.id, ownerId, language);
+  }
+
+  /** Adds "Estimated duration" and "Time spent" to a task list made before they existed; keeps every entry. */
+  async addDurationFields(collectionId: string, ownerId: string, language?: string): Promise<Collection> {
+    const { collection, planner } = await this.context(collectionId, ownerId, CollectionRole.OWNER);
+    if (planner.estimateFieldId && planner.spentFieldId) return collection;
+    const format = collection.formats.find((item) => item.id === planner.formatId);
+    if (!format) throw new NotFoundException('Task planner not found');
+    const wanted = taskTemplateFields(language === 'fr').slice(8);
+    const fields = format.fields.map((field) => ({ id: field.id, name: field.name, kind: field.kind, unit: field.unit, options: field.options, targetObjectFormatId: field.targetObjectFormatId, multiple: field.multiple, variableName: field.variableName, referenceMode: field.referenceMode, codeListId: field.codeListId, sensitivity: field.sensitivity, required: field.required, showInList: field.showInList }));
+    for (const field of wanted) if (!fields.some((item) => item.name.toLowerCase() === field.name.toLowerCase())) fields.push({ ...field } as never);
+    if (fields.length > 30) throw new BadRequestException('This data format has no room for the duration fields');
+    const updated = await this.collections.updateFormat(collectionId, format.id, { name: format.name, expectedVersion: format.version ?? 1, fields: fields as never }, ownerId);
+    const saved = updated.formats.find((item) => item.id === format.id)!;
+    const find = (name: string) => saved.fields.find((field) => field.name.toLowerCase() === name.toLowerCase() && field.kind === FieldKind.DURATION)?.id;
+    await this.collectionModel.updateOne({ _id: collectionId }, { $set: { 'taskPlanner.estimateFieldId': planner.estimateFieldId ?? find(wanted[0].name), 'taskPlanner.spentFieldId': planner.spentFieldId ?? find(wanted[1].name) } }).exec();
+    return this.collections.one(collectionId, ownerId);
   }
 
   private async context(collectionId: string, userId: string, role: CollectionRole) {

@@ -14,6 +14,9 @@ export class TaskPlanner {
   @Field() @Prop({ required: true }) intervalFieldId!: string;
   @Field() @Prop({ required: true }) weekdaysFieldId!: string;
   @Field({ nullable: true }) @Prop() completedFieldId?: string;
+  /** Duration fields: planned time and time actually spent on a task. */
+  @Field({ nullable: true }) @Prop() estimateFieldId?: string;
+  @Field({ nullable: true }) @Prop() spentFieldId?: string;
 }
 export const TaskPlannerSchema = SchemaFactory.createForClass(TaskPlanner);
 

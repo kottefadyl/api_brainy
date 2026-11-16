@@ -27,4 +27,9 @@ export class TaskPlannerResolver {
   async enableTaskPlanner(@Args('collectionId') collectionId: string, @Args('language', { type: () => String, nullable: true }) language: string | undefined, @Context('req') request: Request): Promise<Collection> {
     return this.service.enableForLegacy(collectionId, await this.user(request), language);
   }
+
+  @Mutation(() => Collection, { description: 'Adds Estimated duration and Time spent to a task list made before they existed.' })
+  async addTaskDurationFields(@Args('collectionId') collectionId: string, @Args('language', { type: () => String, nullable: true }) language: string | undefined, @Context('req') request: Request): Promise<Collection> {
+    return this.service.addDurationFields(collectionId, await this.user(request), language);
+  }
 }
