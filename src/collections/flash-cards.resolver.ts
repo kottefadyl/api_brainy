@@ -4,6 +4,7 @@ import { AuthService } from '../auth/auth.service.js';
 import { Collection } from './collection.schema.js';
 import { CardDeckSummary, CardGradeValue, CardReviewOrder, CardReviewState, ReviewCard } from './flash-cards.schema.js';
 import { FlashCardsService } from './flash-cards.service.js';
+import { cleanOffset } from './card-progress.logic.js';
 
 type Request = { headers: { authorization?: string } };
 
@@ -23,14 +24,15 @@ export class FlashCardsResolver {
     @Args('formatId') formatId: string,
     @Args('count', { type: () => Int }) count: number,
     @Args('order', { type: () => CardReviewOrder }) order: CardReviewOrder,
+    @Args('utcOffsetMinutes', { type: () => Int, nullable: true }) utcOffsetMinutes: number | null,
     @Context('req') request: Request,
   ): Promise<ReviewCard[]> {
-    return this.service.session(collectionId, await this.user(request), formatId, count, order);
+    return this.service.session(collectionId, await this.user(request), formatId, count, order, cleanOffset(utcOffsetMinutes));
   }
 
   @Mutation(() => CardReviewState, { description: 'Records my answer to a card and schedules when it comes back.' })
-  async gradeCard(@Args('collectionId') collectionId: string, @Args('entryId') entryId: string, @Args('grade', { type: () => CardGradeValue }) grade: CardGradeValue, @Context('req') request: Request): Promise<CardReviewState> {
-    return this.service.grade(collectionId, await this.user(request), entryId, grade);
+  async gradeCard(@Args('collectionId') collectionId: string, @Args('entryId') entryId: string, @Args('grade', { type: () => CardGradeValue }) grade: CardGradeValue, @Args('utcOffsetMinutes', { type: () => Int, nullable: true }) utcOffsetMinutes: number | null, @Context('req') request: Request): Promise<CardReviewState> {
+    return this.service.grade(collectionId, await this.user(request), entryId, grade, cleanOffset(utcOffsetMinutes));
   }
 
   @Mutation(() => Collection)

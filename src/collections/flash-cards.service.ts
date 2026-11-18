@@ -8,6 +8,7 @@ import { Collection } from './collection.schema.js';
 import { CollectionsService } from './collections.service.js';
 import { Entry } from './entry.schema.js';
 import { CardDeckSummary, CardReviewOrder, CardReviewState, ReviewCard } from './flash-cards.schema.js';
+import { CardProgressService } from './card-progress.service.js';
 import { type CardGrade, nextReview, previewMinutes, shuffled } from './flash-cards.logic.js';
 
 export const FLASH_CARDS_TEMPLATE = 'cards';
@@ -22,10 +23,11 @@ export class FlashCardsService {
     @InjectModel(Collection.name) private readonly collectionModel: Model<Collection>,
     @InjectModel(Entry.name) private readonly entries: Model<Entry>,
     @InjectModel(CardReviewState.name) private readonly states: Model<CardReviewState>,
+    private readonly progress: CardProgressService,
   ) {}
 
   /** Any member can review (it changes only their own schedule, never the entries). */
-  private async context(collectionId: string, userId: string) {
+  async access(collectionId: string, userId: string) {
     if (!Types.ObjectId.isValid(collectionId)) throw new NotFoundException('Collection not found');
     const collection = await this.collections.one(collectionId, userId);
     const { member } = this.collaboration.checkAccess(collection, userId, CollectionRole.READER);
@@ -38,7 +40,7 @@ export class FlashCardsService {
   }
 
   async summary(collectionId: string, userId: string): Promise<CardDeckSummary[]> {
-    const { collection } = await this.context(collectionId, userId);
+    const { collection } = await this.access(collectionId, userId);
     const now = new Date();
     const [counts, reviewed] = await Promise.all([
       this.entries.aggregate<{ _id: string; total: number }>([{ $match: { collectionId: collection.id, movingOperationId: null } }, { $group: { _id: '$formatId', total: { $sum: 1 } } }]).exec(),
@@ -52,8 +54,8 @@ export class FlashCardsService {
     });
   }
 
-  async session(collectionId: string, userId: string, formatId: string, count: number, order: CardReviewOrder): Promise<ReviewCard[]> {
-    const { collection, member } = await this.context(collectionId, userId);
+  async session(collectionId: string, userId: string, formatId: string, count: number, order: CardReviewOrder, offset = 0): Promise<ReviewCard[]> {
+    const { collection, member } = await this.access(collectionId, userId);
     if (!collection.formats.some((format) => format.id === formatId)) throw new NotFoundException('Data format not found in this collection');
     if (!Number.isInteger(count) || count < 1 || count > MAX_SESSION) throw new BadRequestException(`Choose 1 to ${MAX_SESSION} cards`);
     const cards = await this.deck(collection.id, formatId).exec();
@@ -63,7 +65,9 @@ export class FlashCardsService {
     if (order === CardReviewOrder.DUE) {
       // Cards due now (most overdue first), then cards never reviewed (oldest first).
       const due = cards.filter((card) => { const state = states.get(card.id); return state && state.due <= now; }).sort((a, b) => states.get(a.id)!.due.getTime() - states.get(b.id)!.due.getTime());
-      const fresh = cards.filter((card) => !states.has(card.id));
+      // T57: the daily limit of new cards, when the person chose one.
+      const left = await this.progress.newCardsLeft(collection.id, userId, offset, now);
+      const fresh = cards.filter((card) => !states.has(card.id)).slice(0, left ?? undefined);
       picked = [...due, ...fresh].slice(0, count);
     } else if (order === CardReviewOrder.RANDOM) picked = shuffled(cards).slice(0, count);
     else picked = (order === CardReviewOrder.NEWEST ? [...cards].reverse() : cards).slice(0, count);
@@ -74,22 +78,25 @@ export class FlashCardsService {
     });
   }
 
-  async grade(collectionId: string, userId: string, entryId: string, grade: CardGrade): Promise<CardReviewState> {
-    const { collection } = await this.context(collectionId, userId);
-    if (!Types.ObjectId.isValid(entryId) || !(await this.entries.exists({ _id: entryId, collectionId: collection.id }))) throw new NotFoundException('Card not found');
+  async grade(collectionId: string, userId: string, entryId: string, grade: CardGrade, offset = 0): Promise<CardReviewState> {
+    const { collection } = await this.access(collectionId, userId);
+    const card = Types.ObjectId.isValid(entryId) ? await this.entries.findOne({ _id: entryId, collectionId: collection.id }).select('formatId').lean().exec() : null;
+    if (!card) throw new NotFoundException('Card not found');
     const previous = await this.states.findOne({ userId, entryId }).exec();
     const now = new Date();
     const next = nextReview(previous, grade, now);
-    return (await this.states.findOneAndUpdate(
+    const state = (await this.states.findOneAndUpdate(
       { userId, entryId },
       { $set: { collectionId: collection.id, due: next.due, intervalDays: next.intervalDays, ease: next.ease, reps: next.reps, lapses: next.lapses, lastGrade: grade, lastReviewedAt: now } },
       { upsert: true, returnDocument: 'after' },
     ).exec())!;
+    await this.progress.record({ userId, collectionId: collection.id, formatId: card.formatId ?? '', entryId, grade, wasNew: !previous, at: now, offset });
+    return state;
   }
 
   /** Language read aloud on the cards of a data format (owner only). */
   async setSpeechLanguage(collectionId: string, userId: string, formatId: string, language: string | null): Promise<Collection> {
-    const { collection } = await this.context(collectionId, userId);
+    const { collection } = await this.access(collectionId, userId);
     this.collaboration.checkAccess(collection, userId, CollectionRole.OWNER);
     if (language && !/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/.test(language)) throw new BadRequestException('Choose a language such as en-GB or fr-FR');
     const updated = await this.collectionModel.findOneAndUpdate({ _id: collection.id, 'formats.id': formatId }, language ? { $set: { 'formats.$.speechLanguage': language } } : { $unset: { 'formats.$.speechLanguage': '' } }, { returnDocument: 'after' }).exec();
@@ -99,8 +106,9 @@ export class FlashCardsService {
 
   /** Forgets this person's review history of a collection (entries stay). */
   async reset(collectionId: string, userId: string): Promise<boolean> {
-    const { collection } = await this.context(collectionId, userId);
+    const { collection } = await this.access(collectionId, userId);
     await this.states.deleteMany({ userId, collectionId: collection.id }).exec();
+    await this.progress.reset(collection.id, userId);
     return true;
   }
 }

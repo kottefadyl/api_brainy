@@ -75,6 +75,9 @@ import { LinksTemplateMigration } from './links-template-migration.js';
 import { CardReviewState, CardReviewStateSchema } from './flash-cards.schema.js';
 import { FlashCardsResolver } from './flash-cards.resolver.js';
 import { FlashCardsService } from './flash-cards.service.js';
+import { CardAnswer, CardAnswerSchema, CardGoal, CardGoalSchema } from './card-progress.schema.js';
+import { CardProgressResolver } from './card-progress.resolver.js';
+import { CardProgressService } from './card-progress.service.js';
 import { CollectionCalculationsMigration, CollectionCalculationsResolver } from './collection-calculations.js';
 import { LegacyBookMigration } from './legacy-book-migration.js';
 import { ReminderCronController } from './reminder-cron.controller.js';
@@ -87,6 +90,8 @@ import { ReminderCronController } from './reminder-cron.controller.js';
       { name: Collection.name, schema: CollectionSchema },
       { name: Entry.name, schema: EntrySchema },
       { name: CardReviewState.name, schema: CardReviewStateSchema },
+      { name: CardAnswer.name, schema: CardAnswerSchema },
+      { name: CardGoal.name, schema: CardGoalSchema },
       { name: LinkPreviewCache.name, schema: LinkPreviewCacheSchema },
       { name: StoredCode.name, schema: StoredCodeSchema },
       { name: StockMovement.name, schema: StockMovementSchema },
@@ -113,7 +118,7 @@ import { ReminderCronController } from './reminder-cron.controller.js';
     ]),
   ],
   controllers: [ReminderCronController],
-  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, EntryCheckboxResolver, EntryCheckboxService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, CodeListStore, CodeListStoreResolver, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, BookResolver, LinkPreviewResolver, LinkPreviewService, TaskPlannerResolver, TaskPlannerService, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver, LinksTemplateMigration, LegacyBookMigration, CollectionCalculationsMigration, CollectionCalculationsResolver, FlashCardsResolver, FlashCardsService],
+  providers: [CollectionsResolver, CollectionsService, TransferService, ReminderResolver, ReminderService, BackgroundJobResolver, BackgroundJobService, AnalysisResolver, AnalysisService, ZoneAnalysisService, EntryLinkResolver, EntryLinkService, EntryCheckboxResolver, EntryCheckboxService, RelationResolver, RelationService, ClassificationResolver, ClassificationService, CodeListStore, CodeListStoreResolver, GeoResolver, GeoService, WorkspaceBackupResolver, WorkspaceBackupService, StarterTemplateResolver, BookResolver, LinkPreviewResolver, LinkPreviewService, TaskPlannerResolver, TaskPlannerService, StockResolver, StockService, StockLedgerService, ForecastResolver, ForecastService, MeasurementService, CollaborationService, WorkflowResolver, WorkflowService, ContributionResolver, ContributionService, LedgerResolver, LedgerService, SensitivityResolver, SensitivityService, DomainPackageResolver, DomainPackageService, DataSourceResolver, DataSourceService, S3Storage, LargeFileService, LargeFileResolver, LinksTemplateMigration, LegacyBookMigration, CollectionCalculationsMigration, CollectionCalculationsResolver, FlashCardsResolver, FlashCardsService, CardProgressResolver, CardProgressService],
   exports: [MeasurementService, CollaborationService],
 })
 export class CollectionsModule {}
